@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    tags-ignore:
+      - '**'
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: ./.sdlc/test
+      - name: Vet
+        run: go vet ./...
+
+  cross-build:
+    name: Cross-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build all targets
+        run: ./.sdlc/cross
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: paq-binaries
+          path: dist/
+
+  e2e:
+    name: E2E (manual/gated)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: E2E tests
+        run: ./.sdlc/e2e
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

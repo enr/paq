@@ -1,0 +1,16 @@
+[delta]
+backend = "github"
+repo = "dandavison/delta"
+asset = "delta-{{version}}-{{rust_target}}.tar.gz"
+archive = "tar.gz"
+extract = "delta{{ext}}"
+chmod = "0755"
+
+[delta.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+# Windows ships a .zip instead of a .tar.gz.
+[delta.windows]
+asset = "delta-{{version}}-{{rust_target}}.zip"
+archive = "zip"

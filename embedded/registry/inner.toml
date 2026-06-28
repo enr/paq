@@ -1,0 +1,11 @@
+[inner]
+backend = "github"
+repo = "enr/inner"
+asset = "inner-v{{version}}-{{os}}-{{arch}}.zip"
+archive = "zip"
+extract = "inner{{ext}}"
+chmod = "0755"
+platforms = ["linux/amd64", "linux/arm64"]
+
+[inner.verify]
+sha256_asset = "checksums.txt"

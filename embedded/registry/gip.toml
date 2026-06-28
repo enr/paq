@@ -1,0 +1,11 @@
+[gip]
+backend = "github"
+repo = "enr/gip"
+asset = "gip-{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+extract = "gip{{ext}}"
+chmod = "0755"
+platforms = ["linux/amd64", "darwin/amd64", "darwin/arm64", "windows/amd64"]
+
+[gip.verify]
+sha256_asset = "gip-{{version}}_checksums.txt"

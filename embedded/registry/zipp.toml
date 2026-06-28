@@ -1,0 +1,14 @@
+[zipp]
+backend = "github"
+repo = "enr/zipp"
+asset = "zipp-{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+chmod = "0755"
+# L'archivio contiene una dir di primo livello (zipp-<ver>_<os>_<arch>/) con i
+# tre binari: si installano come eseguibili singoli nella bin dir (dest).
+strip_components = 1
+binaries = [
+  { from = "zipts{{ext}}" },
+  { from = "zipls{{ext}}" },
+  { from = "zipw{{ext}}" },
+]

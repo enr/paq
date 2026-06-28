@@ -1,0 +1,16 @@
+[bat]
+backend = "github"
+repo = "sharkdp/bat"
+asset = "bat-v{{version}}-{{rust_target}}.tar.gz"
+archive = "tar.gz"
+extract = "bat{{ext}}"
+chmod = "0755"
+
+[bat.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+# Windows ships a .zip instead of a .tar.gz.
+[bat.windows]
+asset = "bat-v{{version}}-{{rust_target}}.zip"
+archive = "zip"

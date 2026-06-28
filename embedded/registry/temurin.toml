@@ -1,0 +1,72 @@
+# Eclipse Temurin (Adoptium) JDK, una ricetta per major version.
+# L'asset usa il numero di build ({{version_build}}, es. il "10" di 21.0.11+10),
+# estratto dal tag GitHub. Verifica SHA256 tramite il file .sha256.txt pubblicato
+# accanto a ogni asset. Solo linux/macOS: su Windows l'asset è .zip.
+
+[temurin-26]
+backend = "github"
+repo = "adoptium/temurin26-binaries"
+asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+
+[temurin-26.os]
+darwin = "mac"
+
+[temurin-26.arch]
+amd64 = "x64"
+arm64 = "aarch64"
+
+[temurin-26.verify]
+sha256_asset = "{{asset}}.sha256.txt"
+
+[temurin-21]
+backend = "github"
+repo = "adoptium/temurin21-binaries"
+asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+
+[temurin-21.os]
+darwin = "mac"
+
+[temurin-21.arch]
+amd64 = "x64"
+arm64 = "aarch64"
+
+[temurin-21.verify]
+sha256_asset = "{{asset}}.sha256.txt"
+
+[temurin-17]
+backend = "github"
+repo = "adoptium/temurin17-binaries"
+asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+
+[temurin-17.os]
+darwin = "mac"
+
+[temurin-17.arch]
+amd64 = "x64"
+arm64 = "aarch64"
+
+[temurin-17.verify]
+sha256_asset = "{{asset}}.sha256.txt"
+
+[temurin-11]
+backend = "github"
+repo = "adoptium/temurin11-binaries"
+asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+
+[temurin-11.os]
+darwin = "mac"
+
+[temurin-11.arch]
+amd64 = "x64"
+arm64 = "aarch64"
+
+[temurin-11.verify]
+sha256_asset = "{{asset}}.sha256.txt"

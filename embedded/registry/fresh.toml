@@ -1,0 +1,14 @@
+[fresh]
+backend = "github"
+repo = "sinelaw/fresh"
+asset = "fresh-editor-{{rust_target}}.tar.xz"
+archive = "tar.xz"
+extract = "fresh{{ext}}"
+chmod = "0755"
+
+[fresh.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+[fresh.verify]
+sha256_asset = "{{asset}}.sha256"

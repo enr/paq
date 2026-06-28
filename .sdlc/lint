@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+tool_source="${BASH_SOURCE[0]}"
+while [ -h "$tool_source" ]; do tool_source="$(readlink "$tool_source")"; done
+sdlc_dir="$( cd -P "$( dirname "$tool_source" )" && pwd )"
+prj_home="$( cd -P "$( dirname "$sdlc_dir" )" && pwd )"
+
+cd "${prj_home}"
+
+echo "==> fmt (check)"
+unformatted=$(find . -name '*.go' -not -path '*/vendor/*' -not -path '*/.gopath/*' -not -path '*/.gomodcache/*' | xargs gofmt -l)
+if [ -n "$unformatted" ]; then
+    echo "    files not formatted:"
+    echo "$unformatted" | sed 's/^/      /'
+    exit 1
+fi
+echo "    ok"
+
+echo "==> vet"
+go vet ./...
+echo "    ok"
+
+echo "==> staticcheck"
+if command -v staticcheck &>/dev/null; then
+    sc_exit=0
+    sc_out=$(staticcheck ./... 2>&1) || sc_exit=$?
+    if [ "$sc_exit" -eq 0 ]; then
+        echo "    ok"
+    elif echo "$sc_out" | grep -q "module requires at least\|built with go"; then
+        echo "    skipped (Go version mismatch)"
+    else
+        echo "$sc_out"
+        exit "$sc_exit"
+    fi
+else
+    echo "    skipped (staticcheck not installed)"
+fi
+
+echo "==> lint done"

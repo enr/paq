@@ -1,0 +1,19 @@
+[hugo]
+backend = "github"
+repo = "gohugoio/hugo"
+asset = "hugo_{{version}}_{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "hugo{{ext}}"
+chmod = "0755"
+
+# macOS ships a single universal build instead of per-arch assets.
+[hugo.darwin]
+asset = "hugo_{{version}}_darwin-universal.tar.gz"
+
+# Windows ships a .zip instead of a .tar.gz.
+[hugo.windows]
+asset = "hugo_{{version}}_{{os}}-{{arch}}.zip"
+archive = "zip"
+
+[hugo.verify]
+sha256_asset = "hugo_{{version}}_checksums.txt"

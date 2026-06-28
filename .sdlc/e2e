@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# End-to-end integration tests for grab.
+#
+# Usage:
+#   ./.sdlc/e2e
+#
+# Runs the Go e2e suite (build tag "e2e") under e2e/. These tests hit the
+# network (GitHub releases, direct URLs), so set GITHUB_TOKEN to avoid rate
+# limiting. Run from any directory — the script resolves the project root.
+#
+# Exit code: 0 if all tests pass, non-zero otherwise.
+
+set -euo pipefail
+
+tool_source="${BASH_SOURCE[0]}"
+while [ -h "$tool_source" ]; do tool_source="$(readlink "$tool_source")"; done
+sdlc_dir="$( cd -P "$( dirname "$tool_source" )" && pwd )"
+prj_home="$( cd -P "$( dirname "$sdlc_dir" )" && pwd )"
+
+cd "${prj_home}"
+
+echo "==> e2e (go test -tags=e2e ./e2e/)"
+go test -tags=e2e ./e2e/ -v -timeout 120s "$@"
+echo "==> ok"

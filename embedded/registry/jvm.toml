@@ -1,0 +1,39 @@
+[jdk]
+backend = "url"
+# Endpoint "latest": serve l'ultima build di un major (es. jdk-26), quindi
+# "version" è il numero di major (26, 21, ...).
+source = "https://download.oracle.com/java/{{version}}/latest/jdk-{{version}}_{{os}}-{{arch}}_bin.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+# Versione installata di default (senza "version" nel manifest).
+default_version = "26"
+
+[jdk.os]
+darwin = "macos"
+
+[jdk.arch]
+amd64 = "x64"
+arm64 = "aarch64"
+
+[jdk.darwin]
+strip_components = 0
+subdir = "*/Contents/Home"
+
+[jdk.verify]
+# Oracle pubblica il checksum come file separato (solo l'hash) accanto all'asset.
+sha256_asset = "{{asset}}.sha256"
+
+[maven]
+backend = "url"
+source = "https://archive.apache.org/dist/maven/maven-{{version_major}}/{{version}}/binaries/apache-maven-{{version}}-bin.zip"
+archive = "zip"
+strip_components = 1
+# Versione installata di default (senza "version" nel manifest): canale stabile.
+default_version = "3.9.9"
+# Con version = "latest" la versione è risolta dai repo Arch ufficiali
+# (pacchetto "maven") e scaricata dall'archivio Apache.
+latest_strategy = "arch-linux"
+arch_pkg = "maven"
+
+[maven.verify]
+sha512_asset = "{{asset}}.sha512"

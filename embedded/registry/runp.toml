@@ -1,0 +1,11 @@
+[runp]
+backend = "github"
+repo = "enr/runp"
+asset = "runp-{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+extract = "runp{{ext}}"
+chmod = "0755"
+platforms = ["linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"]
+
+[runp.verify]
+sha256_asset = "runp-{{version}}_checksums.txt"

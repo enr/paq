@@ -1,0 +1,15 @@
+{{ define "main" }}
+<section class="hero">
+  <h1>paq</h1>
+  <p class="tagline">{{ site.Params.description }}</p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="{{ "docs" | relURL }}">Get started</a>
+    <a class="btn" href="{{ site.Params.repo }}">GitHub</a>
+  </div>
+  <p class="version">latest: {{ site.Params.currentAppVersion }}</p>
+</section>
+
+<section class="content">
+  {{ .Content }}
+</section>
+{{ end }}

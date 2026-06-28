@@ -1,0 +1,19 @@
+[ripgrep]
+backend = "github"
+repo = "BurntSushi/ripgrep"
+asset = "ripgrep-{{version}}-{{rust_target}}.tar.gz"
+archive = "tar.gz"
+extract = "rg{{ext}}"
+chmod = "0755"
+
+[ripgrep.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+# Windows ships a .zip instead of a .tar.gz.
+[ripgrep.windows]
+asset = "ripgrep-{{version}}-{{rust_target}}.zip"
+archive = "zip"
+
+[ripgrep.verify]
+sha256_asset = "{{asset}}.sha256"

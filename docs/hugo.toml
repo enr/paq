@@ -1,0 +1,23 @@
+baseURL = "https://enr.github.io/paq/"
+languageCode = "en-us"
+title = "paq"
+enableRobotsTXT = true
+
+[params]
+  currentAppVersion = "0.0.3-SNAPSHOT"
+  description = "Install and manage CLI tools from GitHub releases and direct URLs."
+  repo = "https://github.com/enr/paq"
+
+[markup.highlight]
+  noClasses = false
+  style = "github"
+
+[menu]
+  [[menu.main]]
+    name = "Home"
+    pageRef = "/"
+    weight = 10
+  [[menu.main]]
+    name = "Docs"
+    pageRef = "/docs"
+    weight = 20

@@ -1,0 +1,8 @@
+[templates]
+rust_target = "{{arch}}-{{vendor}}-{{os}}-{{env}}"
+
+[templates.darwin]
+rust_target = "{{arch}}-{{vendor}}-{{os}}"
+
+[templates.windows]
+rust_target = "{{arch}}-{{vendor}}-{{os}}-msvc"
