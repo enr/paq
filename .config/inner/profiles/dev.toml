@@ -1,6 +1,6 @@
 schema_version = "1"
-name          = "gip-dev"
-description   = "Interactive Claude Code session for developing gip (writable GOPATH/GOCACHE)"
+name          = "paq-dev"
+description   = "Interactive Claude Code session for developing paq"
 capabilities  = ["claude"]
 
 [sandbox]
