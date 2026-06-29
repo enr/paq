@@ -50,7 +50,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	// Upgrade di tutte le app del manifest in parallelo.
 	if len(cfg.Apps) == 0 {
-		fmt.Println("No apps configured in manifest (~/.config/paq/config.toml)")
+		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
 		return nil
 	}
 
@@ -154,25 +154,35 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 // destinazione differisce da quella della nuova versione: in caso contrario la
 // pipeline ha già sovrascritto l'installazione in-place.
 func cleanupOldVersions(name, keepVersion string, old []state.InstalledApp, info func(string, ...any)) error {
-	st, err := state.Load()
-	if err != nil {
-		return fmt.Errorf("load state: %w", err)
+	// Read the new record's dest to decide whether old files can be removed.
+	// (If both versions installed to the same path the pipeline already overwrote
+	// the files in-place; removing them would break the new install.)
+	var newDest string
+	if st, err := state.Load(); err == nil {
+		if rec, ok := st.Get(name, keepVersion); ok {
+			newDest = rec.Dest
+		}
 	}
-	newRec, _ := st.Get(name, keepVersion)
 
 	for _, rec := range old {
 		if rec.Version == keepVersion {
 			continue
 		}
-		if rec.Dest != newRec.Dest {
+		if rec.Dest != newDest {
 			if err := removeRecordFiles(rec); err != nil {
 				return err
 			}
 		}
-		st.Delete(rec.Name, rec.Version)
 	}
 
-	if err := st.Save(); err != nil {
+	if err := state.Update(func(st *state.State) error {
+		for _, rec := range old {
+			if rec.Version != keepVersion {
+				st.Delete(rec.Name, rec.Version)
+			}
+		}
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 	info("upgraded to %s", keepVersion)

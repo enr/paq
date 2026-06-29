@@ -1,8 +1,10 @@
 package state
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -64,6 +66,43 @@ func TestStateLoadSaveRoundtrip(t *testing.T) {
 	s3, _ := Load()
 	if _, ok := s3.Get("rg", "14.1.1"); ok {
 		t.Error("rg should have been deleted")
+	}
+}
+
+// TestConcurrentUpdate verifies that parallel Update calls do not lose records.
+func TestConcurrentUpdate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	const n = 10
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := range n {
+		i := i
+		go func() {
+			defer wg.Done()
+			err := Update(func(st *State) error {
+				st.Set(InstalledApp{
+					Name:    fmt.Sprintf("app%d", i),
+					Version: "1.0.0",
+					Kind:    "file",
+					Dest:    fmt.Sprintf("/usr/bin/app%d", i),
+				})
+				return nil
+			})
+			if err != nil {
+				t.Errorf("Update error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	st, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Packages) != n {
+		t.Errorf("got %d packages, want %d — concurrent Update lost records", len(st.Packages), n)
 	}
 }
 

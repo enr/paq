@@ -7,8 +7,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"sync"
 	"time"
 )
+
+// mu serializes load-modify-save sequences so that concurrent goroutines
+// (e.g. parallel install) do not overwrite each other's state records.
+var mu sync.Mutex
 
 // schemaVersion è la versione corrente del formato dello state file.
 const schemaVersion = 2
@@ -174,6 +179,21 @@ func (s *State) sort() {
 		}
 		return s.Packages[i].Version < s.Packages[j].Version
 	})
+}
+
+// Update runs fn inside a mutex that serializes the load-modify-save
+// sequence, preventing concurrent goroutines from clobbering each other.
+func Update(fn func(*State) error) error {
+	mu.Lock()
+	defer mu.Unlock()
+	st, err := Load()
+	if err != nil {
+		return err
+	}
+	if err := fn(st); err != nil {
+		return err
+	}
+	return st.Save()
 }
 
 func emptyState() *State {

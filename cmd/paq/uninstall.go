@@ -10,6 +10,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	flagUninstallDryRun bool
+	flagUninstallYes    bool
+)
+
 var uninstallCmd = &cobra.Command{
 	Use:     "uninstall <app[@version]>",
 	Aliases: []string{"rm", "remove"},
@@ -19,6 +24,8 @@ var uninstallCmd = &cobra.Command{
 }
 
 func init() {
+	uninstallCmd.Flags().BoolVar(&flagUninstallDryRun, "dry-run", false, "Show what would be removed without removing anything")
+	uninstallCmd.Flags().BoolVarP(&flagUninstallYes, "yes", "y", false, "Skip confirmation prompt")
 	rootCmd.AddCommand(uninstallCmd)
 }
 
@@ -32,9 +39,10 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	matches := st.ByName(name)
 	if len(matches) == 0 {
-		ui.Fail("%q is not installed", name)
-		ui.Hint("list installed tools with `paq ls`")
-		os.Exit(1)
+		return hintError{
+			msg:  fmt.Sprintf("%q is not installed", name),
+			hint: "list installed tools with `paq ls`",
+		}
 	}
 
 	// Seleziona le entry da rimuovere
@@ -42,9 +50,10 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	if version != "" {
 		rec, ok := st.Get(name, version)
 		if !ok {
-			ui.Fail("%s@%s is not installed", name, version)
-			ui.Hint("list installed versions with `paq ls`")
-			os.Exit(1)
+			return hintError{
+				msg:  fmt.Sprintf("%s@%s is not installed", name, version),
+				hint: "list installed versions with `paq ls`",
+			}
 		}
 		targets = []state.InstalledApp{rec}
 	} else if len(matches) == 1 {
@@ -55,13 +64,27 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		for _, m := range matches {
 			versions = append(versions, m.Version)
 		}
-		ui.Fail("multiple versions of %q installed: %s", name, strings.Join(versions, ", "))
-		ui.Hint("specify one with %s@<version>", name)
-		os.Exit(1)
+		return hintError{
+			msg:  fmt.Sprintf("multiple versions of %q installed: %s", name, strings.Join(versions, ", ")),
+			hint: fmt.Sprintf("specify one with %s@<version>", name),
+		}
+	}
+
+	if flagUninstallDryRun {
+		ui.Step("dry-run: would remove:")
+		for _, rec := range targets {
+			ui.Step("  %s %s → %s", rec.Name, rec.Version, rec.Dest)
+			if rec.Kind == "binaries" {
+				for _, f := range rec.Files {
+					ui.Step("    %s", f)
+				}
+			}
+		}
+		return nil
 	}
 
 	for _, rec := range targets {
-		fmt.Printf("Uninstalling %s %s from %s...\n", rec.Name, rec.Version, rec.Dest)
+		ui.Step("Uninstalling %s %s from %s...", rec.Name, rec.Version, rec.Dest)
 		if err := removeRecordFiles(rec); err != nil {
 			return err
 		}
@@ -72,7 +95,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("save state: %w", err)
 	}
 
-	fmt.Printf("✓ %s uninstalled\n", name)
+	ui.OK("%s uninstalled", name)
 	return nil
 }
 

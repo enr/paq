@@ -12,6 +12,15 @@ import (
 // total è -1 se il server non ha fornito Content-Length.
 type ProgressFn func(downloaded, total int64)
 
+// NewClient returns an *http.Client suitable for file downloads.
+// It does not set an overall Timeout so large files are not cut off;
+// connection-level timeouts come from http.DefaultTransport, and the
+// caller's context handles cancellation. Centralizing construction here
+// allows future tuning in one place.
+func NewClient() *http.Client {
+	return &http.Client{}
+}
+
 // ToTemp scarica url in un file temporaneo e ritorna il path del file.
 // Il chiamante è responsabile di eliminare il file temporaneo dopo l'uso.
 // progress può essere nil.

@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var flagInstallForce bool
+
 const maxParallel = 3
 
 var installCmd = &cobra.Command{
@@ -24,6 +26,7 @@ var installCmd = &cobra.Command{
 }
 
 func init() {
+	installCmd.Flags().BoolVarP(&flagInstallForce, "force", "f", false, "Reinstall even if already installed")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -37,13 +40,14 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	if len(args) == 1 {
 		hooks := appHooks(args[0], "")
+		hooks.Force = flagInstallForce
 		progress := ui.NewProgressFn(args[0])
 		return install.Run(ctx, cfg, args[0], progress, hooks)
 	}
 
 	// Installa tutte le app del manifest in parallelo (max maxParallel goroutine)
 	if len(cfg.Apps) == 0 {
-		fmt.Println("No apps configured in manifest (~/.config/paq/config.toml)")
+		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
 		return nil
 	}
 
@@ -58,6 +62,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)
 			lockedHooks := lockedAppHooks(prefix, &stdoutMu)
+			lockedHooks.Force = flagInstallForce
 			if err := install.Run(ctx, cfg, name, nil, lockedHooks); err != nil {
 				// La pipeline mostra già l'errore via OnFail; lo ristampiamo solo
 				// se per qualche motivo non è stato mostrato.

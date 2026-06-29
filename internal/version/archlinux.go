@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // archPackagesAPI is the official Arch Linux JSON API endpoint that returns
@@ -42,7 +43,7 @@ func (p ArchLinuxProvider) Resolve(ctx context.Context) (string, string, error) 
 
 	client := p.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
 	reqURL := archPackagesAPI + "?name=" + url.QueryEscape(p.Pkg)

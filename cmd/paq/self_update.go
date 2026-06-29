@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -97,13 +96,13 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.Step("Downloading %s...", assetName)
-	zipPath, err := download.ToTemp(ctx, &http.Client{}, url, ui.NewProgressFn("paq"))
+	zipPath, err := download.ToTemp(ctx, download.NewClient(), url, ui.NewProgressFn("paq"))
 	if err != nil {
 		return fmt.Errorf("download release: %w", err)
 	}
 	defer os.Remove(zipPath)
 
-	sumsPath, err := download.ToTemp(ctx, &http.Client{}, sumsURL, nil)
+	sumsPath, err := download.ToTemp(ctx, download.NewClient(), sumsURL, nil)
 	if err != nil {
 		return fmt.Errorf("download checksums: %w", err)
 	}
