@@ -21,6 +21,11 @@ var (
 	// debugTagStyle colora il tag "[debug]" in magenta acceso così il livello
 	// si distingue subito dal testo grigio del messaggio.
 	debugTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
+	// Stili per le righe chiave/valore della diagnostica (es. `doctor`): chiave
+	// in grassetto neutro e allineata, valore in ciano, così da distinguere
+	// a colpo d'occhio etichetta e contenuto.
+	fieldKeyStyle = lipgloss.NewStyle().Bold(true).Width(14)             // etichetta
+	fieldValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("14")) // ciano (valore)
 )
 
 // render formatta "<symbol> <text>" colorando entrambi quando i colori sono
@@ -57,6 +62,43 @@ func OK(msg string, args ...any) {
 		out = os.Stderr
 	}
 	fmt.Fprintln(out, render(okStyle, "✓", fmt.Sprintf(msg, args...)))
+}
+
+// renderField formatta una riga chiave/valore "<symbol> <key>: <value> <note>":
+// il simbolo è colorato dallo stato (symStyle), la chiave in grassetto, il valore
+// in ciano e l'eventuale nota in grigio. Senza colori ritorna testo allineato.
+func renderField(symStyle lipgloss.Style, symbol, label, value, note string) string {
+	if !IsColorEnabled() {
+		line := fmt.Sprintf("%s %-14s %s", symbol, label+":", value)
+		if note != "" {
+			line += " " + note
+		}
+		return line
+	}
+	line := symStyle.Render(symbol) + " " + fieldKeyStyle.Render(label+":") + " " + fieldValStyle.Render(value)
+	if note != "" {
+		line += " " + dimStyle.Render(note)
+	}
+	return line
+}
+
+// OKField stampa una riga diagnostica "✓ chiave: valore" (verde).
+// Come OK: su stdout, soppresso con --quiet, su stderr in modalità --json.
+func OKField(label, value string) {
+	if Global.Quiet {
+		return
+	}
+	out := os.Stdout
+	if Global.JSON {
+		out = os.Stderr
+	}
+	fmt.Fprintln(out, renderField(okStyle, "✓", label, value, ""))
+}
+
+// WarnField stampa una riga diagnostica "! chiave: valore (nota)" (giallo) su
+// stderr; la nota è in grigio e può essere vuota. Come Warn non è gated da --quiet.
+func WarnField(label, value, note string) {
+	fmt.Fprintln(os.Stderr, renderField(warnStyle, "!", label, value, note))
 }
 
 // Fail stampa un messaggio di errore su stderr (rosso).

@@ -26,29 +26,29 @@ func init() {
 
 func runDoctor(_ *cobra.Command, _ []string) error {
 	plat := platform.Detect()
-	ui.OK("Platform: %s/%s", plat.OS, plat.Arch)
+	ui.OKField("Platform", plat.OS+"/"+plat.Arch)
 
 	if cfgPath, err := config.UserManifestPath(); err == nil {
 		if _, err := os.Stat(cfgPath); err == nil {
-			ui.OK("Config: %s", cfgPath)
+			ui.OKField("Config", cfgPath)
 		} else {
-			ui.Warn("Config: %s (not found)", cfgPath)
+			ui.WarnField("Config", cfgPath, "(not found)")
 		}
 	}
 
 	if stPath, err := state.StatePath(); err == nil {
 		if _, err := os.Stat(stPath); err == nil {
-			ui.OK("State: %s", stPath)
+			ui.OKField("State", stPath)
 		} else {
-			ui.Warn("State: %s (not found — no apps installed yet)", stPath)
+			ui.WarnField("State", stPath, "(not found — no apps installed yet)")
 		}
 	}
 
 	cfg, err := loadConfig()
 	if err == nil {
 		binDir, optDir := config.DefaultDestRoots(cfg.Defaults)
-		ui.OK("Bin dir:  %s", binDir)
-		ui.OK("Opt dir:  %s", optDir)
+		ui.OKField("Bin dir", binDir)
+		ui.OKField("Opt dir", optDir)
 
 		// Check whether bin dir is in PATH.
 		resolvedBin := expandHome(binDir)
@@ -68,9 +68,9 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	if os.Getenv("GITHUB_TOKEN") != "" {
-		ui.OK("GITHUB_TOKEN: set")
+		ui.OKField("GITHUB_TOKEN", "set")
 	} else {
-		ui.Warn("GITHUB_TOKEN: not set (GitHub API calls may be rate-limited)")
+		ui.WarnField("GITHUB_TOKEN", "not set", "(GitHub API calls may be rate-limited)")
 		ui.Hint("set GITHUB_TOKEN to avoid rate-limiting when installing GitHub-backed tools")
 	}
 
