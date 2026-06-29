@@ -87,14 +87,17 @@ is the easy way to guarantee this.
 ## Commands
 
 ```bash
-# Generate a default manifest entry for a registry tool (prints it)
+# Install a registry tool: records a default entry in the manifest, then installs
+paq install ripgrep
+# install without recording it in the manifest (ephemeral)
+paq install ripgrep --no-save
+
+# Generate a default manifest entry without installing (prints it)
 paq import ripgrep
 # ...and add it to your manifest
 paq import ripgrep --write
-# customise name / destination / version
+# customise name / destination / version, then install by that name
 paq import ripgrep --as rg --dest ~/bin/rg --write
-
-# Install a tool
 paq install rg
 
 # Install all tools from manifest

@@ -65,10 +65,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	//   --version esplicito > default_version della spec > "latest".
 	// Scrivere il default_version concreto rende il manifest auto-documentante;
 	// l'utente passa esplicitamente a "latest" per la risoluzione live.
-	ver := "latest"
-	if spec.DefaultVersion != "" {
-		ver = spec.DefaultVersion
-	}
+	ver := defaultImportVersion(spec)
 	if flagImportVersion != "" {
 		ver = flagImportVersion
 	}
@@ -125,6 +122,15 @@ func runImport(cmd *cobra.Command, args []string) error {
 	ui.OK("imported %s → %s", key, path)
 	ui.Hint("install it with `paq install %s`", key)
 	return nil
+}
+
+// defaultImportVersion sceglie la versione di default per una entry generata:
+// il default_version concreto della spec se presente, altrimenti "latest".
+func defaultImportVersion(spec config.Spec) string {
+	if spec.DefaultVersion != "" {
+		return spec.DefaultVersion
+	}
+	return "latest"
 }
 
 // renderAppEntryTOML produce il blocco "[apps.<key>]" con i soli campi valorizzati.

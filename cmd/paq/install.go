@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -13,7 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var flagInstallForce bool
+var (
+	flagInstallForce  bool
+	flagInstallNoSave bool
+)
 
 const maxParallel = 3
 
@@ -27,6 +31,7 @@ var installCmd = &cobra.Command{
 
 func init() {
 	installCmd.Flags().BoolVarP(&flagInstallForce, "force", "f", false, "Reinstall even if already installed")
+	installCmd.Flags().BoolVar(&flagInstallNoSave, "no-save", false, "Install without recording the tool in the manifest (ephemeral)")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -39,10 +44,18 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	if len(args) == 1 {
-		hooks := appHooks(args[0], "")
+		name := args[0]
+		path, err := ensureManifestEntry(cfg, name, !flagInstallNoSave)
+		if err != nil {
+			return err
+		}
+		if path != "" {
+			ui.OK("added %s to %s", name, path)
+		}
+		hooks := appHooks(name, "")
 		hooks.Force = flagInstallForce
-		progress := ui.NewProgressFn(args[0])
-		return install.Run(ctx, cfg, args[0], progress, hooks)
+		progress := ui.NewProgressFn(name)
+		return install.Run(ctx, cfg, name, progress, hooks)
 	}
 
 	// Installa tutte le app del manifest in parallelo (max maxParallel goroutine)
@@ -78,6 +91,53 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	return g.Wait()
+}
+
+// ensureManifestEntry garantisce che cfg.Apps[name] esista, così che install
+// possa procedere. Se name manca dal manifest ma corrisponde a una spec del
+// registry, sintetizza una entry di default (auto-import): la inietta in
+// cfg.Apps in memoria e — se save è true — la persiste nel manifest utente.
+// Ritorna il path scritto ("" se non persistito o se l'app era già presente)
+// oppure un hintError se name non è né un'app né una spec nota.
+func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, error) {
+	if _, exists := cfg.Apps[name]; exists {
+		return "", nil
+	}
+
+	spec, ok := cfg.Specs[name]
+	if !ok {
+		hint := "list available definitions with `paq registry`"
+		if s := similarSpecs(cfg.Specs, name); len(s) > 0 {
+			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
+		}
+		return "", hintError{
+			msg:  fmt.Sprintf("%q is not in your manifest and not a known registry spec", name),
+			hint: hint,
+		}
+	}
+
+	if !validAppKey(name) {
+		return "", fmt.Errorf("invalid app name %q: use only letters, digits, '-' or '_'", name)
+	}
+
+	entry := config.AppEntry{
+		Use:     name,
+		Version: defaultImportVersion(spec),
+		Dest:    config.DefaultDest(spec, name, cfg.Defaults),
+	}
+	// Rende l'app installabile in memoria, a prescindere dalla persistenza.
+	cfg.Apps[name] = entry
+
+	if !save {
+		return "", nil
+	}
+
+	block := renderAppEntryTOML(name, entry)
+	path, err := config.WriteManifestEntry(name, block, false)
+	if err != nil {
+		return "", fmt.Errorf("write manifest entry: %w", err)
+	}
+	return path, nil
 }
 
 // appHooks costruisce gli Hooks per un singolo app (usato per install singola).

@@ -1,0 +1,115 @@
+package main
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/enr/paq/internal/config"
+)
+
+// newTestConfig costruisce un Config minimale con una spec "ripgrep" nel
+// registry e nessuna app nel manifest.
+func newTestConfig() *config.Config {
+	return &config.Config{
+		Specs: map[string]config.Spec{
+			"ripgrep": {Extract: "rg{{ext}}"},
+		},
+		Apps: map[string]config.AppEntry{},
+	}
+}
+
+func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := newTestConfig()
+	path, err := ensureManifestEntry(cfg, "ripgrep", true)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if path == "" {
+		t.Fatal("expected a manifest path, got empty")
+	}
+	if _, ok := cfg.Apps["ripgrep"]; !ok {
+		t.Fatal("expected cfg.Apps[ripgrep] to be set in memory")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if !strings.Contains(string(data), "[apps.ripgrep]") {
+		t.Fatalf("manifest missing [apps.ripgrep], got:\n%s", data)
+	}
+}
+
+func TestEnsureManifestEntryNoSave(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := newTestConfig()
+	path, err := ensureManifestEntry(cfg, "ripgrep", false)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if path != "" {
+		t.Fatalf("expected empty path with save=false, got %q", path)
+	}
+	if _, ok := cfg.Apps["ripgrep"]; !ok {
+		t.Fatal("expected cfg.Apps[ripgrep] to be set in memory")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "paq", "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("expected no manifest file with save=false, stat err = %v", err)
+	}
+}
+
+func TestEnsureManifestEntryExistingApp(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := newTestConfig()
+	cfg.Apps["ripgrep"] = config.AppEntry{Use: "ripgrep", Version: "1.2.3"}
+	path, err := ensureManifestEntry(cfg, "ripgrep", true)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if path != "" {
+		t.Fatalf("expected empty path for existing app, got %q", path)
+	}
+	if cfg.Apps["ripgrep"].Version != "1.2.3" {
+		t.Fatal("existing entry must not be overwritten")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "paq", "config.toml")); !os.IsNotExist(err) {
+		t.Fatal("existing app must not trigger a manifest write")
+	}
+}
+
+func TestEnsureManifestEntryUnknownSpec(t *testing.T) {
+	cfg := newTestConfig()
+	_, err := ensureManifestEntry(cfg, "rip", true) // substring of "ripgrep"
+	if err == nil {
+		t.Fatal("expected an error for unknown spec")
+	}
+	var he hintError
+	if !errors.As(err, &he) {
+		t.Fatalf("expected hintError, got %T: %v", err, err)
+	}
+	if !strings.Contains(he.hint, "did you mean") || !strings.Contains(he.hint, "ripgrep") {
+		t.Fatalf("expected a did-you-mean hint naming ripgrep, got %q", he.hint)
+	}
+}
+
+func TestEnsureManifestEntryUnknownNoSuggestion(t *testing.T) {
+	cfg := newTestConfig()
+	_, err := ensureManifestEntry(cfg, "zzz", true) // no substring match
+	var he hintError
+	if !errors.As(err, &he) {
+		t.Fatalf("expected hintError, got %T: %v", err, err)
+	}
+	if !strings.Contains(he.hint, "paq registry") {
+		t.Fatalf("expected the registry fallback hint, got %q", he.hint)
+	}
+}
