@@ -153,7 +153,7 @@ type Defaults struct {
 // Config è la configurazione completa post-merge (registry + manifest utente).
 type Config struct {
 	Specs map[string]Spec
-	Apps    map[string]AppEntry
+	Apps  map[string]AppEntry
 	// Defaults sono i default configurabili dall'utente (sezione [defaults]).
 	Defaults Defaults
 	// GlobalTemplates contiene i meta-template globali da templates.toml
