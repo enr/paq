@@ -141,12 +141,19 @@ paq completion bash   # or zsh, fish, powershell
 
 ## Adding a custom recipe
 
-Create `~/.config/paq/config.toml` and add a recipe entry directly, or create a registry file and reference it. The embedded registry includes `ripgrep`, `bat`, `delta`, `hugo`, `fresh`, `zipp`, `jdk`, `maven`, and `temurin-11`/`temurin-17`/`temurin-21` as reference implementations.
+You are not limited to the embedded registry: add your own recipes to
+`~/.config/paq/config.toml` under the `[specs.<name>]` table. A user recipe uses
+the same fields as the embedded ones and is installable like any registry tool —
+`paq install <name>` auto-imports it into the manifest. If a user recipe shares
+its name with an embedded one, the user recipe wins, so you can also patch a
+stale embedded recipe without waiting for a release. The embedded registry
+includes `ripgrep`, `bat`, `delta`, `hugo`, `fresh`, `zipp`, `jdk`, `maven`, and
+`temurin-11`/`temurin-17`/`temurin-21` as reference implementations.
 
 A recipe for a GitHub-hosted tool:
 
 ```toml
-[mytool]
+[specs.mytool]
 backend = "github"
 repo = "owner/mytool"
 asset = "mytool-{{version}}-{{rust_target}}.tar.gz"
@@ -154,19 +161,22 @@ archive = "tar.gz"
 extract = "mytool{{ext}}"
 chmod = "0755"
 
-[mytool.arch]
+[specs.mytool.arch]
 amd64 = "x86_64"
 arm64 = "aarch64"
 
-[mytool.verify]
+[specs.mytool.verify]
 sha256_asset = "{{asset}}.sha256"
+
+# Then install it (auto-imported into [apps.mytool]):
+#   paq install mytool
 ```
 
 A recipe for an archive containing **multiple executables** (each installed into
 a bin directory):
 
 ```toml
-[mytool]
+[specs.mytool]
 backend = "github"
 repo = "owner/mytool"
 asset = "mytool-{{version}}_{{os}}_{{arch}}.zip"
@@ -189,7 +199,7 @@ downloaded asset *is* the executable. This covers releases that publish a bare
 binary whose name embeds os/arch/version, installing it under a clean name:
 
 ```toml
-[mytool]
+[specs.mytool]
 backend = "github"
 repo = "owner/mytool"
 asset = "mytool_{{version}}_{{os}}_{{arch}}{{ext}}"
@@ -200,7 +210,7 @@ binaries = [ { to = "mytool{{ext}}" } ]   # one entry; the artifact is the binar
 A recipe for a direct URL:
 
 ```toml
-[mytool]
+[specs.mytool]
 backend = "url"
 source = "https://example.com/releases/mytool-{{version}}-{{os}}-{{arch}}.tar.gz"
 archive = "tar.gz"
@@ -218,7 +228,7 @@ source. The `arch-linux` strategy reads the version a package has in the officia
 Arch Linux repositories (`core`/`extra`) via the official JSON API:
 
 ```toml
-[mytool]
+[specs.mytool]
 backend = "url"
 source = "https://example.com/releases/mytool-{{version}}-{{os}}-{{arch}}.tar.gz"
 archive = "tar.gz"

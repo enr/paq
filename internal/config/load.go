@@ -103,7 +103,14 @@ func parseSpecFile(data []byte) (map[string]Spec, error) {
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
+	return parseSpecsFromRaw(raw)
+}
 
+// parseSpecsFromRaw converte una mappa nome→tabella-spec (già decodificata da
+// TOML in forma generica) in Spec, estraendo le sezioni per-OS (es. [x.darwin])
+// come OSOverrides. È condivisa dal parsing della registry embedded e da quello
+// delle spec definite dall'utente nel manifest (sezione [specs.*]).
+func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 	result := make(map[string]Spec)
 
 	for specName, specVal := range raw {
@@ -191,6 +198,10 @@ func userConfigPath() (string, error) {
 type userConfigRaw struct {
 	Apps     map[string]AppEntry `toml:"apps"`
 	Defaults Defaults            `toml:"defaults"`
+	// Specs raccoglie le ricette definite dall'utente nella sezione [specs.*],
+	// nello stesso formato dei file della registry embedded. Decodificate in
+	// forma generica e poi convertite in Spec da parseSpecsFromRaw.
+	Specs map[string]any `toml:"specs"`
 }
 
 // LoadUserConfig carica il manifest da ~/.config/paq/config.toml.
@@ -217,7 +228,13 @@ func LoadUserConfig() (*Config, error) {
 	if raw.Apps == nil {
 		raw.Apps = make(map[string]AppEntry)
 	}
-	return &Config{Apps: raw.Apps, Defaults: raw.Defaults}, nil
+
+	specs, err := parseSpecsFromRaw(raw.Specs)
+	if err != nil {
+		return nil, fmt.Errorf("parse user specs: %w", err)
+	}
+
+	return &Config{Apps: raw.Apps, Defaults: raw.Defaults, Specs: specs}, nil
 }
 
 // Merge unisce la registry embedded con il manifest utente.
@@ -225,7 +242,7 @@ func LoadUserConfig() (*Config, error) {
 func Merge(embeddedSpecs map[string]Spec, user *Config) (*Config, error) {
 	cfg := &Config{
 		Specs: make(map[string]Spec, len(embeddedSpecs)),
-		Apps:    make(map[string]AppEntry),
+		Apps:  make(map[string]AppEntry),
 	}
 
 	for k, v := range embeddedSpecs {
@@ -233,6 +250,12 @@ func Merge(embeddedSpecs map[string]Spec, user *Config) (*Config, error) {
 	}
 
 	if user != nil {
+		// Le ricette definite dall'utente ([specs.*]) sovrascrivono quelle
+		// embedded con lo stesso nome (last-write-wins): permette di aggiungere
+		// nuovi tool e di correggere una ricetta embedded obsoleta senza rilascio.
+		for k, v := range user.Specs {
+			cfg.Specs[k] = v
+		}
 		for k, v := range user.Apps {
 			cfg.Apps[k] = v
 		}

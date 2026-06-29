@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/enr/paq/embedded"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestLoadEmbeddedRegistry(t *testing.T) {
@@ -171,5 +172,92 @@ binaries = [
 	}
 	if r.Binaries[1].From != "b{{ext}}" || r.Binaries[1].To != "bb{{ext}}" {
 		t.Errorf("Binaries[1] = %+v, want {From:b{{ext}} To:bb{{ext}}}", r.Binaries[1])
+	}
+}
+
+// TestUserConfigSpecs verifica che una ricetta definita dall'utente nella sezione
+// [specs.*] del manifest venga decodificata in Spec, comprese le sottosezioni
+// arch/verify e l'override per-OS (es. [specs.mytool.darwin]).
+func TestUserConfigSpecs(t *testing.T) {
+	data := []byte(`
+[apps.mytool]
+use = "mytool"
+version = "latest"
+
+[specs.mytool]
+backend = "github"
+repo = "owner/mytool"
+asset = "mytool-{{version}}-{{rust_target}}.tar.gz"
+archive = "tar.gz"
+extract = "mytool{{ext}}"
+
+[specs.mytool.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+[specs.mytool.verify]
+sha256_asset = "{{asset}}.sha256"
+
+[specs.mytool.darwin]
+strip_components = 1
+`)
+	var raw userConfigRaw
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	specs, err := parseSpecsFromRaw(raw.Specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s, ok := specs["mytool"]
+	if !ok {
+		t.Fatal("mytool spec not found")
+	}
+	if s.Backend != "github" {
+		t.Errorf("Backend = %q, want github", s.Backend)
+	}
+	if s.Repo != "owner/mytool" {
+		t.Errorf("Repo = %q, want owner/mytool", s.Repo)
+	}
+	if s.Arch["amd64"] != "x86_64" {
+		t.Errorf("Arch[amd64] = %q, want x86_64", s.Arch["amd64"])
+	}
+	if s.Verify.SHA256Asset != "{{asset}}.sha256" {
+		t.Errorf("Verify.SHA256Asset = %q, want {{asset}}.sha256", s.Verify.SHA256Asset)
+	}
+	darwin, ok := s.OSOverrides["darwin"]
+	if !ok {
+		t.Fatal("darwin override not found")
+	}
+	if darwin.StripComponents == nil || *darwin.StripComponents != 1 {
+		t.Errorf("darwin StripComponents = %v, want 1", darwin.StripComponents)
+	}
+}
+
+// TestMergeUserSpecsOverride verifica che le ricette utente si aggiungano a quelle
+// embedded e, in caso di nome in comune, le sovrascrivano (last-write-wins).
+func TestMergeUserSpecsOverride(t *testing.T) {
+	embedded := map[string]Spec{
+		"ripgrep": {Backend: "github", Repo: "BurntSushi/ripgrep"},
+	}
+	user := &Config{
+		Specs: map[string]Spec{
+			"mytool":  {Backend: "github", Repo: "owner/mytool"},
+			"ripgrep": {Backend: "url", Source: "https://example.com/rg"},
+		},
+	}
+
+	cfg, err := Merge(embedded, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := cfg.Specs["mytool"]; !ok {
+		t.Error("user spec mytool not merged")
+	}
+	rg := cfg.Specs["ripgrep"]
+	if rg.Backend != "url" || rg.Source != "https://example.com/rg" {
+		t.Errorf("ripgrep = %+v, want user override (backend url)", rg)
 	}
 }
