@@ -1,17 +1,36 @@
 package main
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/enr/paq/internal/install"
 	"github.com/enr/paq/internal/ui"
 )
 
+// hintError carries an error message together with an actionable hint.
+// Commands use it instead of ui.Fail+ui.Hint+os.Exit so that errors propagate
+// normally and reportError can print the hint through the central path.
+type hintError struct {
+	msg  string
+	hint string
+}
+
+func (e hintError) Error() string { return e.msg }
+
 // reportError è il punto unico di presentazione degli errori del CLI.
 // Stampa l'errore in rosso (se non già mostrato dalla pipeline) e, quando
 // possibile, un suggerimento concreto su come risolverlo.
 func reportError(err error) {
 	if err == nil {
+		return
+	}
+	var he hintError
+	if errors.As(err, &he) {
+		ui.Fail("%s", he.msg)
+		if he.hint != "" {
+			ui.Hint("%s", he.hint)
+		}
 		return
 	}
 	if !install.ErrAlreadyShown(err) {

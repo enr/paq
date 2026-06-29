@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
@@ -30,9 +29,10 @@ func runInfo(cmd *cobra.Command, args []string) error {
 
 	app, ok := cfg.Apps[appName]
 	if !ok {
-		ui.Fail("app %q not found in manifest (~/.config/paq/config.toml)", appName)
-		ui.Hint("list configured apps with `paq ls`, or add it under [apps.%s] in your manifest", appName)
-		os.Exit(1)
+		return hintError{
+			msg:  fmt.Sprintf("app %q not found in manifest (~/.config/paq/config.toml)", appName),
+			hint: fmt.Sprintf("list configured apps with `paq ls`, or add it under [apps.%s] in your manifest", appName),
+		}
 	}
 
 	specName := app.Use

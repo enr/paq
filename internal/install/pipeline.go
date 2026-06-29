@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +31,8 @@ type Hooks struct {
 	OnInfo  func(msg string)
 	OnWarn  func(msg string)
 	OnDebug func(msg string)
+	// Force bypasses the already-installed check and reinstalls unconditionally.
+	Force bool
 }
 
 // shownError marca un errore già mostrato all'utente tramite l'hook OnFail,
@@ -151,6 +152,16 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	ok(fmt.Sprintf("Version: %s (tag: %s)", ver, tag))
 
+	// FEATURE-1: skip if already installed (unless --force).
+	if !hooks.Force {
+		if st, lerr := state.Load(); lerr == nil {
+			if _, exists := st.Get(appName, ver); exists {
+				ok(fmt.Sprintf("%s %s is already installed (use --force to reinstall)", appName, ver))
+				return nil
+			}
+		}
+	}
+
 	// 3. Costruisci le variabili di template
 	versionMajor, versionMinor, versionPatch := version.Parse(ver)
 	versionBuild := version.Build(tag)
@@ -240,7 +251,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	dbg("asset name: %q", assetName)
 
-	client := &http.Client{}
+	client := download.NewClient()
 
 	// 7. Scarica file checksum/firma (se configurati)
 	var checksumPath, checksum512Path, sigPath string
@@ -422,22 +433,20 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	ok(fmt.Sprintf("Installed %s %s → %s", appName, ver, dest))
 
-	// 13. Registra nello state DB
-	st, err := state.Load()
-	if err != nil {
-		return fmt.Errorf("load state: %w", err)
-	}
-	st.Set(state.InstalledApp{
-		Name:        appName,
-		Version:     ver,
-		Kind:        kind,
-		Dest:        dest,
-		Files:       installedFiles,
-		Source:      downloadURL,
-		SHA256:      artifactSHA256,
-		InstalledAt: time.Now().UTC(),
-	})
-	if err := st.Save(); err != nil {
+	// 13. Registra nello state DB (sotto mutex per evitare race con altre goroutine parallele)
+	if err := state.Update(func(st *state.State) error {
+		st.Set(state.InstalledApp{
+			Name:        appName,
+			Version:     ver,
+			Kind:        kind,
+			Dest:        dest,
+			Files:       installedFiles,
+			Source:      downloadURL,
+			SHA256:      artifactSHA256,
+			InstalledAt: time.Now().UTC(),
+		})
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
 	dbg("state record saved: name=%q version=%q kind=%q", appName, ver, kind)

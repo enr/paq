@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/enr/paq/internal/template"
 )
@@ -31,7 +32,7 @@ type githubRelease struct {
 func (b GitHubBackend) Resolve(ctx context.Context, tag string, v template.Vars) (string, error) {
 	client := b.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
 	// Espandi il template per ottenere il nome dell'asset cercato

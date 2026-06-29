@@ -33,20 +33,30 @@ func render(style lipgloss.Style, symbol, text string) string {
 }
 
 // Step stampa un messaggio di step in corso (es. "Downloading rg...").
-// Soppresso con --quiet.
+// Soppresso con --quiet. In modalità --json viene scritto su stderr per non
+// sporcare stdout con testo non-JSON.
 func Step(msg string, args ...any) {
 	if Global.Quiet {
 		return
 	}
-	fmt.Println(render(stepStyle, "→", fmt.Sprintf(msg, args...)))
+	out := os.Stdout
+	if Global.JSON {
+		out = os.Stderr
+	}
+	fmt.Fprintln(out, render(stepStyle, "→", fmt.Sprintf(msg, args...)))
 }
 
 // OK stampa un messaggio di successo (verde).
+// In modalità --json viene scritto su stderr per non sporcare stdout.
 func OK(msg string, args ...any) {
 	if Global.Quiet {
 		return
 	}
-	fmt.Println(render(okStyle, "✓", fmt.Sprintf(msg, args...)))
+	out := os.Stdout
+	if Global.JSON {
+		out = os.Stderr
+	}
+	fmt.Fprintln(out, render(okStyle, "✓", fmt.Sprintf(msg, args...)))
 }
 
 // Fail stampa un messaggio di errore su stderr (rosso).
@@ -71,11 +81,16 @@ func Hint(msg string, args ...any) {
 }
 
 // Info stampa un messaggio informativo (con --verbose o --debug).
+// In modalità --json viene scritto su stderr per non sporcare stdout.
 func Info(msg string, args ...any) {
 	if !Global.Verbose && !Global.Debug {
 		return
 	}
-	fmt.Println(render(infoStyle, "·", fmt.Sprintf(msg, args...)))
+	out := os.Stdout
+	if Global.JSON {
+		out = os.Stderr
+	}
+	fmt.Fprintln(out, render(infoStyle, "·", fmt.Sprintf(msg, args...)))
 }
 
 // Debug stampa diagnostica dettagliata su stderr (con --debug): mostra i

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"os"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -27,13 +27,11 @@ func runRegistryShow(cmd *cobra.Command, args []string) error {
 
 	spec, ok := cfg.Specs[name]
 	if !ok {
-		ui.Fail("spec %q not found in registry", name)
+		hint := "list available definitions with `paq registry`"
 		if suggestions := similarSpecs(cfg.Specs, name); len(suggestions) > 0 {
-			ui.Hint("did you mean: %s?", strings.Join(suggestions, ", "))
-		} else {
-			ui.Hint("list available definitions with `paq registry`")
+			hint = fmt.Sprintf("did you mean: %s?", strings.Join(suggestions, ", "))
 		}
-		os.Exit(1)
+		return hintError{msg: fmt.Sprintf("spec %q not found in registry", name), hint: hint}
 	}
 
 	ui.PrintSpecDetail(name, spec)

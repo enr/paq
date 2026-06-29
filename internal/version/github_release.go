@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 )
 
 // GitHubReleaseProvider risolve la versione più recente da GitHub releases.
@@ -21,7 +22,7 @@ type githubReleaseResponse struct {
 func (p GitHubReleaseProvider) Resolve(ctx context.Context) (string, string, error) {
 	client := p.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", p.Repo)

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/enr/paq/internal/config"
@@ -47,13 +46,11 @@ func runImport(cmd *cobra.Command, args []string) error {
 	defName := args[0]
 	spec, ok := cfg.Specs[defName]
 	if !ok {
-		ui.Fail("spec %q not found in registry", defName)
+		hint := "list available definitions with `paq registry`"
 		if s := similarSpecs(cfg.Specs, defName); len(s) > 0 {
-			ui.Hint("did you mean: %s?", strings.Join(s, ", "))
-		} else {
-			ui.Hint("list available definitions with `paq registry`")
+			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
 		}
-		os.Exit(1)
+		return hintError{msg: fmt.Sprintf("spec %q not found in registry", defName), hint: hint}
 	}
 
 	key := defName
@@ -115,9 +112,10 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 
 	if _, exists := cfg.Apps[key]; exists && !flagImportForce {
-		ui.Fail("app %q already exists in the manifest", key)
-		ui.Hint("use --force to overwrite, or choose another name with --as")
-		os.Exit(1)
+		return hintError{
+			msg:  fmt.Sprintf("app %q already exists in the manifest", key),
+			hint: "use --force to overwrite, or choose another name with --as",
+		}
 	}
 
 	path, err := config.WriteManifestEntry(key, block, flagImportForce)
