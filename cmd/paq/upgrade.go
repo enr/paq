@@ -83,9 +83,17 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 // upgradeApp aggiorna una singola app: risolve la versione upstream più recente
 // e, se diversa da quella installata, reinstalla e rimuove le versioni vecchie.
 func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *install.Hooks, progress download.ProgressFn) error {
-	info := func(format string, a ...any) {
-		if hooks != nil && hooks.OnInfo != nil {
-			hooks.OnInfo(fmt.Sprintf(format, a...))
+	// step mostra un messaggio neutro (in corso / skip); ok un esito positivo.
+	// Entrambi sono visibili di default (soppressi solo da --quiet), così
+	// l'esito dell'upgrade non resta silenzioso senza --verbose.
+	step := func(format string, a ...any) {
+		if hooks != nil && hooks.OnStep != nil {
+			hooks.OnStep(fmt.Sprintf(format, a...))
+		}
+	}
+	ok := func(format string, a ...any) {
+		if hooks != nil && hooks.OnOK != nil {
+			hooks.OnOK(fmt.Sprintf(format, a...))
 		}
 	}
 
@@ -93,7 +101,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 
 	// Le app pinnate a una versione fissa non vengono aggiornate.
 	if strings.ToLower(app.Version) != "latest" {
-		info("pinned to %s, skipping", app.Version)
+		step("pinned to %s, skipping", app.Version)
 		return nil
 	}
 
@@ -103,7 +111,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	}
 	installed := st.ByName(name)
 	if len(installed) == 0 {
-		info("not installed, skipping (use 'paq install %s')", name)
+		step("not installed, skipping (use 'paq install %s')", name)
 		return nil
 	}
 
@@ -111,11 +119,11 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	if specName == "" {
 		specName = name
 	}
-	spec, ok := cfg.Specs[specName]
-	if !ok {
+	spec, found := cfg.Specs[specName]
+	if !found {
 		return fmt.Errorf("spec %q not found in registry", specName)
 	}
-	info("Resolving latest version...")
+	step("Resolving latest version...")
 	provider := version.LatestProvider(version.LatestRequest{
 		Strategy: spec.LatestStrategy,
 		Backend:  spec.Backend,
@@ -125,7 +133,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	})
 	latest, _, err := provider.Resolve(ctx)
 	if errors.Is(err, version.ErrLatestNotImplemented) {
-		info("backend %q has no upstream version to resolve, skipping", spec.Backend)
+		step("backend %q has no upstream version to resolve, skipping", spec.Backend)
 		return nil
 	}
 	if err != nil {
@@ -135,7 +143,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	// Se la versione più recente è già installata, niente da fare.
 	for _, rec := range installed {
 		if rec.Version == latest {
-			info("already up to date (%s)", latest)
+			ok("already up to date (%s)", latest)
 			return nil
 		}
 	}
@@ -146,14 +154,14 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	}
 
 	// Rimuovi le versioni precedenti rimaste nello stato.
-	return cleanupOldVersions(name, latest, installed, info)
+	return cleanupOldVersions(name, latest, installed, ok)
 }
 
 // cleanupOldVersions rimuove le entry di stato (e i relativi file) delle versioni
 // diverse da keepVersion dopo un upgrade. I file vengono rimossi solo se la
 // destinazione differisce da quella della nuova versione: in caso contrario la
 // pipeline ha già sovrascritto l'installazione in-place.
-func cleanupOldVersions(name, keepVersion string, old []state.InstalledApp, info func(string, ...any)) error {
+func cleanupOldVersions(name, keepVersion string, old []state.InstalledApp, ok func(string, ...any)) error {
 	// Read the new record's dest to decide whether old files can be removed.
 	// (If both versions installed to the same path the pipeline already overwrote
 	// the files in-place; removing them would break the new install.)
@@ -185,6 +193,6 @@ func cleanupOldVersions(name, keepVersion string, old []state.InstalledApp, info
 	}); err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
-	info("upgraded to %s", keepVersion)
+	ok("upgraded to %s", keepVersion)
 	return nil
 }
