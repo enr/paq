@@ -34,6 +34,18 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 		return "", fmt.Errorf("build request: %w", err)
 	}
 
+	// Gli asset delle release GitHub si scaricano via l'API asset endpoint
+	// (api.github.com/.../releases/assets/{id}) con Accept: octet-stream e, per
+	// i repo privati, il token. GitHub risponde con un redirect a una URL firmata;
+	// il client Go rimuove l'header Authorization sul cambio host, quindi il token
+	// non viene esposto allo storage di destinazione.
+	if req.URL.Host == "api.github.com" {
+		req.Header.Set("Accept", "application/octet-stream")
+		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("GET %s: %w", url, err)

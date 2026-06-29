@@ -384,12 +384,12 @@ func TestPipelineInstallFile(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"assets": []map[string]string{
 					{
-						"name":                 assetName,
-						"browser_download_url": "http://" + r.Host + "/download/" + assetName,
+						"name": assetName,
+						"url":  "http://" + r.Host + "/download/" + assetName,
 					},
 					{
-						"name":                 assetName + ".sha256",
-						"browser_download_url": "http://" + r.Host + "/download/" + assetName + ".sha256",
+						"name": assetName + ".sha256",
+						"url":  "http://" + r.Host + "/download/" + assetName + ".sha256",
 					},
 				},
 			})
@@ -469,12 +469,12 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"assets": []map[string]string{
 					{
-						"name":                 assetName,
-						"browser_download_url": "http://" + r.Host + "/download/" + assetName,
+						"name": assetName,
+						"url":  "http://" + r.Host + "/download/" + assetName,
 					},
 					{
-						"name":                 assetName + ".sha256",
-						"browser_download_url": "http://" + r.Host + "/download/" + assetName + ".sha256",
+						"name": assetName + ".sha256",
+						"url":  "http://" + r.Host + "/download/" + assetName + ".sha256",
 					},
 				},
 			})

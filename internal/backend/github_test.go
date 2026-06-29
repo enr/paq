@@ -13,8 +13,8 @@ import (
 func TestGitHubBackendResolve(t *testing.T) {
 	release := map[string]any{
 		"assets": []map[string]string{
-			{"name": "tool-1.0-linux-amd64.tar.gz", "browser_download_url": "https://example.com/tool-1.0-linux-amd64.tar.gz"},
-			{"name": "tool-1.0-darwin-arm64.tar.gz", "browser_download_url": "https://example.com/tool-1.0-darwin-arm64.tar.gz"},
+			{"name": "tool-1.0-linux-amd64.tar.gz", "url": "https://api.github.com/repos/test/repo/releases/assets/1"},
+			{"name": "tool-1.0-darwin-arm64.tar.gz", "url": "https://api.github.com/repos/test/repo/releases/assets/2"},
 		},
 	}
 
@@ -41,15 +41,15 @@ func TestGitHubBackendResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if url != "https://example.com/tool-1.0-linux-amd64.tar.gz" {
-		t.Errorf("url = %q, want .../tool-1.0-linux-amd64.tar.gz", url)
+	if url != "https://api.github.com/repos/test/repo/releases/assets/1" {
+		t.Errorf("url = %q, want .../releases/assets/1", url)
 	}
 }
 
 func TestGitHubBackendAssetNotFound(t *testing.T) {
 	release := map[string]any{
 		"assets": []map[string]string{
-			{"name": "other-asset.tar.gz", "browser_download_url": "https://example.com/other.tar.gz"},
+			{"name": "other-asset.tar.gz", "url": "https://api.github.com/repos/test/repo/releases/assets/9"},
 		},
 	}
 

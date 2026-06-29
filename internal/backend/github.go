@@ -19,8 +19,8 @@ type GitHubBackend struct {
 }
 
 type githubAsset struct {
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
+	Name string `json:"name"`
+	URL  string `json:"url"` // API asset URL, scaricabile col token anche su repo privati
 }
 
 type githubRelease struct {
@@ -28,7 +28,7 @@ type githubRelease struct {
 }
 
 // Resolve espande il template Asset, cerca l'asset con quel nome nella release GitHub
-// identificata dal tag, e ritorna il browser_download_url.
+// identificata dal tag, e ritorna l'URL API dell'asset.
 func (b GitHubBackend) Resolve(ctx context.Context, tag string, v template.Vars) (string, error) {
 	client := b.HTTPClient
 	if client == nil {
@@ -70,7 +70,7 @@ func (b GitHubBackend) Resolve(ctx context.Context, tag string, v template.Vars)
 
 	for _, asset := range release.Assets {
 		if asset.Name == assetName {
-			return asset.BrowserDownloadURL, nil
+			return asset.URL, nil
 		}
 	}
 
