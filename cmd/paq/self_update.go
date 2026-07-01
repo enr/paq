@@ -84,16 +84,19 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	assetName := selfUpdateAssetName(tag, plat.OS, plat.Arch)
+	ui.Debug("asset name: %s", assetName)
 	gb := backend.GitHubBackend{Repo: selfUpdateRepo, Asset: assetName}
 	url, err := gb.Resolve(ctx, tag, vars)
 	if err != nil {
 		return fmt.Errorf("resolve release asset: %w", err)
 	}
+	ui.Debug("asset URL: %s", url)
 
 	sumsURL, err := backend.GitHubBackend{Repo: selfUpdateRepo, Asset: selfUpdateChecksums}.Resolve(ctx, tag, vars)
 	if err != nil {
 		return fmt.Errorf("resolve checksums asset: %w", err)
 	}
+	ui.Debug("checksums URL: %s", sumsURL)
 
 	ui.Step("Downloading %s...", assetName)
 	zipPath, err := download.ToTemp(ctx, download.NewClient(), url, ui.NewProgressFn("paq"))
