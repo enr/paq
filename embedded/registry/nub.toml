@@ -1,0 +1,21 @@
+[nub]
+backend = "github"
+repo = "nubjs/nub"
+asset = "nub-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "nub{{ext}}"
+chmod = "0755"
+
+[nub.os]
+windows = "win32"
+
+[nub.arch]
+amd64 = "x64"
+
+# Windows ships a .zip instead of a .tar.gz.
+[nub.windows]
+asset = "nub-{{os}}-{{arch}}.zip"
+archive = "zip"
+
+[nub.verify]
+sha256_asset = "{{asset}}.sha256"

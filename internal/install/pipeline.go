@@ -251,6 +251,19 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	dbg("asset name: %q", assetName)
 
+	// resolveAuxURL costruisce l'URL di un asset ausiliario (checksum, firma) in
+	// modo backend-aware. Per il backend "github" l'URL di download è l'endpoint
+	// API dell'asset (…/releases/assets/{id}), che non contiene il nome file:
+	// l'asset ausiliario va quindi risolto per nome via l'API. Per gli altri
+	// backend l'URL contiene il nome file e basta sostituirlo.
+	resolveAuxURL := func(auxName string) (string, error) {
+		if spec.Backend == "github" {
+			gb := backend.GitHubBackend{Repo: spec.Repo, Asset: auxName}
+			return gb.Resolve(ctx, tag, vars)
+		}
+		return buildAuxURL(downloadURL, assetName, auxName), nil
+	}
+
 	client := download.NewClient()
 
 	// 7. Scarica file checksum/firma (se configurati)
@@ -272,7 +285,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		if err2 != nil {
 			return fmt.Errorf("resolve sha256_asset: %w", err2)
 		}
-		checksumURL := buildAuxURL(downloadURL, assetName, sha256AssetName)
+		checksumURL, err2 := resolveAuxURL(sha256AssetName)
+		if err2 != nil {
+			return fmt.Errorf("resolve sha256_asset URL: %w", err2)
+		}
 		step(fmt.Sprintf("Downloading checksum file..."))
 		dbg("sha256 checksum URL: %s", checksumURL)
 		checksumPath, err = download.ToTemp(ctx, client, checksumURL, nil)
@@ -287,7 +303,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		if err2 != nil {
 			return fmt.Errorf("resolve sha512_asset: %w", err2)
 		}
-		checksum512URL := buildAuxURL(downloadURL, assetName, sha512AssetName)
+		checksum512URL, err2 := resolveAuxURL(sha512AssetName)
+		if err2 != nil {
+			return fmt.Errorf("resolve sha512_asset URL: %w", err2)
+		}
 		step("Downloading checksum file...")
 		dbg("sha512 checksum URL: %s", checksum512URL)
 		checksum512Path, err = download.ToTemp(ctx, client, checksum512URL, nil)
@@ -302,7 +321,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		if err2 != nil {
 			return fmt.Errorf("resolve signed_asset: %w", err2)
 		}
-		sigURL := buildAuxURL(downloadURL, assetName, sigAssetName)
+		sigURL, err2 := resolveAuxURL(sigAssetName)
+		if err2 != nil {
+			return fmt.Errorf("resolve signed_asset URL: %w", err2)
+		}
 		step("Downloading signature file...")
 		dbg("minisign signature URL: %s", sigURL)
 		sigPath, err = download.ToTemp(ctx, client, sigURL, nil)
