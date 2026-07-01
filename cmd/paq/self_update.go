@@ -55,14 +55,19 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	current := version.Clean(Version)
-	upToDate := current == latest
+	cmp := version.Compare(current, latest)
+	upToDate := cmp >= 0
 
 	if upToDate && !force {
-		ui.OK("paq is already up to date (%s)", latest)
+		if cmp > 0 {
+			ui.OK("paq %s is ahead of the latest release (%s)", Version, latest)
+		} else {
+			ui.OK("paq is already up to date (%s)", latest)
+		}
 		return nil
 	}
 	if check {
-		ui.Info("Update available: paq %s → %s", Version, latest)
+		ui.Step("Update available: paq %s → %s", Version, latest)
 		return nil
 	}
 	// Build non versionato (es. "dev"): non possiamo confrontare le versioni,
@@ -70,7 +75,7 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	if current == Version && Version != latest {
 		ui.Warn("current version %q is not a release version, updating to %s", Version, latest)
 	}
-	ui.Info("Updating paq %s → %s", Version, latest)
+	ui.Step("Updating paq %s → %s", Version, latest)
 
 	// Risolvi gli URL degli asset per la piattaforma corrente.
 	plat := platform.Detect()

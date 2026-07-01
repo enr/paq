@@ -2,6 +2,7 @@ package version
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +32,27 @@ func Build(raw string) string {
 		return raw[idx+1:]
 	}
 	return ""
+}
+
+// Compare confronta due versioni già pulite (es. "14.1.1") numericamente
+// campo per campo (major, minor, patch). Ritorna <0 se a < b, 0 se uguali,
+// >0 se a > b. Campi mancanti o non numerici valgono 0.
+func Compare(a, b string) int {
+	aMajor, aMinor, aPatch := Parse(a)
+	bMajor, bMinor, bPatch := Parse(b)
+	if d := compareNumeric(aMajor, bMajor); d != 0 {
+		return d
+	}
+	if d := compareNumeric(aMinor, bMinor); d != 0 {
+		return d
+	}
+	return compareNumeric(aPatch, bPatch)
+}
+
+func compareNumeric(a, b string) int {
+	ai, _ := strconv.Atoi(a)
+	bi, _ := strconv.Atoi(b)
+	return ai - bi
 }
 
 // Parse estrae major, minor, patch da una versione già pulita (es. "14.1.1").
