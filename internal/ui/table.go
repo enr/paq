@@ -227,10 +227,10 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp) {
 	if Global.JSON {
 		out := map[string]any{
-			"name":       name,
-			"spec": spec,
-			"app":        app,
-			"installed":  installed,
+			"name":      name,
+			"spec":      spec,
+			"app":       app,
+			"installed": installed,
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(data))
@@ -289,7 +289,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 func PrintSpecDetail(name string, spec config.Spec) {
 	if Global.JSON {
 		out := map[string]any{
-			"name":       name,
+			"name": name,
 			"spec": spec,
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")

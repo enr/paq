@@ -36,7 +36,7 @@ type InstalledApp struct {
 // State è il database di stato di paq.
 // Packages è una lista di pacchetti installati (convenzione lockfile).
 type State struct {
-	Schema   int         `json:"schema"`
+	Schema   int            `json:"schema"`
 	Packages []InstalledApp `json:"packages"`
 }
 

@@ -84,10 +84,10 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 }
 
 type progressReader struct {
-	r           io.Reader
-	total       int64
-	downloaded  int64
-	fn          ProgressFn
+	r          io.Reader
+	total      int64
+	downloaded int64
+	fn         ProgressFn
 }
 
 func (pr *progressReader) Read(p []byte) (int, error) {

@@ -49,7 +49,7 @@ func makeZip(t *testing.T, entries map[string]string) string {
 
 func TestExtractTarGzSingleFile(t *testing.T) {
 	tgz := makeTarGz(t, map[string]string{
-		"ripgrep-14.1.1-x86_64-unknown-linux-gnu/rg": "binary-content",
+		"ripgrep-14.1.1-x86_64-unknown-linux-gnu/rg":     "binary-content",
 		"ripgrep-14.1.1-x86_64-unknown-linux-gnu/README": "readme",
 	})
 
@@ -73,7 +73,7 @@ func TestExtractTarGzSingleFile(t *testing.T) {
 
 func TestExtractTarGzStripComponents(t *testing.T) {
 	tgz := makeTarGz(t, map[string]string{
-		"jdk-21.0.2/bin/java": "java-binary",
+		"jdk-21.0.2/bin/java":   "java-binary",
 		"jdk-21.0.2/lib/rt.jar": "rt-jar",
 	})
 
