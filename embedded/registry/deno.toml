@@ -1,0 +1,14 @@
+[deno]
+backend = "github"
+repo = "denoland/deno"
+asset = "deno-{{rust_target}}.zip"
+archive = "zip"
+extract = "deno{{ext}}"
+chmod = "0755"
+
+[deno.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+[deno.verify]
+sha256_asset = "{{asset}}.sha256sum"
