@@ -64,5 +64,5 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagJSON, "json", "j", false, "Output as JSON")
 	rootCmd.PersistentFlags().BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
-	rootCmd.PersistentFlags().BoolVarP(&flagDebug, "debug", "d", false, "Print detailed debug output to stderr (implies --verbose)")
+	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Print detailed debug output to stderr (implies --verbose)")
 }

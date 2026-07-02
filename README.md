@@ -135,7 +135,7 @@ paq completion bash   # or zsh, fish, powershell
 | `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`, `info`, `config show`, `import`, `search`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
-| `-d`, `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
+| `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
 
 `NO_COLOR` env var also disables colors. Progress bar goes to stderr; data to stdout.
 
