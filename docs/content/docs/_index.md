@@ -328,6 +328,22 @@ while `latest_strategy` is only consulted for `version = "latest"`. This lets a
 URL-based tool ship a curated, offline-friendly default while still allowing an
 explicit opt-in to the newest release.
 
+### Custom release tags
+
+For pinned versions the `github` backend assumes the release tag is
+`v` + version (e.g. `v14.1.1`). If a repository uses a different tag scheme,
+set `tag` to the tag template:
+
+```toml
+[specs.bun]
+backend = "github"
+repo = "oven-sh/bun"
+tag = "bun-v{{version}}"       # release tags are bun-v1.3.14, not v1.3.14
+```
+
+`tag` only affects pinned versions (including `default_version`); `"latest"`
+always reads the real tag from the releases API.
+
 ## Template placeholders
 
 | Placeholder | Value |

@@ -27,6 +27,10 @@ type Spec struct {
 	Repo    string `toml:"repo"`
 	Asset   string `toml:"asset"`
 	Source  string `toml:"source"`
+	// Tag is the template of the release tag for pinned versions, for repos
+	// whose tags are not "v" + version (e.g. "bun-v{{version}}").
+	// Empty = default behavior ("v" + version).
+	Tag string `toml:"tag"`
 	// LatestStrategy explicitly selects the strategy used to resolve "latest";
 	// when set it takes precedence over the backend (e.g. "arch-linux").
 	LatestStrategy string `toml:"latest_strategy"`

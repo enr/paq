@@ -129,7 +129,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	var versionProvider version.Provider
 	switch {
 	case app.Version == "" && spec.DefaultVersion != "":
-		versionProvider = version.PinProvider{Version: spec.DefaultVersion}
+		versionProvider = version.PinProvider{Version: spec.DefaultVersion, TagTemplate: spec.Tag}
 	case app.Version == "" || strings.EqualFold(app.Version, "latest"):
 		versionProvider = version.LatestProvider(version.LatestRequest{
 			Strategy: spec.LatestStrategy,
@@ -139,7 +139,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			ArchPkg:  spec.ArchPkg,
 		})
 	default:
-		versionProvider = version.PinProvider{Version: app.Version}
+		versionProvider = version.PinProvider{Version: app.Version, TagTemplate: spec.Tag}
 	}
 
 	dbg("version provider: %T (repo=%q)", versionProvider, spec.Repo)

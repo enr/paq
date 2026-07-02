@@ -1,6 +1,7 @@
 [bun]
 backend = "github"
 repo = "oven-sh/bun"
+tag = "bun-v{{version}}"
 asset = "bun-{{os}}-{{arch}}.zip"
 archive = "zip"
 extract = "bun{{ext}}"
