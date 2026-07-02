@@ -139,6 +139,15 @@ paq completion bash   # or zsh, fish, powershell
 
 `NO_COLOR` env var also disables colors. Progress bar goes to stderr; data to stdout.
 
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Generic failure (network, missing config, app/spec not found, ...) |
+| `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
+| `4` | Checksum or signature verification failed |
+
 ## Adding a custom recipe
 
 You are not limited to the embedded registry: add your own recipes to
