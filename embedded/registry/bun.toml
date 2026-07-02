@@ -1,0 +1,15 @@
+[bun]
+backend = "github"
+repo = "oven-sh/bun"
+asset = "bun-{{os}}-{{arch}}.zip"
+archive = "zip"
+extract = "bun{{ext}}"
+chmod = "0755"
+platforms = ["linux/amd64", "windows/amd64", "darwin/arm64"]
+
+[bun.arch]
+amd64 = "x64"
+arm64 = "aarch64"
+
+[bun.verify]
+sha256_asset = "SHASUMS256.txt"

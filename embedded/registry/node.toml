@@ -1,0 +1,26 @@
+[node]
+backend = "url"
+source = "https://nodejs.org/dist/v{{version}}/node-v{{version}}-{{os}}-{{arch}}.tar.xz"
+archive = "tar.xz"
+strip_components = 1
+# LTS.
+default_version = "24.18.0"
+
+[node.arch]
+amd64 = "x64"
+
+[node.os]
+windows = "win"
+
+# Windows ships a .zip instead of a .tar.xz.
+[node.windows]
+source = "https://nodejs.org/dist/v{{version}}/node-v{{version}}-{{os}}-{{arch}}.zip"
+archive = "zip"
+
+# macOS ships a .tar.gz instead of a .tar.xz.
+[node.darwin]
+source = "https://nodejs.org/dist/v{{version}}/node-v{{version}}-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+
+[node.verify]
+sha256_asset = "SHASUMS256.txt"
