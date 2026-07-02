@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -71,16 +73,18 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagUninstallDryRun {
-		ui.Step("dry-run: would remove:")
-		for _, rec := range targets {
-			ui.Step("  %s %s → %s", rec.Name, rec.Version, rec.Dest)
-			if rec.Kind == "binaries" {
-				for _, f := range rec.Files {
-					ui.Step("    %s", f)
-				}
-			}
-		}
+		printUninstallTargets("dry-run: would remove:", targets)
 		return nil
+	}
+
+	// Ask for confirmation unless --yes was passed or stdout is not a
+	// terminal (non-interactive/CI invocations proceed without prompting).
+	if !flagUninstallYes && ui.IsTTY() {
+		printUninstallTargets("This will remove:", targets)
+		if !confirmYesNo(os.Stdin, "Continue?") {
+			ui.Info("aborted")
+			return nil
+		}
 	}
 
 	for _, rec := range targets {
@@ -97,6 +101,30 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	ui.OK("%s uninstalled", name)
 	return nil
+}
+
+// printUninstallTargets stampa la lista delle entry di stato che verranno
+// rimosse, sotto l'header dato. Condivisa da --dry-run e dal prompt di conferma.
+func printUninstallTargets(header string, targets []state.InstalledApp) {
+	ui.Step("%s", header)
+	for _, rec := range targets {
+		ui.Step("  %s %s → %s", rec.Name, rec.Version, rec.Dest)
+		if rec.Kind == "binaries" {
+			for _, f := range rec.Files {
+				ui.Step("    %s", f)
+			}
+		}
+	}
+}
+
+// confirmYesNo stampa prompt e legge una risposta y/n da r. Ritorna true solo
+// per "y" o "yes" (case-insensitive); qualunque altro input (incluso vuoto)
+// è considerato un rifiuto.
+func confirmYesNo(r io.Reader, prompt string) bool {
+	fmt.Printf("%s [y/N] ", prompt)
+	line, _ := bufio.NewReader(r).ReadString('\n')
+	line = strings.TrimSpace(strings.ToLower(line))
+	return line == "y" || line == "yes"
 }
 
 // removeRecordFiles rimuove dal filesystem i file o le directory installati
