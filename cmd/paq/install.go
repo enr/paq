@@ -25,8 +25,11 @@ var installCmd = &cobra.Command{
 	Use:     "install [app]",
 	Aliases: []string{"i"},
 	Short:   "Install a tool (or all tools from manifest if no app specified)",
-	Args:    cobra.MaximumNArgs(1),
-	RunE:    runInstall,
+	Example: `  paq install ripgrep            # install, recording it in the manifest
+  paq install ripgrep --no-save  # install without recording it (ephemeral)
+  paq install                    # install every tool from the manifest`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runInstall,
 }
 
 func init() {

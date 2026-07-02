@@ -23,6 +23,10 @@ var importCmd = &cobra.Command{
 	Short: "Generate a default manifest entry for a registry tool",
 	Long: "Generate a default [apps.<name>] manifest entry for a tool defined in the registry.\n" +
 		"By default the entry is printed to stdout; pass --write to add it to your manifest.",
+	Example: `  paq import ripgrep                                  # print the generated entry
+  paq import ripgrep --write                          # add it to your manifest
+  paq import ripgrep --as rg --dest ~/bin/rg --write   # customize name/dest, then:
+  paq install rg`,
 	Args: cobra.ExactArgs(1),
 	RunE: runImport,
 }

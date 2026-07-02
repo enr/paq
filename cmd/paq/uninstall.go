@@ -21,8 +21,11 @@ var uninstallCmd = &cobra.Command{
 	Use:     "uninstall <app[@version]>",
 	Aliases: []string{"rm", "remove"},
 	Short:   "Uninstall a tool (use app@version to disambiguate multiple versions)",
-	Args:    cobra.ExactArgs(1),
-	RunE:    runUninstall,
+	Example: `  paq uninstall rg
+  paq uninstall rg@14.0.0   # disambiguate when multiple versions are installed
+  paq uninstall rg --dry-run`,
+	Args: cobra.ExactArgs(1),
+	RunE: runUninstall,
 }
 
 func init() {

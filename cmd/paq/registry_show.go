@@ -10,11 +10,12 @@ import (
 )
 
 var registryShowCmd = &cobra.Command{
-	Use:   "show <name>",
-	Short: "Show details of a single tool spec in the embedded registry",
-	Long:  "Show the full spec for a tool in the embedded registry, regardless of whether it is in the user manifest.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runRegistryShow,
+	Use:     "show <name>",
+	Short:   "Show details of a single tool spec in the embedded registry",
+	Long:    "Show the full spec for a tool in the embedded registry, regardless of whether it is in the user manifest.",
+	Example: `  paq registry show ripgrep`,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runRegistryShow,
 }
 
 func runRegistryShow(cmd *cobra.Command, args []string) error {

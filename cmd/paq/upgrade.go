@@ -24,6 +24,8 @@ var upgradeCmd = &cobra.Command{
 	Short:   "Upgrade installed tools to a newer version",
 	Long: "Upgrade a tool (or all tools tracked in the manifest) pinned to \"latest\" " +
 		"to the most recent upstream release. Tools pinned to a fixed version are left untouched.",
+	Example: `  paq upgrade      # upgrade every "latest"-pinned app in the manifest
+  paq upgrade rg   # upgrade a single app`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runUpgrade,
 }
