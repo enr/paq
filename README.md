@@ -120,6 +120,9 @@ paq ls
 # Show recipe and install state
 paq info rg
 
+# Check for available updates without installing them
+paq outdated
+
 # Uninstall a tool
 paq uninstall rg
 
@@ -132,7 +135,7 @@ paq completion bash   # or zsh, fish, powershell
 | Flag | Description |
 |------|-------------|
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`, `info`, `config show`, `import`, `search`); fails on commands that don't support it |
+| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`, `info`, `config show`, `import`, `search`, `outdated`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |

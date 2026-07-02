@@ -122,6 +122,62 @@ func PrintAvailableTable(entries []RegistryEntry) {
 	}
 }
 
+// OutdatedEntry is a row of the "paq outdated" table: an app pinned to
+// "latest" whose installed version differs from the resolved upstream one.
+type OutdatedEntry struct {
+	Name      string `json:"name"`
+	Installed string `json:"installed"`
+	Latest    string `json:"latest"`
+}
+
+// PrintOutdatedTable prints the apps that have a newer upstream version available.
+func PrintOutdatedTable(entries []OutdatedEntry) {
+	if Global.JSON {
+		data, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("All tools are up to date.")
+		return
+	}
+
+	headers := []string{"APP", "INSTALLED"}
+	rows := make([][]string, len(entries))
+	for i, e := range entries {
+		rows[i] = []string{e.Name, e.Installed}
+	}
+	w := colWidths(headers, rows)
+
+	if !IsColorEnabled() {
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%s\n", w[0], w[1])
+		fmt.Printf(fmtStr, headers[0], headers[1], "LATEST")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "------")
+		for _, e := range entries {
+			fmt.Printf(fmtStr, e.Name, e.Installed, e.Latest)
+		}
+		return
+	}
+
+	header := fmt.Sprintf("%s  %s  %s",
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
+		headerStyle.Render("LATEST"),
+	)
+	fmt.Println(header)
+
+	latestStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow: draws the eye to the new version
+	for _, e := range entries {
+		row := fmt.Sprintf("%s  %s  %s",
+			nameStyle.Width(w[0]).Render(e.Name),
+			dimStyle.Width(w[1]).Render(e.Installed),
+			latestStyle.Render(e.Latest),
+		)
+		fmt.Println(row)
+	}
+}
+
 // PrintConfigShow prints the evaluated user configuration path and its data:
 // the effective defaults (configured or built-in) and the declared apps.
 func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry) {

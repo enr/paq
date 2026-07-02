@@ -7,7 +7,6 @@ import (
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/ui"
-	"github.com/enr/paq/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -80,13 +79,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	// If the entry stays on "latest" but the spec cannot resolve it, warn
 	// (without blocking) that an explicit version needs to be pinned.
 	if strings.EqualFold(ver, "latest") {
-		req := version.LatestRequest{
-			Strategy: spec.LatestStrategy,
-			Backend:  spec.Backend,
-			Repo:     spec.Repo,
-			Source:   spec.Source,
-			ArchPkg:  spec.ArchPkg,
-		}
+		req := latestRequestFor(spec)
 		if !req.Resolvable() {
 			ui.Warn("%q cannot resolve \"latest\"", defName)
 			ui.Hint("set an explicit version, e.g. `paq import %s --version <v>`", defName)

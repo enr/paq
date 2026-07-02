@@ -124,14 +124,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 		return fmt.Errorf("spec %q not found in registry", specName)
 	}
 	step("Resolving latest version...")
-	provider := version.LatestProvider(version.LatestRequest{
-		Strategy: spec.LatestStrategy,
-		Backend:  spec.Backend,
-		Repo:     spec.Repo,
-		Source:   spec.Source,
-		ArchPkg:  spec.ArchPkg,
-	})
-	latest, _, err := provider.Resolve(ctx)
+	latest, err := resolveLatestVersion(ctx, spec)
 	if errors.Is(err, version.ErrLatestNotImplemented) {
 		step("backend %q has no upstream version to resolve, skipping", spec.Backend)
 		return nil
@@ -155,6 +148,29 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 
 	// Remove the old versions left in the state.
 	return cleanupOldVersions(name, latest, installed, ok)
+}
+
+// latestRequestFor builds the version.LatestRequest for a spec's "latest"
+// resolution. Shared by every command that needs to resolve or check the
+// resolvability of "latest" (upgrade, outdated, import).
+func latestRequestFor(spec config.Spec) version.LatestRequest {
+	return version.LatestRequest{
+		Strategy: spec.LatestStrategy,
+		Backend:  spec.Backend,
+		Repo:     spec.Repo,
+		Source:   spec.Source,
+		ArchPkg:  spec.ArchPkg,
+	}
+}
+
+// resolveLatestVersion resolves the latest upstream version for a spec,
+// selecting the provider from its backend/latest_strategy. Returns
+// version.ErrLatestNotImplemented if neither can resolve "latest". Shared by
+// upgradeApp and the "outdated" command.
+func resolveLatestVersion(ctx context.Context, spec config.Spec) (string, error) {
+	provider := version.LatestProvider(latestRequestFor(spec))
+	latest, _, err := provider.Resolve(ctx)
+	return latest, err
 }
 
 // cleanupOldVersions removes the state entries (and their files) for versions
