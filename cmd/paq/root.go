@@ -1,11 +1,24 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// jsonCapableCommands lists the full command paths that honor --json.
+// Any other runnable command rejects --json instead of silently ignoring it.
+var jsonCapableCommands = map[string]bool{
+	"paq ls":            true,
+	"paq registry list": true,
+	"paq registry show": true,
+	"paq info":          true,
+	"paq config show":   true,
+	"paq import":        true,
+	"paq search":        true,
+}
 
 var (
 	flagNoColor bool
@@ -23,7 +36,7 @@ var rootCmd = &cobra.Command{
 	// colors and consistent hints can be added.
 	SilenceErrors: true,
 	SilenceUsage:  true,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		ui.Global = ui.Config{
 			NoColor: flagNoColor || os.Getenv("NO_COLOR") != "",
 			JSON:    flagJSON,
@@ -32,6 +45,10 @@ var rootCmd = &cobra.Command{
 			Verbose: flagVerbose || flagDebug,
 			Debug:   flagDebug,
 		}
+		if flagJSON && cmd.Runnable() && !jsonCapableCommands[cmd.CommandPath()] {
+			return fmt.Errorf("--json is not supported by %q", cmd.CommandPath())
+		}
+		return nil
 	},
 }
 
