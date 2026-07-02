@@ -70,6 +70,86 @@ func TestRunUninstallNonTTYSkipsPrompt(t *testing.T) {
 	}
 }
 
+// TestRunUninstallMultiApp verifies that uninstall accepts several app names
+// in one invocation and removes all of them.
+func TestRunUninstallMultiApp(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	rgPath := filepath.Join(t.TempDir(), "rg")
+	batPath := filepath.Join(t.TempDir(), "bat")
+	for _, p := range []string{rgPath, batPath} {
+		if err := os.WriteFile(p, []byte("binary"), 0755); err != nil {
+			t.Fatalf("write fake binary: %v", err)
+		}
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	st.Set(state.InstalledApp{Name: "rg", Version: "14.1.1", Kind: "file", Dest: rgPath})
+	st.Set(state.InstalledApp{Name: "bat", Version: "0.24.0", Kind: "file", Dest: batPath})
+	if err := st.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	flagUninstallYes = false
+	flagUninstallDryRun = false
+	t.Cleanup(func() {
+		flagUninstallYes = false
+		flagUninstallDryRun = false
+	})
+
+	if err := runUninstall(uninstallCmd, []string{"rg", "bat"}); err != nil {
+		t.Fatalf("runUninstall: %v", err)
+	}
+
+	for _, p := range []string{rgPath, batPath} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed, stat err = %v", p, err)
+		}
+	}
+}
+
+// TestRunUninstallMultiAppFailsFastOnUnknownName verifies that when one of
+// several requested apps isn't installed, nothing is removed at all — not
+// even the apps that were found and would have resolved successfully.
+func TestRunUninstallMultiAppFailsFastOnUnknownName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	rgPath := filepath.Join(t.TempDir(), "rg")
+	if err := os.WriteFile(rgPath, []byte("binary"), 0755); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	st.Set(state.InstalledApp{Name: "rg", Version: "14.1.1", Kind: "file", Dest: rgPath})
+	if err := st.Save(); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	flagUninstallYes = false
+	flagUninstallDryRun = false
+	t.Cleanup(func() {
+		flagUninstallYes = false
+		flagUninstallDryRun = false
+	})
+
+	err = runUninstall(uninstallCmd, []string{"rg", "not-installed-xyz"})
+	if err == nil {
+		t.Fatal("expected an error for the unknown second argument")
+	}
+
+	if _, statErr := os.Stat(rgPath); statErr != nil {
+		t.Errorf("rg should not have been removed when a later argument is invalid, stat err = %v", statErr)
+	}
+}
+
 func TestParseAppRef(t *testing.T) {
 	cases := []struct {
 		ref, name, version string

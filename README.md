@@ -103,6 +103,9 @@ paq install rg
 # Install all tools from manifest
 paq install
 
+# Install multiple tools at once
+paq install ripgrep bat delta
+
 # List tool definitions in the embedded registry
 paq registry list
 paq registry list jdk   # filter by name
@@ -123,8 +126,9 @@ paq info rg
 # Check for available updates without installing them
 paq outdated
 
-# Uninstall a tool
+# Uninstall a tool (or several at once)
 paq uninstall rg
+paq uninstall rg bat
 
 # Shell completion
 paq completion bash   # or zsh, fish, powershell

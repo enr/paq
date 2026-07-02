@@ -19,14 +19,15 @@ import (
 )
 
 var upgradeCmd = &cobra.Command{
-	Use:     "upgrade [app]",
+	Use:     "upgrade [app...]",
 	Aliases: []string{"up"},
 	Short:   "Upgrade installed tools to a newer version",
 	Long: "Upgrade a tool (or all tools tracked in the manifest) pinned to \"latest\" " +
 		"to the most recent upstream release. Tools pinned to a fixed version are left untouched.",
-	Example: `  paq upgrade      # upgrade every "latest"-pinned app in the manifest
-  paq upgrade rg   # upgrade a single app`,
-	Args: cobra.MaximumNArgs(1),
+	Example: `  paq upgrade         # upgrade every "latest"-pinned app in the manifest
+  paq upgrade rg      # upgrade a single app
+  paq upgrade rg bat  # upgrade multiple apps`,
+	Args: cobra.ArbitraryArgs,
 	RunE: runUpgrade,
 }
 
@@ -41,7 +42,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 	ctx := cmd.Context()
 
-	// Upgrade a single app.
+	// A single explicit app gets the friendlier single-app UX: no [name]
+	// prefix on its output, and a progress bar for the download.
 	if len(args) == 1 {
 		name := args[0]
 		if _, ok := cfg.Apps[name]; !ok {
@@ -50,17 +52,31 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return upgradeApp(ctx, cfg, name, appHooks(name, ""), ui.NewProgressFn(name))
 	}
 
-	// Upgrade all apps from the manifest in parallel.
-	if len(cfg.Apps) == 0 {
-		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
-		return nil
+	var names []string
+	if len(args) > 1 {
+		// Validate every name before upgrading anything.
+		for _, name := range args {
+			if _, ok := cfg.Apps[name]; !ok {
+				return fmt.Errorf("app %q not found in manifest (~/.config/paq/config.toml)", name)
+			}
+		}
+		names = args
+	} else {
+		// No args: upgrade all apps from the manifest.
+		if len(cfg.Apps) == 0 {
+			ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
+			return nil
+		}
+		for name := range cfg.Apps {
+			names = append(names, name)
+		}
 	}
 
 	var stdoutMu sync.Mutex
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxParallel)
 
-	for name := range cfg.Apps {
+	for _, name := range names {
 		name := name // capture for the goroutine
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)

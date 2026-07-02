@@ -18,13 +18,14 @@ var (
 )
 
 var uninstallCmd = &cobra.Command{
-	Use:     "uninstall <app[@version]>",
+	Use:     "uninstall <app[@version]>...",
 	Aliases: []string{"rm", "remove"},
-	Short:   "Uninstall a tool (use app@version to disambiguate multiple versions)",
+	Short:   "Uninstall one or more tools (use app@version to disambiguate multiple versions)",
 	Example: `  paq uninstall rg
+  paq uninstall rg bat      # uninstall multiple tools
   paq uninstall rg@14.0.0   # disambiguate when multiple versions are installed
   paq uninstall rg --dry-run`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MinimumNArgs(1),
 	RunE: runUninstall,
 }
 
@@ -35,44 +36,23 @@ func init() {
 }
 
 func runUninstall(cmd *cobra.Command, args []string) error {
-	name, version := parseAppRef(args[0])
-
 	st, err := state.Load()
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
 	}
 
-	matches := st.ByName(name)
-	if len(matches) == 0 {
-		return hintError{
-			msg:  fmt.Sprintf("%q is not installed", name),
-			hint: "list installed tools with `paq ls`",
-		}
-	}
-
-	// Select the entries to remove.
+	// Resolve every argument to its target state entries before removing
+	// anything or prompting, so an invalid name later in the list fails
+	// without touching apps that came before it.
 	var targets []state.InstalledApp
-	if version != "" {
-		rec, ok := st.Get(name, version)
-		if !ok {
-			return hintError{
-				msg:  fmt.Sprintf("%s@%s is not installed", name, version),
-				hint: "list installed versions with `paq ls`",
-			}
+	var names []string
+	for _, arg := range args {
+		appTargets, err := resolveUninstallTargets(st, arg)
+		if err != nil {
+			return err
 		}
-		targets = []state.InstalledApp{rec}
-	} else if len(matches) == 1 {
-		targets = matches
-	} else {
-		// Multiple versions installed: require disambiguation.
-		var versions []string
-		for _, m := range matches {
-			versions = append(versions, m.Version)
-		}
-		return hintError{
-			msg:  fmt.Sprintf("multiple versions of %q installed: %s", name, strings.Join(versions, ", ")),
-			hint: fmt.Sprintf("specify one with %s@<version>", name),
-		}
+		targets = append(targets, appTargets...)
+		names = append(names, appTargets[0].Name)
 	}
 
 	if flagUninstallDryRun {
@@ -102,8 +82,50 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("save state: %w", err)
 	}
 
-	ui.OK("%s uninstalled", name)
+	ui.OK("%s uninstalled", strings.Join(names, ", "))
 	return nil
+}
+
+// resolveUninstallTargets resolves a single "name" or "name@version" argument
+// to the state entries it refers to, without removing anything. Returns a
+// hintError if the app isn't installed, the requested version isn't
+// installed, or the app has multiple versions installed and none was
+// specified (ambiguous).
+func resolveUninstallTargets(st *state.State, arg string) ([]state.InstalledApp, error) {
+	name, version := parseAppRef(arg)
+
+	matches := st.ByName(name)
+	if len(matches) == 0 {
+		return nil, hintError{
+			msg:  fmt.Sprintf("%q is not installed", name),
+			hint: "list installed tools with `paq ls`",
+		}
+	}
+
+	if version != "" {
+		rec, ok := st.Get(name, version)
+		if !ok {
+			return nil, hintError{
+				msg:  fmt.Sprintf("%s@%s is not installed", name, version),
+				hint: "list installed versions with `paq ls`",
+			}
+		}
+		return []state.InstalledApp{rec}, nil
+	}
+
+	if len(matches) == 1 {
+		return matches, nil
+	}
+
+	// Multiple versions installed: require disambiguation.
+	var versions []string
+	for _, m := range matches {
+		versions = append(versions, m.Version)
+	}
+	return nil, hintError{
+		msg:  fmt.Sprintf("multiple versions of %q installed: %s", name, strings.Join(versions, ", ")),
+		hint: fmt.Sprintf("specify one with %s@<version>", name),
+	}
 }
 
 // printUninstallTargets prints the list of state entries that will be

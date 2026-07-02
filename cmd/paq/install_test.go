@@ -113,3 +113,44 @@ func TestEnsureManifestEntryUnknownNoSuggestion(t *testing.T) {
 		t.Fatalf("expected the registry fallback hint, got %q", he.hint)
 	}
 }
+
+func TestValidateAppName(t *testing.T) {
+	cfg := newTestConfig()
+	cfg.Apps["existing"] = config.AppEntry{Use: "ripgrep"}
+
+	if err := validateAppName(cfg, "existing"); err != nil {
+		t.Errorf("existing manifest app should validate, got: %v", err)
+	}
+	if err := validateAppName(cfg, "ripgrep"); err != nil {
+		t.Errorf("known registry spec should validate, got: %v", err)
+	}
+	if err := validateAppName(cfg, "typo-xyz"); err == nil {
+		t.Error("expected an error for an unknown name")
+	}
+}
+
+// TestRunInstallMultiArgFailsFastOnUnknownName verifies that when multiple
+// app names are given, an invalid one at the end of the list prevents the
+// manifest from being touched at all — including for the earlier, valid
+// name that would otherwise have been auto-imported successfully.
+func TestRunInstallMultiArgFailsFastOnUnknownName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	flagInstallForce = false
+	flagInstallNoSave = false
+	t.Cleanup(func() {
+		flagInstallForce = false
+		flagInstallNoSave = false
+	})
+
+	err := runInstall(installCmd, []string{"ripgrep", "typo-xyz-does-not-exist"})
+	if err == nil {
+		t.Fatal("expected an error for the unknown second argument")
+	}
+
+	if _, statErr := os.Stat(filepath.Join(dir, "paq", "config.toml")); !os.IsNotExist(statErr) {
+		t.Fatal("manifest should not have been written when a later argument is invalid")
+	}
+}
