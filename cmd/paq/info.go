@@ -9,10 +9,11 @@ import (
 )
 
 var infoCmd = &cobra.Command{
-	Use:   "info <app>",
-	Short: "Show spec and install state for a tool",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runInfo,
+	Use:               "info <app>",
+	Short:             "Show spec and install state for a tool",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeManifestApps,
+	RunE:              runInfo,
 }
 
 func init() {

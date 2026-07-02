@@ -16,8 +16,9 @@ var registryListCmd = &cobra.Command{
 	Long:    "List the tool specs bundled in the embedded registry, optionally filtered by a substring query on the spec name.",
 	Example: `  paq registry list
   paq registry list jdk   # filter by substring on the name`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runRegistryList,
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeRegistrySpecs,
+	RunE:              runRegistryList,
 }
 
 func runRegistryList(cmd *cobra.Command, args []string) error {

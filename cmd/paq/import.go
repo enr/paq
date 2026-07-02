@@ -27,8 +27,9 @@ var importCmd = &cobra.Command{
   paq import ripgrep --write                          # add it to your manifest
   paq import ripgrep --as rg --dest ~/bin/rg --write   # customize name/dest, then:
   paq install rg`,
-	Args: cobra.ExactArgs(1),
-	RunE: runImport,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeRegistrySpecs,
+	RunE:              runImport,
 }
 
 func init() {

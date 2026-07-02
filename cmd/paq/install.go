@@ -30,8 +30,9 @@ var installCmd = &cobra.Command{
   paq install ripgrep --no-save  # install without recording it (ephemeral)
   paq install ripgrep bat delta  # install multiple tools
   paq install                    # install every tool from the manifest`,
-	Args: cobra.ArbitraryArgs,
-	RunE: runInstall,
+	Args:              cobra.ArbitraryArgs,
+	ValidArgsFunction: completeInstallableNames,
+	RunE:              runInstall,
 }
 
 func init() {

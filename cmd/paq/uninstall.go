@@ -25,8 +25,9 @@ var uninstallCmd = &cobra.Command{
   paq uninstall rg bat      # uninstall multiple tools
   paq uninstall rg@14.0.0   # disambiguate when multiple versions are installed
   paq uninstall rg --dry-run`,
-	Args: cobra.MinimumNArgs(1),
-	RunE: runUninstall,
+	Args:              cobra.MinimumNArgs(1),
+	ValidArgsFunction: completeInstalledApps,
+	RunE:              runUninstall,
 }
 
 func init() {

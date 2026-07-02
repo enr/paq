@@ -136,7 +136,7 @@ paq outdated
 paq uninstall rg
 paq uninstall rg bat
 
-# Shell completion
+# Shell completion (app and tool names are completed dynamically)
 paq completion bash   # or zsh, fish, powershell
 ```
 

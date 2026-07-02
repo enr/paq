@@ -27,8 +27,9 @@ var upgradeCmd = &cobra.Command{
 	Example: `  paq upgrade         # upgrade every "latest"-pinned app in the manifest
   paq upgrade rg      # upgrade a single app
   paq upgrade rg bat  # upgrade multiple apps`,
-	Args: cobra.ArbitraryArgs,
-	RunE: runUpgrade,
+	Args:              cobra.ArbitraryArgs,
+	ValidArgsFunction: completeManifestApps,
+	RunE:              runUpgrade,
 }
 
 func init() {

@@ -17,8 +17,9 @@ var whichCmd = &cobra.Command{
 		"If multiple versions are installed and no @version is given, prints all of them.",
 	Example: `  paq which rg
   paq which rg@14.1.1`,
-	Args: cobra.ExactArgs(1),
-	RunE: runWhich,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeInstalledApps,
+	RunE:              runWhich,
 }
 
 func init() {
