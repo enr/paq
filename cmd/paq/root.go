@@ -19,6 +19,7 @@ var jsonCapableCommands = map[string]bool{
 	"paq import":        true,
 	"paq search":        true,
 	"paq outdated":      true,
+	"paq which":         true,
 }
 
 var (
