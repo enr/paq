@@ -87,6 +87,9 @@ is the easy way to guarantee this.
 ## Commands
 
 ```bash
+# Create a commented manifest skeleton to start from
+paq init
+
 # Install a registry tool: records a default entry in the manifest, then installs
 paq install ripgrep
 # install without recording it in the manifest (ephemeral)
