@@ -48,7 +48,7 @@ func listDefinitions(query string) error {
 		})
 	}
 
-	if len(rows) == 0 {
+	if len(rows) == 0 && !ui.Global.JSON {
 		if query != "" {
 			fmt.Printf("No tool definitions matching %q in the embedded registry.\n", query)
 		} else {
