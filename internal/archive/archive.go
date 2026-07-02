@@ -3,6 +3,8 @@ package archive
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // ExtractOpts configura come estrarre un archivio.
@@ -34,4 +36,18 @@ func Extract(archivePath string, archiveType string, opts ExtractOpts) error {
 	default:
 		return fmt.Errorf("unsupported archive type: %q", archiveType)
 	}
+}
+
+// securePath joins name (a slash-separated path taken from an archive entry)
+// onto destRoot and verifies the result stays inside destRoot. Archives are
+// untrusted input: an entry like "../../etc/passwd" must not be allowed to
+// escape the extraction directory (zip-slip / tar-slip).
+func securePath(destRoot, name string) (string, error) {
+	dest := filepath.Join(destRoot, filepath.FromSlash(name))
+	cleanRoot := filepath.Clean(destRoot)
+	cleanDest := filepath.Clean(dest)
+	if cleanDest != cleanRoot && !strings.HasPrefix(cleanDest, cleanRoot+string(os.PathSeparator)) {
+		return "", fmt.Errorf("illegal path %q in archive: escapes destination directory", name)
+	}
+	return cleanDest, nil
 }

@@ -33,11 +33,18 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			continue
 		}
 
+		if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink {
+			return fmt.Errorf("entry %q is a symlink/hardlink: not supported", hdr.Name)
+		}
+
 		switch {
 		case opts.Extract != "":
 			// Modalità file singolo: cerca il file per basename
 			if filepath.Base(stripped) == opts.Extract {
-				dest := filepath.Join(opts.Dest, opts.Extract)
+				dest, err := securePath(opts.Dest, opts.Extract)
+				if err != nil {
+					return err
+				}
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
@@ -50,7 +57,10 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			if !match || rel == "" {
 				continue
 			}
-			dest := filepath.Join(opts.Dest, filepath.FromSlash(rel))
+			dest, err := securePath(opts.Dest, rel)
+			if err != nil {
+				return err
+			}
 			if hdr.Typeflag == tar.TypeDir {
 				if err := os.MkdirAll(dest, 0755); err != nil {
 					return err
@@ -63,7 +73,10 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 
 		default:
 			// Modalità standard: estrai tutto
-			dest := filepath.Join(opts.Dest, filepath.FromSlash(stripped))
+			dest, err := securePath(opts.Dest, stripped)
+			if err != nil {
+				return err
+			}
 			if hdr.Typeflag == tar.TypeDir {
 				if err := os.MkdirAll(dest, 0755); err != nil {
 					return err

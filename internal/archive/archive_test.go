@@ -159,3 +159,73 @@ func TestExtractMissingFile(t *testing.T) {
 		t.Error("expected error for missing extract file")
 	}
 }
+
+func TestExtractZipPathTraversalRejected(t *testing.T) {
+	z := makeZip(t, map[string]string{
+		"../../evil.txt": "pwned",
+	})
+
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	err := Extract(z, "zip", ExtractOpts{Dest: dest})
+	if err == nil {
+		t.Fatal("expected error for path traversal entry, got nil")
+	}
+
+	if _, statErr := os.Stat(filepath.Join(parent, "evil.txt")); !os.IsNotExist(statErr) {
+		t.Error("path traversal entry escaped the destination directory")
+	}
+}
+
+func TestExtractTarGzPathTraversalRejected(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"../../evil.txt": "pwned",
+	})
+
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest})
+	if err == nil {
+		t.Fatal("expected error for path traversal entry, got nil")
+	}
+
+	if _, statErr := os.Stat(filepath.Join(parent, "evil.txt")); !os.IsNotExist(statErr) {
+		t.Error("path traversal entry escaped the destination directory")
+	}
+}
+
+// makeTarGzWithSymlink creates a .tar.gz containing a single symlink entry
+// pointing at target, used to verify symlink entries are rejected.
+func makeTarGzWithSymlink(t *testing.T, name, target string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.WriteHeader(&tar.Header{
+		Name:     name,
+		Typeflag: tar.TypeSymlink,
+		Linkname: target,
+		Mode:     0777,
+	})
+	tw.Close()
+	gz.Close()
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-symlink-*.tar.gz")
+	tmp.Write(buf.Bytes())
+	tmp.Close()
+	return tmp.Name()
+}
+
+func TestExtractTarGzSymlinkRejected(t *testing.T) {
+	tgz := makeTarGzWithSymlink(t, "evil-link", "/etc/passwd")
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest})
+	if err == nil {
+		t.Fatal("expected error for symlink entry, got nil")
+	}
+
+	if _, statErr := os.Stat(filepath.Join(dest, "evil-link")); !os.IsNotExist(statErr) {
+		t.Error("symlink entry should not have been extracted")
+	}
+}
