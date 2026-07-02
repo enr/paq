@@ -29,29 +29,37 @@ func PrintLsTable(packages []state.InstalledApp) {
 
 	pkgs := sortedPackages(packages)
 
+	headers := []string{"NAME", "VERSION", "KIND"}
+	rows := make([][]string, len(pkgs))
+	for i, rec := range pkgs {
+		rows[i] = []string{rec.Name, rec.Version, rec.Kind}
+	}
+	w := colWidths(headers, rows)
+
 	if !IsColorEnabled() {
 		// Output plain text
-		fmt.Printf("%-20s %-12s %-8s %s\n", "NAME", "VERSION", "KIND", "DEST")
-		fmt.Printf("%-20s %-12s %-8s %s\n", "----", "-------", "----", "----")
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "DEST")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), strings.Repeat("-", w[2]), "----")
 		for _, rec := range pkgs {
-			fmt.Printf("%-20s %-12s %-8s %s\n", rec.Name, rec.Version, rec.Kind, rec.Dest)
+			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, rec.Dest)
 		}
 		return
 	}
 
 	header := fmt.Sprintf("%s  %s  %s  %s",
-		headerStyle.Width(20).Render("NAME"),
-		headerStyle.Width(12).Render("VERSION"),
-		headerStyle.Width(8).Render("KIND"),
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
+		headerStyle.Width(w[2]).Render(headers[2]),
 		headerStyle.Render("DEST"),
 	)
 	fmt.Println(header)
 
 	for _, rec := range pkgs {
 		row := fmt.Sprintf("%s  %s  %s  %s",
-			nameStyle.Width(20).Render(rec.Name),
-			lipgloss.NewStyle().Width(12).Render(rec.Version),
-			dimStyle.Width(8).Render(rec.Kind),
+			nameStyle.Width(w[0]).Render(rec.Name),
+			lipgloss.NewStyle().Width(w[1]).Render(rec.Version),
+			dimStyle.Width(w[2]).Render(rec.Kind),
 			dimStyle.Render(rec.Dest),
 		)
 		fmt.Println(row)
@@ -80,26 +88,34 @@ func PrintAvailableTable(entries []RegistryEntry) {
 		return s
 	}
 
+	headers := []string{"NAME", "BACKEND"}
+	rows := make([][]string, len(entries))
+	for i, r := range entries {
+		rows[i] = []string{r.Name, cell(r.Backend)}
+	}
+	w := colWidths(headers, rows)
+
 	if !IsColorEnabled() {
-		fmt.Printf("%-20s %-8s %s\n", "NAME", "BACKEND", "REPO")
-		fmt.Printf("%-20s %-8s %s\n", "----", "-------", "----")
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%s\n", w[0], w[1])
+		fmt.Printf(fmtStr, headers[0], headers[1], "REPO")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "----")
 		for _, r := range entries {
-			fmt.Printf("%-20s %-8s %s\n", r.Name, cell(r.Backend), cell(r.Repo))
+			fmt.Printf(fmtStr, r.Name, cell(r.Backend), cell(r.Repo))
 		}
 		return
 	}
 
 	header := fmt.Sprintf("%s  %s  %s",
-		headerStyle.Width(20).Render("NAME"),
-		headerStyle.Width(8).Render("BACKEND"),
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
 		headerStyle.Render("REPO"),
 	)
 	fmt.Println(header)
 
 	for _, r := range entries {
 		row := fmt.Sprintf("%s  %s  %s",
-			nameStyle.Width(20).Render(r.Name),
-			dimStyle.Width(8).Render(cell(r.Backend)),
+			nameStyle.Width(w[0]).Render(r.Name),
+			dimStyle.Width(w[1]).Render(cell(r.Backend)),
 			dimStyle.Render(cell(r.Repo)),
 		)
 		fmt.Println(row)
@@ -184,18 +200,10 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 	}
 	sort.Strings(keys)
 
-	header := fmt.Sprintf("%s  %s  %s  %s",
-		headerStyle.Width(16).Render("APP"),
-		headerStyle.Width(16).Render("USE"),
-		headerStyle.Width(10).Render("VERSION"),
-		headerStyle.Render("DEST"),
-	)
-	if IsColorEnabled() {
-		fmt.Println(header)
-	} else {
-		fmt.Printf("%-16s %-16s %-10s %s\n", "APP", "USE", "VERSION", "DEST")
-	}
-	for _, k := range keys {
+	type appRow struct{ use, ver, dest string }
+	rowData := make(map[string]appRow, len(keys))
+	tableRows := make([][]string, len(keys))
+	for i, k := range keys {
 		a := apps[k]
 		use := a.Use
 		if use == "" {
@@ -209,15 +217,37 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 		if dest == "" {
 			dest = "(default)"
 		}
+		rowData[k] = appRow{use, ver, dest}
+		tableRows[i] = []string{k, use, ver}
+	}
+
+	headers := []string{"APP", "USE", "VERSION"}
+	w := colWidths(headers, tableRows)
+
+	if IsColorEnabled() {
+		header := fmt.Sprintf("%s  %s  %s  %s",
+			headerStyle.Width(w[0]).Render(headers[0]),
+			headerStyle.Width(w[1]).Render(headers[1]),
+			headerStyle.Width(w[2]).Render(headers[2]),
+			headerStyle.Render("DEST"),
+		)
+		fmt.Println(header)
+	} else {
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "DEST")
+	}
+	for _, k := range keys {
+		row := rowData[k]
 		if IsColorEnabled() {
 			fmt.Printf("%s  %s  %s  %s\n",
-				nameStyle.Width(16).Render(k),
-				dimStyle.Width(16).Render(use),
-				lipgloss.NewStyle().Width(10).Render(ver),
-				dimStyle.Render(dest),
+				nameStyle.Width(w[0]).Render(k),
+				dimStyle.Width(w[1]).Render(row.use),
+				lipgloss.NewStyle().Width(w[2]).Render(row.ver),
+				dimStyle.Render(row.dest),
 			)
 		} else {
-			fmt.Printf("%-16s %-16s %-10s %s\n", k, use, ver, dest)
+			fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+			fmt.Printf(fmtStr, k, row.use, row.ver, row.dest)
 		}
 	}
 }
@@ -384,6 +414,24 @@ func formatBinaries(bins []config.Binary) []string {
 		}
 	}
 	return out
+}
+
+// colWidths computes, for each column, the width needed to fit both its
+// header and every row's cell: max(len(header), max(len(cell))). Used so
+// table columns don't truncate or misalign on long values.
+func colWidths(headers []string, rows [][]string) []int {
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+	return widths
 }
 
 // sortedPackages returns a copy sorted by name then version.
