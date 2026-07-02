@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// makeTarGz crea un .tar.gz in-memory con le entry fornite.
-// entries è una mappa path→contenuto.
+// makeTarGz creates an in-memory .tar.gz with the given entries.
+// entries is a path→content map.
 func makeTarGz(t *testing.T, entries map[string]string) string {
 	t.Helper()
 	var buf bytes.Buffer

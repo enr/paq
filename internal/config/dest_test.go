@@ -5,19 +5,19 @@ import "testing"
 func TestDefaultDestBuiltinRoots(t *testing.T) {
 	binDir, optDir := DefaultDestRoots(Defaults{})
 
-	// install di un singolo binario: riusa il template Extract sotto la bin dir.
+	// single-binary install: reuses the Extract template under the bin dir.
 	fileSpec := Spec{Backend: "github", Extract: "rg{{ext}}"}
 	if got, want := DefaultDest(fileSpec, "ripgrep", Defaults{}), binDir+"/rg{{ext}}"; got != want {
 		t.Errorf("file dest = %q, want %q", got, want)
 	}
 
-	// install multi-binario: la bin dir come directory.
+	// multi-binary install: the bin dir as a directory.
 	multiSpec := Spec{Backend: "github", Binaries: []Binary{{From: "a"}, {From: "b"}}}
 	if got := DefaultDest(multiSpec, "tool", Defaults{}); got != binDir {
 		t.Errorf("multi dest = %q, want %q", got, binDir)
 	}
 
-	// install di una directory: usa il nome dell'app sotto la opt dir.
+	// directory install: uses the app name under the opt dir.
 	dirSpec := Spec{Backend: "url"}
 	if got, want := DefaultDest(dirSpec, "jdk", Defaults{}), optDir+"/jdk"; got != want {
 		t.Errorf("dir dest = %q, want %q", got, want)
@@ -36,7 +36,7 @@ func TestDefaultDestUserDefaults(t *testing.T) {
 }
 
 func TestDefaultDestRootsPartialOverride(t *testing.T) {
-	// Solo bin configurato: opt resta sul built-in.
+	// Only bin configured: opt stays on the built-in.
 	builtinBin, builtinOpt := DefaultDestRoots(Defaults{})
 	bin, opt := DefaultDestRoots(Defaults{Bin: "~/custom/bin"})
 	if bin != "~/custom/bin" {
@@ -46,7 +46,7 @@ func TestDefaultDestRootsPartialOverride(t *testing.T) {
 		t.Errorf("opt = %q, want built-in %q", opt, builtinOpt)
 	}
 
-	// Solo opt configurato: bin resta sul built-in.
+	// Only opt configured: bin stays on the built-in.
 	bin2, opt2 := DefaultDestRoots(Defaults{Opt: "~/custom/opt"})
 	if opt2 != "~/custom/opt" {
 		t.Errorf("opt = %q, want ~/custom/opt", opt2)

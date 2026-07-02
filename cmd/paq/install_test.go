@@ -10,8 +10,8 @@ import (
 	"github.com/enr/paq/internal/config"
 )
 
-// newTestConfig costruisce un Config minimale con una spec "ripgrep" nel
-// registry e nessuna app nel manifest.
+// newTestConfig builds a minimal Config with a "ripgrep" spec in the
+// registry and no app in the manifest.
 func newTestConfig() *config.Config {
 	return &config.Config{
 		Specs: map[string]config.Spec{

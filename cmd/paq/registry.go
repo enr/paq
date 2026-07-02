@@ -9,7 +9,7 @@ var registryCmd = &cobra.Command{
 	Aliases: []string{"reg"},
 	Short:   "Inspect the embedded registry of tool definitions",
 	Long:    "Browse and show the tool definitions bundled in the embedded registry.",
-	// Senza sottocomando mostra l'help.
+	// With no subcommand, show the help.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},

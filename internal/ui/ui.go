@@ -6,7 +6,7 @@ import (
 	"golang.org/x/term"
 )
 
-// Config contiene le impostazioni UX globali, impostate da flag/env all'avvio.
+// Config contains the global UX settings, set from flags/env at startup.
 type Config struct {
 	NoColor bool
 	JSON    bool
@@ -15,16 +15,16 @@ type Config struct {
 	Debug   bool
 }
 
-// Global è la configurazione UX corrente, letta da root.go prima di eseguire i comandi.
+// Global is the current UX configuration, read by root.go before running commands.
 var Global Config
 
-// IsTTY ritorna true se stdout è collegato a un terminale interattivo.
+// IsTTY returns true if stdout is connected to an interactive terminal.
 func IsTTY() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
-// IsColorEnabled ritorna true se i colori sono abilitati
-// (TTY presente, NO_COLOR non impostato, --no-color non specificato).
+// IsColorEnabled returns true if colors are enabled
+// (TTY present, NO_COLOR not set, --no-color not specified).
 func IsColorEnabled() bool {
 	if Global.NoColor {
 		return false

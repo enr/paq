@@ -18,7 +18,7 @@ func TestRenderAppEntryTOML(t *testing.T) {
 		}
 	}
 
-	// Il blocco generato deve essere TOML valido e ri-parsabile.
+	// The generated block must be valid, re-parsable TOML.
 	var raw struct {
 		Apps map[string]config.AppEntry `toml:"apps"`
 	}

@@ -17,24 +17,24 @@ func TestCheckFileSHA512(t *testing.T) {
 	tmp.Write(content)
 	tmp.Close()
 
-	// hash corretto
+	// correct hash
 	if err := CheckFileSHA512(tmp.Name(), expected); err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
-	// hash corretto ma con maiuscole/spazi (normalizzazione)
+	// correct hash but with uppercase/spaces (normalization)
 	if err := CheckFileSHA512(tmp.Name(), "  "+expected+"\n"); err != nil {
 		t.Errorf("expected no error for padded hash, got: %v", err)
 	}
 
-	// hash sbagliato
+	// wrong hash
 	if err := CheckFileSHA512(tmp.Name(), "deadbeef"); err == nil {
 		t.Error("expected error for wrong hash, got nil")
 	}
 }
 
 func TestParseSHA512FileBareHash(t *testing.T) {
-	// Layout Apache Maven: il file .sha512 contiene solo l'hash.
+	// Apache Maven layout: the .sha512 file contains only the hash.
 	const bare = "ed41650d42485cfc243fad22158caf9cbb5dc408ce7a09ddb94dd42a019de929"
 
 	dir := t.TempDir()

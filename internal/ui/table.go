@@ -19,7 +19,7 @@ var (
 	labelStyle  = lipgloss.NewStyle().Bold(true).Width(16)
 )
 
-// PrintLsTable stampa la tabella dei pacchetti installati.
+// PrintLsTable prints the table of installed packages.
 func PrintLsTable(packages []state.InstalledApp) {
 	if Global.JSON {
 		data, _ := json.MarshalIndent(packages, "", "  ")
@@ -58,14 +58,14 @@ func PrintLsTable(packages []state.InstalledApp) {
 	}
 }
 
-// RegistryEntry è una riga della tabella delle spec disponibili nella registry.
+// RegistryEntry is a row of the table of specs available in the registry.
 type RegistryEntry struct {
 	Name    string `json:"name"`
 	Backend string `json:"backend"`
 	Repo    string `json:"repo"`
 }
 
-// PrintAvailableTable stampa la tabella delle spec disponibili nella registry embedded.
+// PrintAvailableTable prints the table of specs available in the embedded registry.
 func PrintAvailableTable(entries []RegistryEntry) {
 	if Global.JSON {
 		data, _ := json.MarshalIndent(entries, "", "  ")
@@ -106,8 +106,8 @@ func PrintAvailableTable(entries []RegistryEntry) {
 	}
 }
 
-// PrintConfigShow stampa il path della configurazione utente valutata e i suoi
-// dati: i default effettivi (configurati o built-in) e le app dichiarate.
+// PrintConfigShow prints the evaluated user configuration path and its data:
+// the effective defaults (configured or built-in) and the declared apps.
 func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry) {
 	if Global.JSON {
 		out := map[string]any{
@@ -122,8 +122,8 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 		return
 	}
 
-	// Chiave in blu grassetto, valore in verde, annotazioni in grigio, così da
-	// distinguere a colpo d'occhio etichette e valori.
+	// Key in bold blue, value in green, annotations in gray, so labels and
+	// values are distinguishable at a glance.
 	keyStyle := labelStyle.Foreground(lipgloss.Color("12"))
 	val := func(s string) string {
 		if IsColorEnabled() {
@@ -222,8 +222,8 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 	}
 }
 
-// PrintInfoDetail stampa i dettagli di un'app (ricetta + versioni installate).
-// installed contiene tutte le versioni dell'app presenti nello state (può essere vuoto).
+// PrintInfoDetail prints an app's details (recipe + installed versions).
+// installed contains all the app's versions present in the state (can be empty).
 func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp) {
 	if Global.JSON {
 		out := map[string]any{
@@ -285,7 +285,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 	}
 }
 
-// PrintSpecDetail stampa i dettagli di una singola spec della registry.
+// PrintSpecDetail prints the details of a single registry spec.
 func PrintSpecDetail(name string, spec config.Spec) {
 	if Global.JSON {
 		out := map[string]any{
@@ -301,7 +301,7 @@ func PrintSpecDetail(name string, spec config.Spec) {
 		if value == "" {
 			return
 		}
-		// Un'etichetta vuota (riga di continuazione) viene allineata senza i due punti.
+		// An empty label (continuation row) is aligned without the colon.
 		text := label
 		if label != "" {
 			text = label + ":"
@@ -366,8 +366,8 @@ func PrintSpecDetail(name string, spec config.Spec) {
 	render("Minisign sig", spec.Verify.Minisign.SignedAsset)
 }
 
-// formatBinaries rende ogni Binary in "from → to" (o solo "from"/"to" quando
-// uno dei due manca, es. download nudo). Ritorna nil se la lista è vuota.
+// formatBinaries renders each Binary as "from → to" (or just "from"/"to" when
+// one of the two is missing, e.g. a bare download). Returns nil if the list is empty.
 func formatBinaries(bins []config.Binary) []string {
 	if len(bins) == 0 {
 		return nil
@@ -386,7 +386,7 @@ func formatBinaries(bins []config.Binary) []string {
 	return out
 }
 
-// sortedPackages ritorna una copia ordinata per nome poi versione.
+// sortedPackages returns a copy sorted by name then version.
 func sortedPackages(in []state.InstalledApp) []state.InstalledApp {
 	out := make([]state.InstalledApp, len(in))
 	copy(out, in)

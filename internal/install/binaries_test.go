@@ -10,7 +10,7 @@ import (
 	"github.com/enr/paq/internal/archive"
 )
 
-// makeMultiBinZip crea uno zip con più file sotto una dir di primo livello.
+// makeMultiBinZip creates a zip with multiple files under a top-level dir.
 func makeMultiBinZip(topDir string, files map[string][]byte) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -73,8 +73,9 @@ func TestInstallBinaries(t *testing.T) {
 	}
 }
 
-// TestInstallBinariesBare verifica il caso senza archivio: l'artefatto scaricato
-// è l'eseguibile (nome con os/arch nel filename) e va installato con nome pulito.
+// TestInstallBinariesBare verifies the case with no archive: the downloaded
+// artifact is the executable (name with os/arch in the filename) and must be
+// installed under a clean name.
 func TestInstallBinariesBare(t *testing.T) {
 	content := []byte("raw-elf")
 	src := filepath.Join(t.TempDir(), "mytool_1.0.0_linux_amd64")
@@ -109,8 +110,8 @@ func TestInstallBinariesBare(t *testing.T) {
 	}
 }
 
-// TestInstallBinariesBareRejectsMultiple verifica che il download nudo accetti
-// una sola entry.
+// TestInstallBinariesBareRejectsMultiple verifies that a bare download only
+// accepts a single entry.
 func TestInstallBinariesBareRejectsMultiple(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "x")
 	if err := os.WriteFile(src, []byte("x"), 0644); err != nil {

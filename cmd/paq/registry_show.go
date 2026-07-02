@@ -38,7 +38,7 @@ func runRegistryShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// similarSpecs ritorna i nomi di definizione che contengono la query come sottostringa.
+// similarSpecs returns the definition names that contain the query as a substring.
 func similarSpecs[T any](specs map[string]T, query string) []string {
 	q := strings.ToLower(query)
 	var out []string

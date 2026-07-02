@@ -1,17 +1,18 @@
 package template
 
-// MetaTemplates è una mappa di template nominati (es. "rust_target" → "{{arch}}-{{vendor}}-{{os}}-{{env}}").
+// MetaTemplates is a map of named templates (e.g. "rust_target" → "{{arch}}-{{vendor}}-{{os}}-{{env}}").
 type MetaTemplates map[string]string
 
-// Expand espande i meta-template aggiungendoli a v.Extra.
-// osOverrides è una mappa OS → MetaTemplates per override per-OS (es. darwin ha rust_target senza {{env}}).
-// I meta-template vengono espansi nell'ordine della mappa globale, poi applicati gli override per OS.
+// Expand expands the meta-templates, adding them to v.Extra.
+// osOverrides is an OS → MetaTemplates map for per-OS overrides (e.g. darwin
+// has rust_target without {{env}}). Meta-templates are expanded in the order
+// of the global map, then the per-OS overrides are applied.
 func Expand(mt MetaTemplates, osOverrides map[string]MetaTemplates, v Vars) (Vars, error) {
 	if v.Extra == nil {
 		v.Extra = make(map[string]string)
 	}
 
-	// Applica i meta-template globali
+	// Apply the global meta-templates.
 	for k, tmpl := range mt {
 		val, err := Resolve(tmpl, v)
 		if err != nil {
@@ -20,7 +21,7 @@ func Expand(mt MetaTemplates, osOverrides map[string]MetaTemplates, v Vars) (Var
 		v.Extra[k] = val
 	}
 
-	// Applica override per OS corrente (sovrascrive i globali)
+	// Apply the current OS's override (overrides the globals).
 	if osOverrides != nil {
 		if osMT, ok := osOverrides[v.OS]; ok {
 			for k, tmpl := range osMT {

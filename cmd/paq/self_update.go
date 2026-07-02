@@ -17,10 +17,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// selfUpdateRepo è la repo GitHub da cui scaricare i binari di paq.
+// selfUpdateRepo is the GitHub repo to download paq binaries from.
 const selfUpdateRepo = "enr/paq"
 
-// selfUpdateChecksums è il nome dell'asset col checksum sha256 nelle release.
+// selfUpdateChecksums is the name of the sha256 checksum asset in releases.
 const selfUpdateChecksums = "SHA256SUMS"
 
 var selfUpdateCmd = &cobra.Command{
@@ -37,8 +37,8 @@ func init() {
 	rootCmd.AddCommand(selfUpdateCmd)
 }
 
-// selfUpdateAssetName costruisce il nome dell'asset zip della release per tag/piattaforma.
-// Esempio: ("v0.1.0", "linux", "amd64") → "paq-v0.1.0-linux-amd64.zip".
+// selfUpdateAssetName builds the release zip asset name for a given tag/platform.
+// Example: ("v0.1.0", "linux", "amd64") → "paq-v0.1.0-linux-amd64.zip".
 func selfUpdateAssetName(tag, os, arch string) string {
 	return fmt.Sprintf("paq-%s-%s-%s.zip", tag, os, arch)
 }
@@ -70,14 +70,14 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 		ui.Step("Update available: paq %s → %s", Version, latest)
 		return nil
 	}
-	// Build non versionato (es. "dev"): non possiamo confrontare le versioni,
-	// procediamo comunque ma avvisiamo l'utente.
+	// Unversioned build (e.g. "dev"): we can't compare versions,
+	// proceed anyway but warn the user.
 	if current == Version && Version != latest {
 		ui.Warn("current version %q is not a release version, updating to %s", Version, latest)
 	}
 	ui.Step("Updating paq %s → %s", Version, latest)
 
-	// Risolvi gli URL degli asset per la piattaforma corrente.
+	// Resolve the asset URLs for the current platform.
 	plat := platform.Detect()
 	vars := template.Vars{
 		OS:      plat.OS,
@@ -125,7 +125,7 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Estrai il binario dall'archivio zip.
+	// Extract the binary from the zip archive.
 	binName := "paq" + plat.Ext
 	extractDir, err := os.MkdirTemp("", "paq-update-*")
 	if err != nil {
@@ -154,9 +154,9 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// replaceExecutable sostituisce il binario in exePath con quello in newBinary.
-// Scrive prima in un file temporaneo nella stessa directory così che la rename
-// finale sia atomica e sullo stesso filesystem.
+// replaceExecutable replaces the binary at exePath with the one at newBinary.
+// It first writes to a temp file in the same directory so that the final
+// rename is atomic and stays on the same filesystem.
 func replaceExecutable(exePath, newBinary string) error {
 	dir := filepath.Dir(exePath)
 
@@ -171,7 +171,7 @@ func replaceExecutable(exePath, newBinary string) error {
 		return fmt.Errorf("create temp file in %s: %w", dir, err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op se la rename ha successo
+	defer os.Remove(tmpName) // no-op if the rename succeeds
 
 	if _, err := io.Copy(tmp, src); err != nil {
 		tmp.Close()
@@ -185,14 +185,14 @@ func replaceExecutable(exePath, newBinary string) error {
 	}
 
 	if err := os.Rename(tmpName, exePath); err != nil {
-		// Su alcune piattaforme non si può sovrascrivere un binario in esecuzione:
-		// sposta prima il vecchio da parte, poi metti il nuovo al suo posto.
+		// On some platforms a running binary cannot be overwritten:
+		// move the old one aside first, then put the new one in its place.
 		backup := exePath + ".old"
 		if rerr := os.Rename(exePath, backup); rerr != nil {
 			return fmt.Errorf("replace executable: %w", err)
 		}
 		if rerr := os.Rename(tmpName, exePath); rerr != nil {
-			os.Rename(backup, exePath) // ripristina il vecchio binario
+			os.Rename(backup, exePath) // restore the old binary
 			return fmt.Errorf("replace executable: %w", rerr)
 		}
 		os.Remove(backup)

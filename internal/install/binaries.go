@@ -10,21 +10,22 @@ import (
 	"github.com/enr/paq/internal/archive"
 )
 
-// ResolvedBinary è un eseguibile da installare con i template già risolti.
-// From è il basename del file nell'archivio (vuoto per i download nudi);
-// To è il nome con cui installarlo.
+// ResolvedBinary is an executable to install with templates already resolved.
+// From is the basename of the file inside the archive (empty for bare
+// downloads); To is the name to install it as.
 type ResolvedBinary struct {
 	From string
 	To   string
 }
 
-// InstallBinaries installa uno o più eseguibili in destDir, applicando chmod a
-// ciascuno. Ritorna i path assoluti dei file installati (per lo state).
+// InstallBinaries installs one or more executables into destDir, applying
+// chmod to each. Returns the absolute paths of the installed files (for the state).
 //
-// Se archiveType è vuoto l'artefatto scaricato È l'eseguibile (download nudo):
-// è ammessa una sola entry e l'artefatto viene installato come destDir/<To>.
-// Altrimenti ogni binario viene estratto dall'archivio (per basename From) in
-// una temp dir sullo stesso filesystem di destDir, poi spostato in destDir/<To>.
+// If archiveType is empty, the downloaded artifact IS the executable (bare
+// download): exactly one entry is allowed and the artifact is installed as
+// destDir/<To>. Otherwise each binary is extracted from the archive (by
+// basename From) into a temp dir on the same filesystem as destDir, then
+// moved into destDir/<To>.
 func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, destDir, chmod string, opts archive.ExtractOpts) ([]string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return nil, fmt.Errorf("create dest dir: %w", err)
@@ -35,7 +36,7 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 		return nil, err
 	}
 
-	// Download nudo: l'artefatto è il binario, nessuna estrazione.
+	// Bare download: the artifact is the binary, no extraction.
 	if archiveType == "" {
 		if len(bins) != 1 {
 			return nil, fmt.Errorf("a non-archive download installs exactly one binary, got %d", len(bins))
@@ -53,7 +54,7 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Estrai tutti i binari in temp e applica chmod, prima di toccare destDir.
+	// Extract all binaries into temp and apply chmod, before touching destDir.
 	for _, b := range bins {
 		if b.From == "" {
 			return nil, fmt.Errorf("binaries: 'from' is required when 'archive' is set")
@@ -72,7 +73,7 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 		}
 	}
 
-	// Sposta ogni binario in destDir/<To>.
+	// Move each binary into destDir/<To>.
 	var installed []string
 	for _, b := range bins {
 		extracted := filepath.Join(tmpDir, b.From)
@@ -86,8 +87,8 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 	return installed, nil
 }
 
-// installRawBinary copia l'artefatto in dest con swap atomico nella stessa dir,
-// applicando mode (l'artefatto può trovarsi su un filesystem diverso da dest).
+// installRawBinary copies the artifact to dest with an atomic swap in the
+// same dir, applying mode (the artifact may be on a different filesystem than dest).
 func installRawBinary(src, dest string, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(dest), "paq-install-*")
 	if err != nil {
@@ -119,7 +120,7 @@ func installRawBinary(src, dest string, mode os.FileMode) error {
 	return nil
 }
 
-// parseFileMode interpreta un chmod ottale (es. "0755"); "" → 0 (nessun chmod).
+// parseFileMode parses an octal chmod (e.g. "0755"); "" → 0 (no chmod).
 func parseFileMode(chmod string) (os.FileMode, error) {
 	if chmod == "" {
 		return 0, nil

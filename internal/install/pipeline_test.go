@@ -23,7 +23,7 @@ import (
 	"github.com/enr/paq/internal/version"
 )
 
-// makeFakeTarGz crea un .tar.gz in-memory con un singolo file "rg" contenente fakeContent.
+// makeFakeTarGz creates an in-memory .tar.gz with a single "rg" file containing content.
 func makeFakeTarGz(content []byte) []byte {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
@@ -45,8 +45,8 @@ func sha512hex(data []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-// makeFakeZip crea uno zip in-memory con un singolo file annidato sotto una
-// directory di primo livello (come gli archivi maven), per testare strip_components.
+// makeFakeZip creates an in-memory zip with a single file nested under a
+// top-level directory (like maven archives), to test strip_components.
 func makeFakeZip(topDir, name string, content []byte) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -56,20 +56,20 @@ func makeFakeZip(topDir, name string, content []byte) []byte {
 	return buf.Bytes()
 }
 
-// isolateState redirige lo state file di paq su una directory temporanea,
-// così che i test che eseguono Run() non scrivano nello state reale dell'utente.
+// isolateState redirects paq's state file to a temp directory, so tests
+// running Run() don't write to the user's real state.
 func isolateState(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 }
 
-// TestPipelineSHA512URLBackend verifica l'installazione tramite backend "url"
-// con verifica sha512 da file checksum "bare hash" (layout Apache Maven).
+// TestPipelineSHA512URLBackend verifies installation via the "url" backend
+// with sha512 verification from a "bare hash" checksum file (Apache Maven layout).
 func TestPipelineSHA512URLBackend(t *testing.T) {
 	isolateState(t)
 	fileContent := []byte("fake-mvn-binary")
 	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", fileContent)
-	checksum := sha512hex(zipData) // bare hash, nessun filename
+	checksum := sha512hex(zipData) // bare hash, no filename
 
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,8 +120,8 @@ func TestPipelineSHA512URLBackend(t *testing.T) {
 	}
 }
 
-// TestPipelineOmittedVersionUsesDefault verifica che un'app SENZA version
-// installi la default_version della spec (canale stabile, niente rete).
+// TestPipelineOmittedVersionUsesDefault verifies that an app with NO version
+// installs the spec's default_version (stable channel, no network).
 func TestPipelineOmittedVersionUsesDefault(t *testing.T) {
 	isolateState(t)
 	fileContent := []byte("fake-mvn-binary")
@@ -164,8 +164,8 @@ func TestPipelineOmittedVersionUsesDefault(t *testing.T) {
 	}
 }
 
-// TestPipelineOmittedDestUsesDefaults verifica che un'app SENZA dest derivi la
-// destinazione dalle directory base configurate in [defaults].
+// TestPipelineOmittedDestUsesDefaults verifies that an app with NO dest
+// derives its destination from the base directories configured in [defaults].
 func TestPipelineOmittedDestUsesDefaults(t *testing.T) {
 	isolateState(t)
 	fileContent := []byte("fake-mvn-binary")
@@ -193,14 +193,14 @@ func TestPipelineOmittedDestUsesDefaults(t *testing.T) {
 		},
 		Defaults: config.Defaults{Opt: optDir},
 		Apps: map[string]config.AppEntry{
-			"maven": {Use: "maven"}, // né version né dest
+			"maven": {Use: "maven"}, // neither version nor dest
 		},
 	}
 
 	if err := Run(context.Background(), cfg, "maven", nil, nil); err != nil {
 		t.Fatalf("install failed: %v", err)
 	}
-	// dest derivato = <opt>/maven (spec directory-style).
+	// derived dest = <opt>/maven (directory-style spec).
 	data, err := os.ReadFile(filepath.Join(optDir, "maven", "bin", "mvn"))
 	if err != nil {
 		t.Fatalf("installed file not found at default dest: %v", err)
@@ -210,9 +210,9 @@ func TestPipelineOmittedDestUsesDefaults(t *testing.T) {
 	}
 }
 
-// TestPipelineLatestNoStrategyErrors verifica che version="latest" su una
-// spec senza strategia reale (backend "url") fallisca, senza ricadere su
-// una default_version.
+// TestPipelineLatestNoStrategyErrors verifies that version="latest" on a
+// spec with no real strategy (backend "url") fails, without falling back to
+// a default_version.
 func TestPipelineLatestNoStrategyErrors(t *testing.T) {
 	isolateState(t)
 	cfg := &config.Config{
@@ -234,8 +234,8 @@ func TestPipelineLatestNoStrategyErrors(t *testing.T) {
 	}
 }
 
-// TestPipelineSHA512Mismatch verifica che un checksum sha512 errato faccia
-// fallire l'installazione senza creare la destinazione.
+// TestPipelineSHA512Mismatch verifies that a wrong sha512 checksum makes the
+// install fail without creating the destination.
 func TestPipelineSHA512Mismatch(t *testing.T) {
 	isolateState(t)
 	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
@@ -277,8 +277,8 @@ func TestPipelineSHA512Mismatch(t *testing.T) {
 	}
 }
 
-// TestPipelineWarnsWhenNoVerify verifica che la pipeline emetta un warning
-// (hook OnWarn) quando la spec non configura alcuna verifica.
+// TestPipelineWarnsWhenNoVerify verifies that the pipeline emits a warning
+// (OnWarn hook) when the spec configures no verification.
 func TestPipelineWarnsWhenNoVerify(t *testing.T) {
 	isolateState(t)
 	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
@@ -322,8 +322,8 @@ func TestPipelineWarnsWhenNoVerify(t *testing.T) {
 	}
 }
 
-// TestPipelineNoWarnWhenVerifyConfigured verifica che il warning NON venga
-// emesso quando la verifica è configurata.
+// TestPipelineNoWarnWhenVerifyConfigured verifies that the warning is NOT
+// emitted when verification is configured.
 func TestPipelineNoWarnWhenVerifyConfigured(t *testing.T) {
 	isolateState(t)
 	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
@@ -428,11 +428,11 @@ func TestPipelineInstallFile(t *testing.T) {
 		},
 	}
 
-	// Patch: l'API GitHub deve puntare al server di test
-	// Per semplicità, modifichiamo la spec usando backend "url"
-	// e testiamo la pipeline con mock della GitHub API via transport.
-	// Usiamo un approccio più diretto: monkey-patch dell'HTTP client.
-	// Il test usa un custom transport che redirige verso il server di test.
+	// Patch: the GitHub API must point to the test server.
+	// For simplicity, we modify the spec using the "url" backend
+	// and test the pipeline with a GitHub API mock via transport.
+	// We use a more direct approach: monkey-patch the HTTP client.
+	// The test uses a custom transport that redirects to the test server.
 	origTransport := http.DefaultTransport
 	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
 	defer func() { http.DefaultTransport = origTransport }()
@@ -442,7 +442,7 @@ func TestPipelineInstallFile(t *testing.T) {
 		t.Fatalf("install failed: %v", err)
 	}
 
-	// Verifica che il file sia stato installato
+	// Verify that the file was installed.
 	data, err := os.ReadFile(dest)
 	if err != nil {
 		t.Fatalf("dest not found: %v", err)
@@ -457,7 +457,7 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 	binaryContent := []byte("fake-rg-binary")
 	tgzData := makeFakeTarGz(binaryContent)
 	assetName := "ripgrep-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
-	// Checksum volutamente sbagliato
+	// Deliberately wrong checksum.
 	wrongChecksum := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	checksumFile := fmt.Sprintf("%s  %s\n", wrongChecksum, assetName)
 
@@ -521,15 +521,15 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 		t.Error("expected error for checksum mismatch, got nil")
 	}
 
-	// dest NON deve essere stato creato
+	// dest must NOT have been created.
 	if _, err := os.Stat(dest); !os.IsNotExist(err) {
 		t.Error("dest should not exist after failed install")
 	}
 }
 
-// TestPipelineErrorShownOnceAndMarked verifica che, in caso di errore, l'hook
-// OnFail venga invocato una sola volta e l'errore ritornato sia marcato come
-// "già mostrato" (così il chiamante non lo ristampa).
+// TestPipelineErrorShownOnceAndMarked verifies that, on error, the OnFail
+// hook is invoked exactly once and the returned error is marked as
+// "already shown" (so the caller doesn't reprint it).
 func TestPipelineErrorShownOnceAndMarked(t *testing.T) {
 	isolateState(t)
 	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
@@ -582,7 +582,7 @@ func TestPipelineErrorShownOnceAndMarked(t *testing.T) {
 	}
 }
 
-// TestPipelineDebugHook verifica che la pipeline emetta tracce di debug.
+// TestPipelineDebugHook verifies that the pipeline emits debug traces.
 func TestPipelineDebugHook(t *testing.T) {
 	isolateState(t)
 	fileContent := []byte("fake-mvn")

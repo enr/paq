@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Vars contiene tutti i placeholder disponibili per la risoluzione dei template.
+// Vars contains all the placeholders available for template resolution.
 type Vars struct {
 	OS           string
 	Arch         string
@@ -18,14 +18,14 @@ type Vars struct {
 	VersionMinor string
 	VersionPatch string
 	VersionBuild string
-	// Extra contiene placeholder aggiuntivi (es. meta-template come rust_target)
+	// Extra contains additional placeholders (e.g. meta-templates like rust_target).
 	Extra map[string]string
 }
 
 var placeholderRe = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
-// Resolve sostituisce tutti i {{placeholder}} in s con i valori in v.
-// Ritorna errore se un placeholder non è riconosciuto.
+// Resolve substitutes all {{placeholder}} occurrences in s with the values in v.
+// Returns an error if a placeholder is not recognized.
 func Resolve(s string, v Vars) (string, error) {
 	var resolveErr error
 	result := placeholderRe.ReplaceAllStringFunc(s, func(match string) string {
@@ -47,7 +47,7 @@ func Resolve(s string, v Vars) (string, error) {
 }
 
 func lookup(name string, v Vars) (string, error) {
-	// Cerca prima nei placeholder extra (meta-template)
+	// Look up the extra placeholders first (meta-templates).
 	if v.Extra != nil {
 		if val, ok := v.Extra[name]; ok {
 			return val, nil

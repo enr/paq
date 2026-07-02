@@ -19,9 +19,9 @@ func sha512Hex(b []byte) string {
 	return hex.EncodeToString(s[:])
 }
 
-// TestRunNoVerification documenta che un piano vuoto non esegue alcuna verifica
-// e non ritorna errore: è esattamente il caso che giustifica il warning emesso
-// dalla pipeline quando una spec non configura la verifica.
+// TestRunNoVerification documents that an empty plan performs no verification
+// and returns no error: this is exactly the case that justifies the warning
+// emitted by the pipeline when a spec configures no verification.
 func TestRunNoVerification(t *testing.T) {
 	artifact := writeTempFile(t, "artifact.bin", []byte("anything"))
 	if err := Run(Plan{ArtifactPath: artifact, ArtifactName: "artifact.bin"}); err != nil {
@@ -74,7 +74,7 @@ func TestRunSHA256Asset(t *testing.T) {
 }
 
 func TestRunSHA256AssetBareHash(t *testing.T) {
-	// Layout Oracle JDK: il file .sha256 contiene solo l'hash.
+	// Oracle JDK layout: the .sha256 file contains only the hash.
 	data := []byte("checksum-asset-256-bare")
 	artifact := writeTempFile(t, "jdk-26_linux-aarch64_bin.tar.gz", data)
 	checksum := writeTempFile(t, "jdk-26_linux-aarch64_bin.tar.gz.sha256",
@@ -97,7 +97,7 @@ func TestRunSHA256AssetBareHash(t *testing.T) {
 }
 
 func TestRunSHA512AssetBareHash(t *testing.T) {
-	// Layout Apache Maven: il file .sha512 contiene solo l'hash.
+	// Apache Maven layout: the .sha512 file contains only the hash.
 	data := []byte("checksum-asset-512")
 	artifact := writeTempFile(t, "apache-maven-x-bin.zip", data)
 	checksum := writeTempFile(t, "apache-maven-x-bin.zip.sha512",
@@ -119,8 +119,8 @@ func TestRunSHA512AssetBareHash(t *testing.T) {
 	}
 }
 
-// TestRunSignatureThenChecksum verifica la catena completa: firma minisign sul
-// file checksum, poi integrità sha256 dell'artefatto contro quel checksum.
+// TestRunSignatureThenChecksum verifies the full chain: minisign signature on
+// the checksum file, then sha256 integrity of the artifact against that checksum.
 func TestRunSignatureThenChecksum(t *testing.T) {
 	sk, pub := newTestMinisignKey(t)
 	data := []byte("the-real-artifact")
@@ -142,9 +142,9 @@ func TestRunSignatureThenChecksum(t *testing.T) {
 	}
 }
 
-// TestRunSignatureCheckedBeforeChecksum verifica l'ordine: se la firma del file
-// checksum è invalida, Run deve fallire alla firma anche se il checksum
-// combacerebbe con l'artefatto.
+// TestRunSignatureCheckedBeforeChecksum verifies the order: if the checksum
+// file's signature is invalid, Run must fail at the signature step even if
+// the checksum would match the artifact.
 func TestRunSignatureCheckedBeforeChecksum(t *testing.T) {
 	signer, _ := newTestMinisignKey(t)
 	_, wrongPub := newTestMinisignKey(t)
@@ -159,7 +159,7 @@ func TestRunSignatureCheckedBeforeChecksum(t *testing.T) {
 		ArtifactPath:    artifact,
 		ArtifactName:    "artifact.bin",
 		SHA256AssetPath: checksum,
-		MinisignPubKey:  wrongPub, // firma non verificabile
+		MinisignPubKey:  wrongPub, // signature not verifiable
 		MinisignSigPath: sigPath,
 	}
 	err := Run(plan)
@@ -182,7 +182,7 @@ func TestRunMinisignWithoutChecksumAsset(t *testing.T) {
 		ArtifactName:    "artifact.bin",
 		MinisignPubKey:  pub,
 		MinisignSigPath: sigPath,
-		// SHA256AssetPath assente: la firma non ha un checksum da firmare.
+		// SHA256AssetPath absent: the signature has no checksum to sign.
 	}
 	err := Run(plan)
 	if err == nil {

@@ -9,23 +9,23 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// UserManifestPath ritorna il path del manifest utente (config.toml).
-// È l'accessor pubblico di userConfigPath.
+// UserManifestPath returns the path of the user manifest (config.toml).
+// It is the public accessor for userConfigPath.
 func UserManifestPath() (string, error) {
 	return userConfigPath()
 }
 
-// WriteManifestEntry aggiunge al manifest utente il blocco TOML `block` (es. una
-// sezione "[apps.<key>]"), creando file e directory se non esistono.
+// WriteManifestEntry appends the TOML `block` (e.g. an "[apps.<key>]" section)
+// to the user manifest, creating the file and directory if they don't exist.
 //
-// Se overwrite è true ed esiste già una tabella per `key`, questa viene rimossa
-// prima di aggiungere il nuovo blocco (i commenti del resto del file restano
-// intatti). Se overwrite è false e la chiave esiste già, la validazione fallisce
-// e il manifest non viene toccato.
+// If overwrite is true and a table for `key` already exists, it is removed
+// before adding the new block (comments in the rest of the file are left
+// intact). If overwrite is false and the key already exists, validation
+// fails and the manifest is left untouched.
 //
-// La scrittura è difensiva: il contenuto risultante viene prima validato con un
-// parse TOML e solo dopo scritto su disco in modo atomico (file temporaneo +
-// rename). Ritorna il path del manifest.
+// Writing is defensive: the resulting content is first validated with a TOML
+// parse and only then written to disk atomically (temp file + rename).
+// Returns the manifest's path.
 func WriteManifestEntry(key, block string, overwrite bool) (string, error) {
 	path, err := userConfigPath()
 	if err != nil {
@@ -52,8 +52,8 @@ func WriteManifestEntry(key, block string, overwrite bool) (string, error) {
 	}
 	content += strings.TrimRight(block, "\n") + "\n"
 
-	// Valida il risultato prima di scrivere: una chiave [apps.<key>] duplicata
-	// fa fallire l'unmarshal, evitando di corrompere il manifest.
+	// Validate the result before writing: a duplicate [apps.<key>] key
+	// makes the unmarshal fail, avoiding corruption of the manifest.
 	var raw userConfigRaw
 	if err := toml.Unmarshal([]byte(content), &raw); err != nil {
 		return "", fmt.Errorf("resulting manifest is invalid (entry %q may already exist): %w", key, err)
@@ -71,9 +71,9 @@ func WriteManifestEntry(key, block string, overwrite bool) (string, error) {
 	return path, nil
 }
 
-// removeAppTable rimuove dal contenuto TOML le tabelle relative all'app `key`
-// (sia "[apps.<key>]" sia eventuali sottotabelle "[apps.<key>.xxx]"), lasciando
-// inalterato il resto del file. Opera per righe per non riformattare il manifest.
+// removeAppTable removes from the TOML content the tables for app `key`
+// (both "[apps.<key>]" and any "[apps.<key>.xxx]" subtables), leaving the
+// rest of the file unchanged. Operates line-by-line to avoid reformatting the manifest.
 func removeAppTable(content, key string) string {
 	target := "apps." + key
 	prefix := target + "."

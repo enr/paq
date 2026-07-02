@@ -7,14 +7,14 @@ import (
 	"github.com/enr/paq/internal/archive"
 )
 
-// InstallDir estrae l'albero dell'archivio in dest con swap sicuro.
-// Se dest esiste già: dest → dest.bak, dest.tmp → dest, rimuovi dest.bak.
-// Se qualsiasi passo dopo l'estrazione fallisce, dest resta intatto.
+// InstallDir extracts the archive's tree into dest with a safe swap.
+// If dest already exists: dest → dest.bak, dest.tmp → dest, remove dest.bak.
+// If any step after extraction fails, dest is left intact.
 func InstallDir(archivePath, archiveType, dest string, opts archive.ExtractOpts) error {
 	destTmp := dest + ".tmp"
 	destBak := dest + ".bak"
 
-	// Pulisci eventuali residui di run precedenti fallite
+	// Clean up any leftovers from previous failed runs.
 	os.RemoveAll(destTmp)
 	os.RemoveAll(destBak)
 
@@ -24,7 +24,7 @@ func InstallDir(archivePath, archiveType, dest string, opts archive.ExtractOpts)
 		return fmt.Errorf("extract: %w", err)
 	}
 
-	// Swap: dest → dest.bak, dest.tmp → dest
+	// Swap: dest → dest.bak, dest.tmp → dest.
 	if _, err := os.Stat(dest); err == nil {
 		if err := os.Rename(dest, destBak); err != nil {
 			os.RemoveAll(destTmp)
@@ -33,12 +33,12 @@ func InstallDir(archivePath, archiveType, dest string, opts archive.ExtractOpts)
 	}
 
 	if err := os.Rename(destTmp, dest); err != nil {
-		// Prova rollback del backup
+		// Try to roll back the backup.
 		os.Rename(destBak, dest)
 		return fmt.Errorf("swap dir: %w", err)
 	}
 
-	// Rimuovi il backup
+	// Remove the backup.
 	os.RemoveAll(destBak)
 	return nil
 }

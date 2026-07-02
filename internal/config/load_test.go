@@ -59,7 +59,7 @@ func TestLoadEmbeddedRegistry(t *testing.T) {
 		t.Errorf("jdk darwin Subdir = %q, want */Contents/Home", darwinOv.Subdir)
 	}
 
-	// zipp deve usare la modalità multi-binary
+	// zipp should use multi-binary mode.
 	zipp, ok := specs["zipp"]
 	if !ok {
 		t.Fatal("zipp spec not found")
@@ -72,7 +72,7 @@ func TestLoadEmbeddedRegistry(t *testing.T) {
 	}
 }
 
-// TestRunpSpec verifica la spec runp (backend github, asset zip multi-piattaforma).
+// TestRunpSpec verifies the runp spec (github backend, multi-platform zip asset).
 func TestRunpSpec(t *testing.T) {
 	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
@@ -109,14 +109,14 @@ func TestRunpSpec(t *testing.T) {
 			t.Errorf("runp should support %s", p)
 		}
 	}
-	// Una piattaforma non distribuita non deve essere supportata.
+	// A platform not distributed must not be supported.
 	if runp.SupportsPlatform("darwin", "amd64") {
 		t.Error("runp should not support darwin/amd64")
 	}
 }
 
-// TestWindowsArchiveOverride verifica che le ricette che su Windows distribuiscono
-// uno zip (bat/ripgrep/delta/hugo) lo selezionino via la sezione [<name>.windows].
+// TestWindowsArchiveOverride verifies that recipes distributing a zip on
+// Windows (bat/ripgrep/delta/hugo) select it via the [<name>.windows] section.
 func TestWindowsArchiveOverride(t *testing.T) {
 	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestWindowsArchiveOverride(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s spec not found", name)
 		}
-		// Default (non-Windows): resta tar.gz.
+		// Default (non-Windows): stays tar.gz.
 		if r.Archive != "tar.gz" {
 			t.Errorf("%s default Archive = %q, want tar.gz", name, r.Archive)
 		}
@@ -139,15 +139,15 @@ func TestWindowsArchiveOverride(t *testing.T) {
 		if got := win.Asset[len(win.Asset)-4:]; got != ".zip" {
 			t.Errorf("%s windows Asset = %q, want .zip suffix", name, win.Asset)
 		}
-		// L'override non deve mutare la spec originale.
+		// The override must not mutate the original spec.
 		if r.Archive != "tar.gz" {
 			t.Errorf("%s Archive mutated to %q after ApplyOSOverride", name, r.Archive)
 		}
 	}
 }
 
-// TestParseSpecBinariesRename verifica il round-trip del parsing di una spec
-// con binaries che usa il campo opzionale "to".
+// TestParseSpecBinariesRename verifies the parsing round-trip of a spec
+// with binaries that uses the optional "to" field.
 func TestParseSpecBinariesRename(t *testing.T) {
 	data := []byte(`
 [tool]
@@ -175,9 +175,9 @@ binaries = [
 	}
 }
 
-// TestUserConfigSpecs verifica che una ricetta definita dall'utente nella sezione
-// [specs.*] del manifest venga decodificata in Spec, comprese le sottosezioni
-// arch/verify e l'override per-OS (es. [specs.mytool.darwin]).
+// TestUserConfigSpecs verifies that a user-defined recipe in the manifest's
+// [specs.*] section is decoded into Spec, including the arch/verify
+// subsections and the per-OS override (e.g. [specs.mytool.darwin]).
 func TestUserConfigSpecs(t *testing.T) {
 	data := []byte(`
 [apps.mytool]
@@ -235,8 +235,8 @@ strip_components = 1
 	}
 }
 
-// TestMergeUserSpecsOverride verifica che le ricette utente si aggiungano a quelle
-// embedded e, in caso di nome in comune, le sovrascrivano (last-write-wins).
+// TestMergeUserSpecsOverride verifies that user recipes are added to the
+// embedded ones and, when names collide, override them (last-write-wins).
 func TestMergeUserSpecsOverride(t *testing.T) {
 	embedded := map[string]Spec{
 		"ripgrep": {Backend: "github", Repo: "BurntSushi/ripgrep"},

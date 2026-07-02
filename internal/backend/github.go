@@ -11,31 +11,31 @@ import (
 	"github.com/enr/paq/internal/template"
 )
 
-// GitHubBackend risolve l'URL di download da GitHub releases.
+// GitHubBackend resolves the download URL from GitHub releases.
 type GitHubBackend struct {
-	Repo       string       // es. "BurntSushi/ripgrep"
-	Asset      string       // template nome asset, es. "ripgrep-{{version}}-{{rust_target}}.tar.gz"
-	HTTPClient *http.Client // se nil usa http.DefaultClient
+	Repo       string       // e.g. "BurntSushi/ripgrep"
+	Asset      string       // asset name template, e.g. "ripgrep-{{version}}-{{rust_target}}.tar.gz"
+	HTTPClient *http.Client // if nil, uses http.DefaultClient
 }
 
 type githubAsset struct {
 	Name string `json:"name"`
-	URL  string `json:"url"` // API asset URL, scaricabile col token anche su repo privati
+	URL  string `json:"url"` // API asset URL, downloadable with the token even on private repos
 }
 
 type githubRelease struct {
 	Assets []githubAsset `json:"assets"`
 }
 
-// Resolve espande il template Asset, cerca l'asset con quel nome nella release GitHub
-// identificata dal tag, e ritorna l'URL API dell'asset.
+// Resolve expands the Asset template, looks up the asset with that name in the
+// GitHub release identified by tag, and returns the asset's API URL.
 func (b GitHubBackend) Resolve(ctx context.Context, tag string, v template.Vars) (string, error) {
 	client := b.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
-	// Espandi il template per ottenere il nome dell'asset cercato
+	// Expand the template to get the name of the asset we're looking for.
 	assetName, err := template.Resolve(b.Asset, v)
 	if err != nil {
 		return "", fmt.Errorf("resolve asset template: %w", err)

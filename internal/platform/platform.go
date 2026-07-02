@@ -2,16 +2,16 @@ package platform
 
 import "runtime"
 
-// Defaults contiene i valori di piattaforma risolti per il sistema corrente.
+// Defaults contains the platform values resolved for the current system.
 type Defaults struct {
 	OS     string // "linux", "darwin", "windows"
 	Arch   string // "amd64", "arm64"
-	Vendor string // "unknown" su linux, "apple" su darwin, "pc" su windows
-	Env    string // "gnu" su linux, "" altrove
-	Ext    string // "" su linux/darwin, ".exe" su windows
+	Vendor string // "unknown" on linux, "apple" on darwin, "pc" on windows
+	Env    string // "gnu" on linux, "" elsewhere
+	Ext    string // "" on linux/darwin, ".exe" on windows
 }
 
-// Detect ritorna i Defaults per la piattaforma su cui gira il processo.
+// Detect returns the Defaults for the platform the process is running on.
 func Detect() Defaults {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
@@ -43,9 +43,8 @@ func Detect() Defaults {
 	}
 }
 
-// ApplyMap applica una mappa di override (es. [x.os] o [x.arch]):
-// se la chiave esiste nella mappa, ritorna il valore corrispondente,
-// altrimenti ritorna il valore di default.
+// ApplyMap applies an override map (e.g. [x.os] or [x.arch]): if the key
+// exists in the map, returns the corresponding value, otherwise returns defaultVal.
 func ApplyMap(m map[string]string, key, defaultVal string) string {
 	if m == nil {
 		return defaultVal

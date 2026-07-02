@@ -47,7 +47,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Seleziona le entry da rimuovere
+	// Select the entries to remove.
 	var targets []state.InstalledApp
 	if version != "" {
 		rec, ok := st.Get(name, version)
@@ -61,7 +61,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	} else if len(matches) == 1 {
 		targets = matches
 	} else {
-		// Più versioni installate: richiedi disambiguazione
+		// Multiple versions installed: require disambiguation.
 		var versions []string
 		for _, m := range matches {
 			versions = append(versions, m.Version)
@@ -103,8 +103,8 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// printUninstallTargets stampa la lista delle entry di stato che verranno
-// rimosse, sotto l'header dato. Condivisa da --dry-run e dal prompt di conferma.
+// printUninstallTargets prints the list of state entries that will be
+// removed, under the given header. Shared by --dry-run and the confirmation prompt.
 func printUninstallTargets(header string, targets []state.InstalledApp) {
 	ui.Step("%s", header)
 	for _, rec := range targets {
@@ -117,9 +117,9 @@ func printUninstallTargets(header string, targets []state.InstalledApp) {
 	}
 }
 
-// confirmYesNo stampa prompt e legge una risposta y/n da r. Ritorna true solo
-// per "y" o "yes" (case-insensitive); qualunque altro input (incluso vuoto)
-// è considerato un rifiuto.
+// confirmYesNo prints prompt and reads a y/n answer from r. Returns true only
+// for "y" or "yes" (case-insensitive); any other input (including empty)
+// is treated as a refusal.
 func confirmYesNo(r io.Reader, prompt string) bool {
 	fmt.Printf("%s [y/N] ", prompt)
 	line, _ := bufio.NewReader(r).ReadString('\n')
@@ -127,8 +127,8 @@ func confirmYesNo(r io.Reader, prompt string) bool {
 	return line == "y" || line == "yes"
 }
 
-// removeRecordFiles rimuove dal filesystem i file o le directory installati
-// per una entry di stato, in base al suo Kind.
+// removeRecordFiles removes from the filesystem the files or directories
+// installed for a state entry, based on its Kind.
 func removeRecordFiles(rec state.InstalledApp) error {
 	switch rec.Kind {
 	case "file":
@@ -140,7 +140,7 @@ func removeRecordFiles(rec state.InstalledApp) error {
 			return fmt.Errorf("remove %s: %w", rec.Dest, err)
 		}
 	case "binaries":
-		// Rimuovi solo i file installati, non la bin dir condivisa (es. ~/.local/bin).
+		// Only remove the installed files, not the shared bin dir (e.g. ~/.local/bin).
 		for _, p := range rec.Files {
 			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("remove %s: %w", p, err)
@@ -152,7 +152,7 @@ func removeRecordFiles(rec state.InstalledApp) error {
 	return nil
 }
 
-// parseAppRef separa un riferimento "name" o "name@version".
+// parseAppRef splits a "name" or "name@version" reference.
 func parseAppRef(ref string) (name, version string) {
 	if i := strings.LastIndex(ref, "@"); i > 0 {
 		return ref[:i], ref[i+1:]

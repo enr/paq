@@ -12,21 +12,21 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// knownOSNames è la lista degli OS supportati, usata per distinguere
-// le sezioni per-OS (es. [jdk.darwin]) da altri campi della spec.
+// knownOSNames is the list of supported OSes, used to distinguish per-OS
+// sections (e.g. [jdk.darwin]) from other spec fields.
 var knownOSNames = map[string]bool{
 	"linux":   true,
 	"darwin":  true,
 	"windows": true,
 }
 
-// templatesRaw è la struttura del file templates.toml
+// templatesRaw is the structure of the templates.toml file.
 type templatesRaw struct {
 	Templates map[string]any `toml:"templates"`
 }
 
-// LoadGlobalTemplates carica i meta-template globali da templates.toml.
-// Ritorna (global, osOverrides).
+// LoadGlobalTemplates loads the global meta-templates from templates.toml.
+// Returns (global, osOverrides).
 func LoadGlobalTemplates(registryFS fs.FS) (map[string]string, map[string]map[string]string, error) {
 	data, err := fs.ReadFile(registryFS, "registry/templates.toml")
 	if err != nil {
@@ -46,7 +46,7 @@ func LoadGlobalTemplates(registryFS fs.FS) (map[string]string, map[string]map[st
 		case string:
 			global[k] = tv
 		case map[string]any:
-			// Sezione per-OS (es. [templates.darwin])
+			// Per-OS section (e.g. [templates.darwin]).
 			osMap := make(map[string]string)
 			for mk, mv := range tv {
 				if s, ok := mv.(string); ok {
@@ -60,8 +60,8 @@ func LoadGlobalTemplates(registryFS fs.FS) (map[string]string, map[string]map[st
 	return global, osOverrides, nil
 }
 
-// LoadEmbeddedRegistry carica tutte le spec dai file .toml nell'FS embedded.
-// Ignora templates.toml (gestito separatamente).
+// LoadEmbeddedRegistry loads all specs from the .toml files in the embedded FS.
+// Ignores templates.toml (handled separately).
 func LoadEmbeddedRegistry(registryFS fs.FS) (map[string]Spec, error) {
 	specs := make(map[string]Spec)
 
@@ -95,10 +95,10 @@ func LoadEmbeddedRegistry(registryFS fs.FS) (map[string]Spec, error) {
 	return specs, nil
 }
 
-// parseSpecFile fa il parse di un file TOML di ricetta.
-// Gestisce le sezioni per-OS (es. [jdk.darwin]) estraendole come OSOverrides.
+// parseSpecFile parses a recipe TOML file.
+// Handles per-OS sections (e.g. [jdk.darwin]) by extracting them as OSOverrides.
 func parseSpecFile(data []byte) (map[string]Spec, error) {
-	// Prima passa: decode in mappa generica per gestire sezioni per-OS
+	// First pass: decode into a generic map to handle per-OS sections.
 	var raw map[string]any
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return nil, err
@@ -106,10 +106,10 @@ func parseSpecFile(data []byte) (map[string]Spec, error) {
 	return parseSpecsFromRaw(raw)
 }
 
-// parseSpecsFromRaw converte una mappa nome→tabella-spec (già decodificata da
-// TOML in forma generica) in Spec, estraendo le sezioni per-OS (es. [x.darwin])
-// come OSOverrides. È condivisa dal parsing della registry embedded e da quello
-// delle spec definite dall'utente nel manifest (sezione [specs.*]).
+// parseSpecsFromRaw converts a name→spec-table map (already decoded from TOML
+// in generic form) into Spec, extracting per-OS sections (e.g. [x.darwin]) as
+// OSOverrides. Shared by parsing of the embedded registry and of user-defined
+// specs in the manifest ([specs.*] section).
 func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 	result := make(map[string]Spec)
 
@@ -119,13 +119,13 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 			continue
 		}
 
-		// Estrai le sezioni per-OS prima del re-encode
+		// Extract the per-OS sections before re-encoding.
 		osOverrides := make(map[string]PlatformOverride)
 		cleanMap := make(map[string]any)
 
 		for k, v := range specMap {
 			if knownOSNames[k] {
-				// Sezione per-OS: decodifica in PlatformOverride
+				// Per-OS section: decode into PlatformOverride.
 				overrideData, err := json.Marshal(v)
 				if err != nil {
 					return nil, fmt.Errorf("marshal os override %q: %w", k, err)
@@ -134,8 +134,8 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 				if err := json.Unmarshal(overrideData, &ov); err != nil {
 					return nil, fmt.Errorf("unmarshal os override %q: %w", k, err)
 				}
-				// strip_components come *int richiede un workaround:
-				// leggiamo il campo raw dal map
+				// strip_components as *int needs a workaround:
+				// read the raw field from the map.
 				if ovMap, ok := v.(map[string]any); ok {
 					if sc, ok := ovMap["strip_components"]; ok {
 						switch scv := sc.(type) {
@@ -154,7 +154,7 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 			}
 		}
 
-		// Re-encode la mappa pulita e fai decode in Spec
+		// Re-encode the clean map and decode it into Spec.
 		cleanData, err := toml.Marshal(map[string]any{specName: cleanMap})
 		if err != nil {
 			return nil, fmt.Errorf("re-encode spec %q: %w", specName, err)
@@ -173,7 +173,7 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 	return result, nil
 }
 
-// userConfigPath ritorna il path del file di configurazione utente.
+// userConfigPath returns the path of the user configuration file.
 func userConfigPath() (string, error) {
 	if runtime.GOOS == "windows" {
 		appdata := os.Getenv("APPDATA")
@@ -194,18 +194,18 @@ func userConfigPath() (string, error) {
 	return filepath.Join(configHome, "paq", "config.toml"), nil
 }
 
-// userConfigRaw è la struttura TOML del manifest utente.
+// userConfigRaw is the TOML structure of the user manifest.
 type userConfigRaw struct {
 	Apps     map[string]AppEntry `toml:"apps"`
 	Defaults Defaults            `toml:"defaults"`
-	// Specs raccoglie le ricette definite dall'utente nella sezione [specs.*],
-	// nello stesso formato dei file della registry embedded. Decodificate in
-	// forma generica e poi convertite in Spec da parseSpecsFromRaw.
+	// Specs collects the user-defined recipes in the [specs.*] section, in the
+	// same format as the embedded registry files. Decoded in generic form and
+	// then converted into Spec by parseSpecsFromRaw.
 	Specs map[string]any `toml:"specs"`
 }
 
-// LoadUserConfig carica il manifest da ~/.config/paq/config.toml.
-// Ritorna Config vuoto (senza errore) se il file non esiste.
+// LoadUserConfig loads the manifest from ~/.config/paq/config.toml.
+// Returns an empty Config (without error) if the file doesn't exist.
 func LoadUserConfig() (*Config, error) {
 	path, err := userConfigPath()
 	if err != nil {
@@ -237,8 +237,8 @@ func LoadUserConfig() (*Config, error) {
 	return &Config{Apps: raw.Apps, Defaults: raw.Defaults, Specs: specs}, nil
 }
 
-// Merge unisce la registry embedded con il manifest utente.
-// Ritorna la Config completa pronta all'uso.
+// Merge combines the embedded registry with the user manifest.
+// Returns the complete, ready-to-use Config.
 func Merge(embeddedSpecs map[string]Spec, user *Config) (*Config, error) {
 	cfg := &Config{
 		Specs: make(map[string]Spec, len(embeddedSpecs)),
@@ -250,9 +250,9 @@ func Merge(embeddedSpecs map[string]Spec, user *Config) (*Config, error) {
 	}
 
 	if user != nil {
-		// Le ricette definite dall'utente ([specs.*]) sovrascrivono quelle
-		// embedded con lo stesso nome (last-write-wins): permette di aggiungere
-		// nuovi tool e di correggere una ricetta embedded obsoleta senza rilascio.
+		// User-defined recipes ([specs.*]) override embedded ones with the
+		// same name (last-write-wins): this allows adding new tools and
+		// patching a stale embedded recipe without a release.
 		for k, v := range user.Specs {
 			cfg.Specs[k] = v
 		}

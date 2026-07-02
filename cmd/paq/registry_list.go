@@ -26,8 +26,8 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 	return listDefinitions(query)
 }
 
-// listDefinitions stampa le definizioni del registry, filtrate per sottostringa
-// sul nome se query non è vuota. Condivisa da "registry list" e "search".
+// listDefinitions prints the registry definitions, filtered by substring
+// match on the name if query is non-empty. Shared by "registry list" and "search".
 func listDefinitions(query string) error {
 	cfg, err := loadConfig()
 	if err != nil {

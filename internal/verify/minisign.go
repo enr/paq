@@ -7,8 +7,8 @@ import (
 	minisign "github.com/jedisct1/go-minisign"
 )
 
-// CheckMinisign verifica che signaturePath sia una firma minisign valida
-// di filePath, prodotta dalla chiave pubblica pubKeyBase64.
+// CheckMinisign verifies that signaturePath is a valid minisign signature of
+// filePath, produced by the pubKeyBase64 public key.
 func CheckMinisign(filePath, signaturePath, pubKeyBase64 string) error {
 	pk, err := minisign.NewPublicKey(pubKeyBase64)
 	if err != nil {

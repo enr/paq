@@ -17,12 +17,12 @@ func TestCheckFile(t *testing.T) {
 	tmp.Write(content)
 	tmp.Close()
 
-	// hash corretto
+	// correct hash
 	if err := CheckFile(tmp.Name(), expected); err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
-	// hash sbagliato
+	// wrong hash
 	if err := CheckFile(tmp.Name(), "deadbeef"); err == nil {
 		t.Error("expected error for wrong hash, got nil")
 	}

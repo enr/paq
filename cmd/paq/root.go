@@ -19,8 +19,8 @@ var rootCmd = &cobra.Command{
 	Use:   "paq",
 	Short: "paq — install CLI tools from GitHub releases and URLs",
 	Long:  `paq installs and manages CLI tools defined in a registry, downloading from GitHub releases or direct URLs.`,
-	// La stampa di errori e usage è gestita centralmente in Execute, così da
-	// poter aggiungere colori e suggerimenti (hint) coerenti.
+	// Error and usage printing is handled centrally in Execute, so that
+	// colors and consistent hints can be added.
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -28,7 +28,7 @@ var rootCmd = &cobra.Command{
 			NoColor: flagNoColor || os.Getenv("NO_COLOR") != "",
 			JSON:    flagJSON,
 			Quiet:   flagQuiet,
-			// --debug implica l'output --verbose.
+			// --debug implies --verbose output.
 			Verbose: flagVerbose || flagDebug,
 			Debug:   flagDebug,
 		}

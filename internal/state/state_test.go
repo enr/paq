@@ -36,13 +36,13 @@ func TestStateLoadSaveRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verifica che il file esista
+	// Verify that the file exists.
 	path := filepath.Join(dir, "paq", "state.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("state file not found: %v", err)
 	}
 
-	// Ricarica e verifica
+	// Reload and verify.
 	s2, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestMultipleVersionsCoexist(t *testing.T) {
 		t.Errorf("upsert did not replace record")
 	}
 
-	// Delete senza versione rimuove tutte le versioni
+	// Delete with no version removes all versions.
 	if n := s.Delete("jdk", ""); n != 2 {
 		t.Errorf("Delete all removed %d, want 2", n)
 	}

@@ -58,27 +58,27 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return install.Run(ctx, cfg, name, progress, hooks)
 	}
 
-	// Installa tutte le app del manifest in parallelo (max maxParallel goroutine)
+	// Install all apps from the manifest in parallel (max maxParallel goroutines).
 	if len(cfg.Apps) == 0 {
 		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
 		return nil
 	}
 
-	// stdoutMu serializza le scritture su stdout/stderr per evitare output mescolato
+	// stdoutMu serializes writes to stdout/stderr to avoid interleaved output.
 	var stdoutMu sync.Mutex
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxParallel)
 
 	for name := range cfg.Apps {
-		name := name // cattura per la goroutine
+		name := name // capture for the goroutine
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)
 			lockedHooks := lockedAppHooks(prefix, &stdoutMu)
 			lockedHooks.Force = flagInstallForce
 			if err := install.Run(ctx, cfg, name, nil, lockedHooks); err != nil {
-				// La pipeline mostra già l'errore via OnFail; lo ristampiamo solo
-				// se per qualche motivo non è stato mostrato.
+				// The pipeline already shows the error via OnFail; we only
+				// reprint it if for some reason it wasn't shown.
 				if !install.ErrAlreadyShown(err) {
 					stdoutMu.Lock()
 					ui.Fail("%s%v", prefix, err)
@@ -93,12 +93,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return g.Wait()
 }
 
-// ensureManifestEntry garantisce che cfg.Apps[name] esista, così che install
-// possa procedere. Se name manca dal manifest ma corrisponde a una spec del
-// registry, sintetizza una entry di default (auto-import): la inietta in
-// cfg.Apps in memoria e — se save è true — la persiste nel manifest utente.
-// Ritorna il path scritto ("" se non persistito o se l'app era già presente)
-// oppure un hintError se name non è né un'app né una spec nota.
+// ensureManifestEntry ensures that cfg.Apps[name] exists, so that install
+// can proceed. If name is missing from the manifest but matches a registry
+// spec, it synthesizes a default entry (auto-import): injects it into
+// cfg.Apps in memory and, if save is true, persists it to the user manifest.
+// Returns the written path ("" if not persisted or the app already existed)
+// or a hintError if name is neither a known app nor a known spec.
 func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, error) {
 	if _, exists := cfg.Apps[name]; exists {
 		return "", nil
@@ -125,7 +125,7 @@ func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, er
 		Version: defaultImportVersion(spec),
 		Dest:    config.DefaultDest(spec, name, cfg.Defaults),
 	}
-	// Rende l'app installabile in memoria, a prescindere dalla persistenza.
+	// Makes the app installable in memory, regardless of persistence.
 	cfg.Apps[name] = entry
 
 	if !save {
@@ -140,7 +140,7 @@ func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, er
 	return path, nil
 }
 
-// appHooks costruisce gli Hooks per un singolo app (usato per install singola).
+// appHooks builds the Hooks for a single app (used for single-app install).
 func appHooks(name, prefix string) *install.Hooks {
 	return &install.Hooks{
 		OnStep:  func(msg string) { ui.Step("%s%s", prefix, msg) },
@@ -152,8 +152,8 @@ func appHooks(name, prefix string) *install.Hooks {
 	}
 }
 
-// lockedAppHooks costruisce Hooks serializzati su un mutex condiviso, per evitare
-// output mescolato durante le operazioni parallele (install/upgrade di più app).
+// lockedAppHooks builds Hooks serialized on a shared mutex, to avoid
+// interleaved output during parallel operations (install/upgrade of multiple apps).
 func lockedAppHooks(prefix string, mu *sync.Mutex) *install.Hooks {
 	return &install.Hooks{
 		OnStep:  func(msg string) { mu.Lock(); ui.Step("%s%s", prefix, msg); mu.Unlock() },
@@ -165,7 +165,7 @@ func lockedAppHooks(prefix string, mu *sync.Mutex) *install.Hooks {
 	}
 }
 
-// loadConfig carica registry + template globali + manifest utente e li unisce.
+// loadConfig loads the registry + global templates + user manifest and merges them.
 func loadConfig() (*config.Config, error) {
 	registry, err := config.LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
