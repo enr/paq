@@ -23,7 +23,7 @@ import (
 	"github.com/enr/paq/internal/version"
 )
 
-// Hooks permette alla pipeline di emettere eventi UI senza importare il package ui.
+// Hooks lets the pipeline emit UI events without importing the ui package.
 type Hooks struct {
 	OnStep  func(msg string)
 	OnOK    func(msg string)
@@ -35,29 +35,29 @@ type Hooks struct {
 	Force bool
 }
 
-// shownError marca un errore già mostrato all'utente tramite l'hook OnFail,
-// così i chiamanti non lo ristampano una seconda volta.
+// shownError marks an error as already shown to the user via the OnFail hook,
+// so callers don't reprint it a second time.
 type shownError struct{ err error }
 
 func (e shownError) Error() string { return e.err.Error() }
 func (e shownError) Unwrap() error { return e.err }
 
-// ErrAlreadyShown indica se err (o un errore che avvolge) è già stato mostrato
-// all'utente dalla pipeline.
+// ErrAlreadyShown reports whether err (or an error it wraps) has already been
+// shown to the user by the pipeline.
 func ErrAlreadyShown(err error) bool {
 	var se shownError
 	return errors.As(err, &se)
 }
 
-// Run esegue la pipeline completa per installare una singola app.
-// In caso di errore l'esito viene mostrato una sola volta tramite l'hook
-// OnFail e l'errore ritornato viene marcato come già mostrato (shownError).
+// Run executes the complete pipeline to install a single app.
+// On error, the outcome is shown only once via the OnFail hook, and the
+// returned error is marked as already shown (shownError).
 func Run(ctx context.Context, cfg *config.Config, appName string, progress download.ProgressFn, hooks *Hooks) (retErr error) {
 	if hooks == nil {
 		hooks = &Hooks{}
 	}
-	// Punto unico di presentazione dell'errore: qualunque return con errore
-	// viene mostrato qui in rosso e marcato come "già mostrato".
+	// Single point of error presentation: any error return is shown here
+	// in red and marked as "already shown".
 	defer func() {
 		if retErr != nil && hooks.OnFail != nil {
 			hooks.OnFail(retErr)
@@ -85,7 +85,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 	}
 
-	// 1. Trova app e ricetta nella config
+	// 1. Find the app and recipe in the config.
 	app, found := cfg.Apps[appName]
 	if !found {
 		return fmt.Errorf("app %q not found in manifest", appName)
@@ -105,26 +105,26 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
 	}
 
-	// Rifiuta subito le piattaforme non supportate, prima di qualsiasi accesso
-	// di rete. Il check usa i valori canonici grezzi (plat.OS/plat.Arch), non
-	// quelli post-mappa per il tool.
+	// Reject unsupported platforms immediately, before any network access.
+	// The check uses the raw canonical values (plat.OS/plat.Arch), not the
+	// tool's post-mapping ones.
 	plat := platform.Detect()
 	dbg("platform: os=%q arch=%q vendor=%q env=%q ext=%q", plat.OS, plat.Arch, plat.Vendor, plat.Env, plat.Ext)
 	if !spec.SupportsPlatform(plat.OS, plat.Arch) {
 		return fmt.Errorf("%q is not available for %s/%s (supported: %s)", specName, plat.OS, plat.Arch, strings.Join(spec.Platforms, ", "))
 	}
 
-	// Avvisa se la spec non configura alcuna verifica: il download non potrà
-	// essere validato (integrità/firma). La verifica è la feature di sicurezza
-	// principale, quindi l'assenza deve restare visibile.
+	// Warn if the spec configures no verification: the download cannot be
+	// validated (integrity/signature). Verification is the main security
+	// feature, so its absence must stay visible.
 	if !spec.Verify.Enabled() {
 		warn(fmt.Sprintf("%q has no verification configured: integrity and signature cannot be checked", specName))
 	}
 
-	// 2. Risolvi la versione
-	//   - versione omessa → default_version della spec; se assente, "latest"
-	//   - "latest"        → risoluzione live via strategia/backend (no fallback)
-	//   - "x.y.z"         → pin esplicito
+	// 2. Resolve the version
+	//   - version omitted → the spec's default_version; if absent, "latest"
+	//   - "latest"        → live resolution via strategy/backend (no fallback)
+	//   - "x.y.z"         → explicit pin
 	step(fmt.Sprintf("Resolving version for %s...", appName))
 	var versionProvider version.Provider
 	switch {
@@ -162,18 +162,18 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 	}
 
-	// 3. Costruisci le variabili di template
+	// 3. Build the template variables.
 	versionMajor, versionMinor, versionPatch := version.Parse(ver)
 	versionBuild := version.Build(tag)
 
-	// Applica override per-OS dalla spec (es. jdk ha [jdk.darwin])
+	// Apply the spec's per-OS override (e.g. jdk has [jdk.darwin]).
 	spec = spec.ApplyOSOverride(plat.OS)
 
-	// Applica override arch/os dalla spec (mappe [ripgrep.arch])
+	// Apply the spec's arch/os override (maps [ripgrep.arch]).
 	resolvedArch := platform.ApplyMap(spec.Arch, plat.Arch, plat.Arch)
 	resolvedOS := platform.ApplyMap(spec.OS, plat.OS, plat.OS)
 
-	// Applica override da app manifest (ha la precedenza sulla spec)
+	// Apply the app manifest override (takes precedence over the spec).
 	if app.Arch != nil {
 		resolvedArch = platform.ApplyMap(app.Arch, plat.Arch, resolvedArch)
 	}
@@ -194,16 +194,16 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		VersionBuild: versionBuild,
 	}
 
-	// 4. Espandi i meta-template
-	// Carica templates.toml embedded
+	// 4. Expand the meta-templates.
+	// Load the embedded templates.toml.
 	globalMT, osMT := loadTemplates(cfg, spec)
 	vars, err = template.Expand(globalMT, osMT, vars)
 	if err != nil {
 		return fmt.Errorf("expand meta-templates: %w", err)
 	}
 
-	// 5. Risolvi dest. Se l'app non lo specifica, deriva il default dalla spec
-	// e dalle directory base configurate dall'utente ([defaults]).
+	// 5. Resolve dest. If the app doesn't specify one, derive the default from
+	// the spec and the user-configured base directories ([defaults]).
 	destTemplate := app.Dest
 	if destTemplate == "" {
 		destTemplate = config.DefaultDest(spec, appName, cfg.Defaults)
@@ -214,7 +214,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	dest = expandHome(dest)
 
-	// 6. Risolvi URL artefatto
+	// 6. Resolve the artifact URL.
 	step(fmt.Sprintf("Resolving download URL for %s...", appName))
 	var downloadURL string
 	switch spec.Backend {
@@ -233,16 +233,16 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	ok(fmt.Sprintf("URL: %s", downloadURL))
 	dbg("resolved: os=%q arch=%q dest=%q", resolvedOS, resolvedArch, dest)
 
-	// Variabili per i nomi degli asset
+	// Variables for asset names.
 	assetName := filepath.Base(downloadURL)
 	if vars.Extra == nil {
 		vars.Extra = make(map[string]string)
 	}
-	// {{asset}} di default è il basename dell'URL: utile per il backend "url"
-	// (es. maven) dove non esiste un campo asset esplicito.
+	// {{asset}} defaults to the URL's basename: useful for the "url" backend
+	// (e.g. maven) where there's no explicit asset field.
 	vars.Extra["asset"] = assetName
-	// Risolvi il nome dell'asset dal template e aggiungilo a vars.Extra
-	// così che {{asset}} sia disponibile nei template successivi (es. sha256_asset)
+	// Resolve the asset name from the template and add it to vars.Extra so
+	// that {{asset}} is available in subsequent templates (e.g. sha256_asset).
 	if spec.Asset != "" {
 		if name, err2 := template.Resolve(spec.Asset, vars); err2 == nil {
 			assetName = name
@@ -251,11 +251,12 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	dbg("asset name: %q", assetName)
 
-	// resolveAuxURL costruisce l'URL di un asset ausiliario (checksum, firma) in
-	// modo backend-aware. Per il backend "github" l'URL di download è l'endpoint
-	// API dell'asset (…/releases/assets/{id}), che non contiene il nome file:
-	// l'asset ausiliario va quindi risolto per nome via l'API. Per gli altri
-	// backend l'URL contiene il nome file e basta sostituirlo.
+	// resolveAuxURL builds the URL of an auxiliary asset (checksum, signature)
+	// in a backend-aware way. For the "github" backend the download URL is the
+	// asset's API endpoint (…/releases/assets/{id}), which doesn't contain the
+	// file name: the auxiliary asset must therefore be resolved by name via the
+	// API. For other backends the URL contains the file name and it's enough
+	// to substitute it.
 	resolveAuxURL := func(auxName string) (string, error) {
 		if spec.Backend == "github" {
 			gb := backend.GitHubBackend{Repo: spec.Repo, Asset: auxName}
@@ -266,7 +267,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 
 	client := download.NewClient()
 
-	// 7. Scarica file checksum/firma (se configurati)
+	// 7. Download checksum/signature files (if configured).
 	var checksumPath, checksum512Path, sigPath string
 	defer func() {
 		if checksumPath != "" {
@@ -338,7 +339,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		dbg("no verification configured for this spec")
 	}
 
-	// 8. Verifica firma minisign del checksum (PRIMA di scaricare l'artefatto)
+	// 8. Verify the checksum's minisign signature (BEFORE downloading the artifact).
 	if spec.Verify.Minisign.PublicKey != "" && sigPath != "" && checksumPath != "" {
 		step("Verifying signature...")
 		if err := verify.CheckMinisign(checksumPath, sigPath, spec.Verify.Minisign.PublicKey); err != nil {
@@ -347,7 +348,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		ok("Signature OK")
 	}
 
-	// 9. Scarica artefatto
+	// 9. Download the artifact.
 	step(fmt.Sprintf("Downloading %s...", assetName))
 	artifactPath, err := download.ToTemp(ctx, client, downloadURL, progress)
 	if err != nil {
@@ -357,7 +358,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	dbg("artifact saved to %s", artifactPath)
 	ok(fmt.Sprintf("Downloaded %s", assetName))
 
-	// 10. Verifica integrità SHA256/SHA512
+	// 10. Verify SHA256/SHA512 integrity.
 	verifyPlan := verify.Plan{
 		ArtifactPath:    artifactPath,
 		ArtifactName:    assetName,
@@ -369,11 +370,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		MinisignSigPath: sigPath,
 	}
 
-	// Solo verifica checksum (minisign già verificata sopra)
+	// Checksum verification only (minisign already verified above).
 	if verifyPlan.SHA256Literal != "" || verifyPlan.SHA256AssetPath != "" ||
 		verifyPlan.SHA512Literal != "" || verifyPlan.SHA512AssetPath != "" {
 		step("Verifying integrity...")
-		verifyPlan.MinisignPubKey = "" // già verificata
+		verifyPlan.MinisignPubKey = "" // already verified
 		verifyPlan.MinisignSigPath = ""
 		if err := verify.Run(verifyPlan); err != nil {
 			return err
@@ -381,11 +382,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		ok("Integrity OK")
 	}
 
-	// 11. Calcola SHA256 dell'artefatto per lo state
+	// 11. Compute the artifact's SHA256 for the state.
 	artifactSHA256, _ := filesha256(artifactPath)
 	dbg("artifact sha256: %s", artifactSHA256)
 
-	// 12. Installa
+	// 12. Install.
 	step(fmt.Sprintf("Installing to %s...", dest))
 	dbg("install: archive=%q strip_components=%d subdir=%q extract=%q chmod=%q", spec.Archive, spec.StripComponents, spec.Subdir, spec.Extract, spec.Chmod)
 	archiveOpts := archive.ExtractOpts{
@@ -402,7 +403,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	var installedFiles []string
 	switch {
 	case spec.Extract != "":
-		// Dest è un file
+		// Dest is a file.
 		kind = "file"
 		extractName, err2 := template.Resolve(spec.Extract, vars)
 		if err2 != nil {
@@ -412,9 +413,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			return fmt.Errorf("install file: %w", err)
 		}
 	case len(spec.Binaries) > 0:
-		// Dest è una directory (bin dir); ogni binario diventa un file al suo interno.
-		// Funziona sia con archivio (estrazione per basename) sia senza archivio
-		// (l'artefatto scaricato è l'eseguibile, es. binari con os/arch/versione nel nome).
+		// Dest is a directory (bin dir); each binary becomes a file inside it.
+		// Works both with an archive (extraction by basename) and without one
+		// (the downloaded artifact is the executable, e.g. binaries with os/arch/version in the name).
 		kind = "binaries"
 		bins := make([]ResolvedBinary, 0, len(spec.Binaries))
 		for _, b := range spec.Binaries {
@@ -431,8 +432,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 					return fmt.Errorf("resolve binary to %q: %w", b.To, err)
 				}
 			}
-			// Default per il nome installato: basename di From, oppure (download
-			// nudo senza From) il nome dell'asset scaricato.
+			// Default for the installed name: From's basename, or (bare
+			// download with no From) the name of the downloaded asset.
 			if to == "" {
 				if from != "" {
 					to = filepath.Base(from)
@@ -447,7 +448,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			return fmt.Errorf("install binaries: %w", err)
 		}
 	default:
-		// Dest è una directory
+		// Dest is a directory.
 		kind = "dir"
 		if err := InstallDir(artifactPath, spec.Archive, dest, archiveOpts); err != nil {
 			return fmt.Errorf("install dir: %w", err)
@@ -455,7 +456,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	ok(fmt.Sprintf("Installed %s %s → %s", appName, ver, dest))
 
-	// 13. Registra nello state DB (sotto mutex per evitare race con altre goroutine parallele)
+	// 13. Record in the state DB (under a mutex to avoid races with other parallel goroutines).
 	if err := state.Update(func(st *state.State) error {
 		st.Set(state.InstalledApp{
 			Name:        appName,
@@ -476,13 +477,14 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	return nil
 }
 
-// loadTemplates estrae i meta-template globali e per-OS dalla config e dalla spec.
-// I template globali (da templates.toml) hanno priorità più bassa; quelli della spec li sovrascrivono.
+// loadTemplates extracts the global and per-OS meta-templates from the config
+// and the spec. Global templates (from templates.toml) have lower priority;
+// the spec's templates override them.
 func loadTemplates(cfg *config.Config, spec config.Spec) (template.MetaTemplates, map[string]template.MetaTemplates) {
 	global := make(template.MetaTemplates)
 	osOverrides := make(map[string]template.MetaTemplates)
 
-	// 1. Template globali da templates.toml
+	// 1. Global templates from templates.toml.
 	for k, v := range cfg.GlobalTemplates {
 		global[k] = v
 	}
@@ -495,7 +497,7 @@ func loadTemplates(cfg *config.Config, spec config.Spec) (template.MetaTemplates
 		}
 	}
 
-	// 2. Template dalla spec (sovrascrivono i globali)
+	// 2. Templates from the spec (override the globals).
 	for k, v := range spec.Templates {
 		global[k] = v
 	}
@@ -511,8 +513,8 @@ func loadTemplates(cfg *config.Config, spec config.Spec) (template.MetaTemplates
 	return global, osOverrides
 }
 
-// buildAuxURL costruisce l'URL di un asset ausiliario (checksum, firma)
-// sostituendo il nome dell'asset principale con quello ausiliario nell'URL.
+// buildAuxURL builds the URL of an auxiliary asset (checksum, signature) by
+// substituting the main asset's name with the auxiliary one in the URL.
 func buildAuxURL(downloadURL, assetName, auxName string) string {
 	base := strings.TrimSuffix(downloadURL, assetName)
 	return base + auxName

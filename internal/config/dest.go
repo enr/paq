@@ -2,15 +2,15 @@ package config
 
 import "runtime"
 
-// DefaultDest deriva una destinazione di default dalla spec, usata sia da
-// `paq import` (per generare il campo dest) sia dalla pipeline di install
-// quando un'app non specifica `dest`:
-//   - install di un singolo binario (Extract valorizzato) → <bin>/<binario>
-//   - install di più binari (Binaries valorizzato)        → <bin> (directory)
-//   - install di una directory                            → <opt>/<nome app>
+// DefaultDest derives a default destination from the spec, used both by
+// `paq import` (to generate the dest field) and by the install pipeline
+// when an app doesn't specify `dest`:
+//   - single-binary install (Extract set)   → <bin>/<binary>
+//   - multi-binary install (Binaries set)   → <bin> (directory)
+//   - directory install                     → <opt>/<app name>
 //
-// Per i binari si riusa il template Extract (es. "rg{{ext}}") così il path resta
-// cross-platform (l'estensione viene risolta in fase di install).
+// For binaries, the Extract template (e.g. "rg{{ext}}") is reused so the path
+// stays cross-platform (the extension is resolved at install time).
 func DefaultDest(spec Spec, key string, d Defaults) string {
 	binDir, optDir := DefaultDestRoots(d)
 	switch {
@@ -23,13 +23,13 @@ func DefaultDest(spec Spec, key string, d Defaults) string {
 	}
 }
 
-// DefaultDestRoots ritorna le directory base (bin, opt) per le destinazioni di
-// default. Se l'utente le ha configurate in [defaults] (Bin/Opt) quelle hanno
-// la precedenza; altrimenti si usano i default built-in idiomatici per l'OS:
+// DefaultDestRoots returns the base directories (bin, opt) for default
+// destinations. If the user configured them in [defaults] (Bin/Opt), those
+// take precedence; otherwise the OS-idiomatic built-in defaults are used:
 //   - Unix:    ~/.local/bin, ~/.local/opt
-//   - Windows: ~/AppData/Local/paq/{bin,opt}, che si risolve in %LOCALAPPDATA%\paq,
-//     la stessa radice già usata da paq per lo state. Si usa il prefisso "~/"
-//     (espanso in fase di install) per mantenere il path portabile.
+//   - Windows: ~/AppData/Local/paq/{bin,opt}, which resolves to %LOCALAPPDATA%\paq,
+//     the same root paq already uses for state. The "~/" prefix is used
+//     (expanded at install time) to keep the path portable.
 func DefaultDestRoots(d Defaults) (binDir, optDir string) {
 	binDir, optDir = builtinDestRoots()
 	if d.Bin != "" {

@@ -2,32 +2,32 @@ package verify
 
 import "fmt"
 
-// Plan descrive cosa verificare per un artefatto scaricato.
+// Plan describes what to verify for a downloaded artifact.
 type Plan struct {
-	// SHA256Literal è l'hash sha256 hardcoded nella spec (campo verify.sha256).
+	// SHA256Literal is the sha256 hash hardcoded in the spec (verify.sha256 field).
 	SHA256Literal string
-	// SHA256AssetPath è il path del file checksum scaricato (campo verify.sha256_asset).
+	// SHA256AssetPath is the path of the downloaded checksum file (verify.sha256_asset field).
 	SHA256AssetPath string
-	// SHA512Literal è l'hash sha512 hardcoded nella spec (campo verify.sha512).
+	// SHA512Literal is the sha512 hash hardcoded in the spec (verify.sha512 field).
 	SHA512Literal string
-	// SHA512AssetPath è il path del file checksum sha512 scaricato (campo verify.sha512_asset).
+	// SHA512AssetPath is the path of the downloaded sha512 checksum file (verify.sha512_asset field).
 	SHA512AssetPath string
-	// ArtifactName è il nome del file artefatto (usato per trovare la riga nel file checksum).
+	// ArtifactName is the artifact file name (used to find the line in the checksum file).
 	ArtifactName string
-	// MinisignPubKey è la chiave pubblica base64 per la verifica minisign.
+	// MinisignPubKey is the base64 public key for minisign verification.
 	MinisignPubKey string
-	// MinisignSigPath è il path del file di firma minisign scaricato.
+	// MinisignSigPath is the path of the downloaded minisign signature file.
 	MinisignSigPath string
-	// ArtifactPath è il path del file artefatto da verificare.
+	// ArtifactPath is the path of the artifact file to verify.
 	ArtifactPath string
 }
 
-// Run esegue la verifica nell'ordine corretto:
-// 1. Se configurata: verifica firma minisign del file checksum
-// 2. Verifica sha256 dell'artefatto (da literal o dal file checksum)
+// Run performs verification in the correct order:
+// 1. If configured: verify the checksum file's minisign signature.
+// 2. Verify the artifact's sha256 (from a literal or from the checksum file).
 func Run(plan Plan) error {
-	// Passo 1: verifica firma minisign del file checksum (se configurata)
-	// La firma deve essere verificata PRIMA di usare il checksum per verificare l'artefatto.
+	// Step 1: verify the checksum file's minisign signature (if configured).
+	// The signature must be verified BEFORE using the checksum to verify the artifact.
 	if plan.MinisignPubKey != "" && plan.MinisignSigPath != "" {
 		if plan.SHA256AssetPath == "" {
 			return fmt.Errorf("minisign configured but no sha256_asset to sign")
@@ -37,7 +37,7 @@ func Run(plan Plan) error {
 		}
 	}
 
-	// Passo 2: verifica sha256 dell'artefatto
+	// Step 2: verify the artifact's sha256.
 	switch {
 	case plan.SHA256Literal != "":
 		if err := CheckFile(plan.ArtifactPath, plan.SHA256Literal); err != nil {
@@ -54,7 +54,7 @@ func Run(plan Plan) error {
 		}
 	}
 
-	// Passo 3: verifica sha512 dell'artefatto
+	// Step 3: verify the artifact's sha512.
 	switch {
 	case plan.SHA512Literal != "":
 		if err := CheckFileSHA512(plan.ArtifactPath, plan.SHA512Literal); err != nil {

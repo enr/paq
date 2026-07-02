@@ -64,7 +64,7 @@ func TestWriteManifestEntryRejectsDuplicate(t *testing.T) {
 	if _, err := WriteManifestEntry("rg", rgBlock, false); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	// Senza overwrite, riscrivere la stessa chiave deve fallire (TOML duplicato).
+	// Without overwrite, rewriting the same key must fail (duplicate TOML key).
 	if _, err := WriteManifestEntry("rg", rgBlock, false); err == nil {
 		t.Error("expected error writing duplicate entry without overwrite")
 	}

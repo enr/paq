@@ -7,14 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Variabili popolate a build time tramite ldflags (vedi .sdlc/build).
+// Variables populated at build time via ldflags (see .sdlc/build).
 var (
 	Version   = "dev"
 	Revision  = "unknown"
 	BuildTime = "unknown"
 )
 
-// versionInfo formatta versione e metadati di build per "paq version" e "paq --version".
+// versionInfo formats the version and build metadata for "paq version" and "paq --version".
 func versionInfo() string {
 	return fmt.Sprintf("paq %s\n  revision:  %s\n  buildtime: %s\n  go:        %s",
 		Version, Revision, BuildTime, runtime.Version())

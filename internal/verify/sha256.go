@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// CheckFile calcola lo SHA256 di filePath e lo confronta con expected (stringa hex).
-// Ritorna errore descrittivo se non corrispondono.
+// CheckFile computes the SHA256 of filePath and compares it with expected (hex string).
+// Returns a descriptive error if they don't match.
 func CheckFile(filePath string, expected string) error {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -33,10 +33,10 @@ func CheckFile(filePath string, expected string) error {
 	return nil
 }
 
-// ParseSHA256File legge un file checksum sha256 e ritorna l'hash per fileName.
-// Supporta due formati:
-//   - bare hash: il file contiene solo l'hash (layout usato da Oracle JDK);
-//   - "<hash>  <filename>" / "<hash> *<filename>": riga con nome file (layout coreutils).
+// ParseSHA256File reads a sha256 checksum file and returns the hash for fileName.
+// Supports two formats:
+//   - bare hash: the file contains only the hash (layout used by Oracle JDK);
+//   - "<hash>  <filename>" / "<hash> *<filename>": line with file name (coreutils layout).
 func ParseSHA256File(checksumPath string, fileName string) (string, error) {
 	f, err := os.Open(checksumPath)
 	if err != nil {
@@ -54,7 +54,7 @@ func ParseSHA256File(checksumPath string, fileName string) (string, error) {
 		parts := strings.Fields(line)
 		switch {
 		case len(parts) == 1:
-			// Bare hash: una sola colonna, l'hash si riferisce all'unico artefatto.
+			// Bare hash: a single column, the hash refers to the only artifact.
 			return strings.ToLower(parts[0]), nil
 		default:
 			name := strings.TrimPrefix(parts[1], "*")

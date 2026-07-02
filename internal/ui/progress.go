@@ -7,9 +7,9 @@ import (
 	"github.com/enr/paq/internal/download"
 )
 
-// NewProgressFn ritorna una ProgressFn che mostra il progresso del download.
-// Se il terminale è un TTY e i colori sono abilitati, usa una barra testuale su stderr.
-// Altrimenti, stampa solo la percentuale.
+// NewProgressFn returns a ProgressFn that shows the download's progress.
+// If the terminal is a TTY and colors are enabled, uses a text progress bar on stderr.
+// Otherwise, prints just the percentage.
 func NewProgressFn(label string) download.ProgressFn {
 	if Global.Quiet {
 		return nil
@@ -19,7 +19,7 @@ func NewProgressFn(label string) download.ProgressFn {
 
 	return func(downloaded, total int64) {
 		if total <= 0 {
-			// Dimensione ignota: stampa solo i byte scaricati ogni MB
+			// Unknown size: print only the bytes downloaded every MB.
 			mb := downloaded / (1024 * 1024)
 			if downloaded%(1024*1024) == 0 && mb > 0 {
 				fmt.Fprintf(os.Stderr, "\r%s: %d MB downloaded...", label, mb)
@@ -34,7 +34,7 @@ func NewProgressFn(label string) download.ProgressFn {
 		lastPct = pct
 
 		if IsColorEnabled() {
-			// Barra di progresso testuale ANSI
+			// ANSI text progress bar.
 			width := 40
 			filled := width * pct / 100
 			bar := ""
@@ -50,7 +50,7 @@ func NewProgressFn(label string) download.ProgressFn {
 				fmt.Fprintln(os.Stderr)
 			}
 		} else {
-			// Fallback testuale senza caratteri speciali
+			// Plain-text fallback with no special characters.
 			fmt.Fprintf(os.Stderr, "\r%s: %d%%", label, pct)
 			if pct == 100 {
 				fmt.Fprintln(os.Stderr)

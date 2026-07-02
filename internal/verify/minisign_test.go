@@ -11,9 +11,9 @@ import (
 	minisign "github.com/jedisct1/go-minisign"
 )
 
-// newTestMinisignKey genera una coppia di chiavi minisign Ed25519 non cifrata,
-// utilizzabile per firmare nei test. Ritorna la chiave privata e la chiave
-// pubblica codificata in base64 (lo stesso formato atteso dalle ricette).
+// newTestMinisignKey generates an unencrypted Ed25519 minisign key pair,
+// usable for signing in tests. Returns the private key and the base64-encoded
+// public key (the same format expected by recipes).
 func newTestMinisignKey(t *testing.T) (minisign.PrivateKey, string) {
 	t.Helper()
 	_, edPriv, err := ed25519.GenerateKey(rand.Reader)
@@ -23,7 +23,7 @@ func newTestMinisignKey(t *testing.T) (minisign.PrivateKey, string) {
 
 	var sk minisign.PrivateKey
 	sk.SignatureAlgorithm = [2]byte{'E', 'd'}
-	sk.KDFAlgorithm = [2]byte{0, 0} // non cifrata
+	sk.KDFAlgorithm = [2]byte{0, 0} // unencrypted
 	copy(sk.SecretKey[:], edPriv)
 	if _, err := rand.Read(sk.KeyId[:]); err != nil {
 		t.Fatalf("random key id: %v", err)
@@ -37,8 +37,8 @@ func newTestMinisignKey(t *testing.T) (minisign.PrivateKey, string) {
 	return sk, base64.StdEncoding.EncodeToString(raw)
 }
 
-// signToFile firma data con sk e scrive la firma in formato minisign in un file
-// temporaneo, ritornandone il path.
+// signToFile signs data with sk and writes the signature in minisign format
+// to a temp file, returning its path.
 func signToFile(t *testing.T, sk minisign.PrivateKey, data []byte) string {
 	t.Helper()
 	sig, err := sk.Sign(data, minisign.SignOptions{})
@@ -89,7 +89,7 @@ func TestCheckMinisignTamperedFile(t *testing.T) {
 
 func TestCheckMinisignWrongKey(t *testing.T) {
 	signer, _ := newTestMinisignKey(t)
-	_, otherPub := newTestMinisignKey(t) // chiave pubblica non corrispondente
+	_, otherPub := newTestMinisignKey(t) // non-matching public key
 	data := []byte("payload")
 	filePath := writeTempFile(t, "artifact.bin", data)
 	sigPath := signToFile(t, signer, data)

@@ -8,8 +8,8 @@ import (
 	"os"
 )
 
-// ProgressFn è una callback chiamata durante il download con i byte scaricati e il totale.
-// total è -1 se il server non ha fornito Content-Length.
+// ProgressFn is a callback invoked during the download with the bytes downloaded and the total.
+// total is -1 if the server did not provide a Content-Length.
 type ProgressFn func(downloaded, total int64)
 
 // NewClient returns an *http.Client suitable for file downloads.
@@ -21,9 +21,9 @@ func NewClient() *http.Client {
 	return &http.Client{}
 }
 
-// ToTemp scarica url in un file temporaneo e ritorna il path del file.
-// Il chiamante è responsabile di eliminare il file temporaneo dopo l'uso.
-// progress può essere nil.
+// ToTemp downloads url into a temp file and returns the file's path.
+// The caller is responsible for removing the temp file after use.
+// progress can be nil.
 func ToTemp(ctx context.Context, client *http.Client, url string, progress ProgressFn) (string, error) {
 	if client == nil {
 		client = http.DefaultClient
@@ -34,11 +34,11 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 		return "", fmt.Errorf("build request: %w", err)
 	}
 
-	// Gli asset delle release GitHub si scaricano via l'API asset endpoint
-	// (api.github.com/.../releases/assets/{id}) con Accept: octet-stream e, per
-	// i repo privati, il token. GitHub risponde con un redirect a una URL firmata;
-	// il client Go rimuove l'header Authorization sul cambio host, quindi il token
-	// non viene esposto allo storage di destinazione.
+	// GitHub release assets are downloaded via the API asset endpoint
+	// (api.github.com/.../releases/assets/{id}) with Accept: octet-stream and,
+	// for private repos, the token. GitHub responds with a redirect to a signed
+	// URL; the Go client strips the Authorization header on the host change, so
+	// the token is not exposed to the destination storage.
 	if req.URL.Host == "api.github.com" {
 		req.Header.Set("Accept", "application/octet-stream")
 		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
@@ -56,7 +56,7 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 		return "", fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
 	}
 
-	total := resp.ContentLength // -1 se ignoto
+	total := resp.ContentLength // -1 if unknown
 
 	tmp, err := os.CreateTemp("", "paq-download-*")
 	if err != nil {

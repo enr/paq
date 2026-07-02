@@ -15,34 +15,34 @@ import (
 // (e.g. parallel install) do not overwrite each other's state records.
 var mu sync.Mutex
 
-// schemaVersion è la versione corrente del formato dello state file.
+// schemaVersion is the current version of the state file format.
 const schemaVersion = 2
 
-// InstalledApp registra i dati di un'app installata.
-// L'identità di una entry è la coppia (Name, Version): questo consente di
-// tracciare più versioni della stessa app coesistenti su disco.
+// InstalledApp records the data of an installed app.
+// An entry's identity is the (Name, Version) pair: this allows tracking
+// multiple versions of the same app coexisting on disk.
 type InstalledApp struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
-	Kind    string `json:"kind"` // "file", "dir" o "binaries"
+	Kind    string `json:"kind"` // "file", "dir" or "binaries"
 	Dest    string `json:"dest"`
-	// Files elenca i path installati quando Kind == "binaries" (dest è la bin dir).
+	// Files lists the installed paths when Kind == "binaries" (dest is the bin dir).
 	Files       []string  `json:"files,omitempty"`
 	Source      string    `json:"source"`
 	SHA256      string    `json:"sha256"`
 	InstalledAt time.Time `json:"installed_at"`
 }
 
-// State è il database di stato di paq.
-// Packages è una lista di pacchetti installati (convenzione lockfile).
+// State is paq's state database.
+// Packages is a list of installed packages (lockfile convention).
 type State struct {
 	Schema   int            `json:"schema"`
 	Packages []InstalledApp `json:"packages"`
 }
 
-// StatePath ritorna il path del file state.json.
-// Su Linux/macOS: ${XDG_STATE_HOME:-~/.local/state}/paq/state.json
-// Su Windows: %LOCALAPPDATA%\paq\state.json
+// StatePath returns the path of the state.json file.
+// On Linux/macOS: ${XDG_STATE_HOME:-~/.local/state}/paq/state.json
+// On Windows: %LOCALAPPDATA%\paq\state.json
 func StatePath() (string, error) {
 	if runtime.GOOS == "windows" {
 		local := os.Getenv("LOCALAPPDATA")
@@ -63,8 +63,8 @@ func StatePath() (string, error) {
 	return filepath.Join(stateHome, "paq", "state.json"), nil
 }
 
-// Load carica lo state dal disco.
-// Ritorna uno State vuoto (senza errore) se il file non esiste.
+// Load loads the state from disk.
+// Returns an empty State (without error) if the file doesn't exist.
 func Load() (*State, error) {
 	path, err := StatePath()
 	if err != nil {
@@ -89,7 +89,7 @@ func Load() (*State, error) {
 	return &s, nil
 }
 
-// Save salva lo state sul disco, creando la directory se necessaria.
+// Save saves the state to disk, creating the directory if necessary.
 func (s *State) Save() error {
 	path, err := StatePath()
 	if err != nil {
@@ -108,7 +108,7 @@ func (s *State) Save() error {
 		return fmt.Errorf("marshal state: %w", err)
 	}
 
-	// Scrittura atomica: scrivi in temp poi rename
+	// Atomic write: write to temp then rename.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0644); err != nil {
 		return fmt.Errorf("write state temp: %w", err)
@@ -120,8 +120,8 @@ func (s *State) Save() error {
 	return nil
 }
 
-// Set fa upsert di una entry: se esiste già la coppia (Name, Version) la sostituisce,
-// altrimenti la aggiunge.
+// Set upserts an entry: if the (Name, Version) pair already exists it is
+// replaced, otherwise it is appended.
 func (s *State) Set(rec InstalledApp) {
 	for i := range s.Packages {
 		if s.Packages[i].Name == rec.Name && s.Packages[i].Version == rec.Version {
@@ -132,7 +132,7 @@ func (s *State) Set(rec InstalledApp) {
 	s.Packages = append(s.Packages, rec)
 }
 
-// Get ritorna la entry per (name, version) se presente.
+// Get returns the entry for (name, version) if present.
 func (s *State) Get(name, version string) (InstalledApp, bool) {
 	for _, rec := range s.Packages {
 		if rec.Name == name && rec.Version == version {
@@ -142,7 +142,7 @@ func (s *State) Get(name, version string) (InstalledApp, bool) {
 	return InstalledApp{}, false
 }
 
-// ByName ritorna tutte le entry (ogni versione installata) per il nome dato.
+// ByName returns all entries (every installed version) for the given name.
 func (s *State) ByName(name string) []InstalledApp {
 	var out []InstalledApp
 	for _, rec := range s.Packages {
@@ -153,9 +153,9 @@ func (s *State) ByName(name string) []InstalledApp {
 	return out
 }
 
-// Delete rimuove le entry corrispondenti.
-// Se version è vuoto, rimuove tutte le versioni con quel nome.
-// Ritorna il numero di entry rimosse.
+// Delete removes the matching entries.
+// If version is empty, removes all versions with that name.
+// Returns the number of entries removed.
 func (s *State) Delete(name, version string) int {
 	kept := s.Packages[:0]
 	removed := 0
@@ -171,7 +171,7 @@ func (s *State) Delete(name, version string) int {
 	return removed
 }
 
-// sort ordina le entry per nome poi versione, per output deterministico.
+// sort orders the entries by name then version, for deterministic output.
 func (s *State) sort() {
 	sort.Slice(s.Packages, func(i, j int) bool {
 		if s.Packages[i].Name != s.Packages[j].Name {

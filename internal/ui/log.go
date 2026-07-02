@@ -7,29 +7,29 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Stili per i diversi tipi di messaggio. Il simbolo e il testo condividono il
-// colore così che l'esito sia leggibile a colpo d'occhio: verde = ok, rosso =
-// errore, giallo = avviso.
+// Styles for the different message types. The symbol and text share the same
+// color so the outcome is readable at a glance: green = ok, red = error,
+// yellow = warning.
 var (
-	stepStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))            // ciano
-	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true) // verde
-	failStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // rosso
-	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // giallo
-	hintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))            // blu
-	infoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // grigio
-	debugStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // grigio (corpo)
-	// debugTagStyle colora il tag "[debug]" in magenta acceso così il livello
-	// si distingue subito dal testo grigio del messaggio.
+	stepStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))            // cyan
+	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true) // green
+	failStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // red
+	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
+	hintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))            // blue
+	infoStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // gray
+	debugStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))             // gray (body)
+	// debugTagStyle colors the "[debug]" tag in bright magenta so the level
+	// stands out immediately from the message's gray text.
 	debugTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
-	// Stili per le righe chiave/valore della diagnostica (es. `doctor`): chiave
-	// in grassetto neutro e allineata, valore in ciano, così da distinguere
-	// a colpo d'occhio etichetta e contenuto.
-	fieldKeyStyle = lipgloss.NewStyle().Bold(true).Width(14)             // etichetta
-	fieldValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("14")) // ciano (valore)
+	// Styles for the key/value rows of diagnostics (e.g. `doctor`): key in
+	// neutral bold and aligned, value in cyan, so label and content are
+	// distinguishable at a glance.
+	fieldKeyStyle = lipgloss.NewStyle().Bold(true).Width(14)             // label
+	fieldValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("14")) // cyan (value)
 )
 
-// render formatta "<symbol> <text>" colorando entrambi quando i colori sono
-// abilitati, altrimenti ritorna la versione in solo testo.
+// render formats "<symbol> <text>", coloring both when colors are enabled,
+// otherwise returns the plain-text version.
 func render(style lipgloss.Style, symbol, text string) string {
 	if IsColorEnabled() {
 		return style.Render(symbol + " " + text)
@@ -37,9 +37,9 @@ func render(style lipgloss.Style, symbol, text string) string {
 	return symbol + " " + text
 }
 
-// Step stampa un messaggio di step in corso (es. "Downloading rg...").
-// Soppresso con --quiet. In modalità --json viene scritto su stderr per non
-// sporcare stdout con testo non-JSON.
+// Step prints an in-progress step message (e.g. "Downloading rg...").
+// Suppressed with --quiet. In --json mode it is written to stderr to avoid
+// polluting stdout with non-JSON text.
 func Step(msg string, args ...any) {
 	if Global.Quiet {
 		return
@@ -51,8 +51,8 @@ func Step(msg string, args ...any) {
 	fmt.Fprintln(out, render(stepStyle, "→", fmt.Sprintf(msg, args...)))
 }
 
-// OK stampa un messaggio di successo (verde).
-// In modalità --json viene scritto su stderr per non sporcare stdout.
+// OK prints a success message (green).
+// In --json mode it is written to stderr to avoid polluting stdout.
 func OK(msg string, args ...any) {
 	if Global.Quiet {
 		return
@@ -64,9 +64,9 @@ func OK(msg string, args ...any) {
 	fmt.Fprintln(out, render(okStyle, "✓", fmt.Sprintf(msg, args...)))
 }
 
-// renderField formatta una riga chiave/valore "<symbol> <key>: <value> <note>":
-// il simbolo è colorato dallo stato (symStyle), la chiave in grassetto, il valore
-// in ciano e l'eventuale nota in grigio. Senza colori ritorna testo allineato.
+// renderField formats a key/value row "<symbol> <key>: <value> <note>":
+// the symbol is colored by the status (symStyle), the key in bold, the value
+// in cyan and any note in gray. Without colors returns aligned plain text.
 func renderField(symStyle lipgloss.Style, symbol, label, value, note string) string {
 	if !IsColorEnabled() {
 		line := fmt.Sprintf("%s %-14s %s", symbol, label+":", value)
@@ -82,8 +82,8 @@ func renderField(symStyle lipgloss.Style, symbol, label, value, note string) str
 	return line
 }
 
-// OKField stampa una riga diagnostica "✓ chiave: valore" (verde).
-// Come OK: su stdout, soppresso con --quiet, su stderr in modalità --json.
+// OKField prints a diagnostic row "✓ key: value" (green).
+// Like OK: on stdout, suppressed with --quiet, on stderr in --json mode.
 func OKField(label, value string) {
 	if Global.Quiet {
 		return
@@ -95,26 +95,26 @@ func OKField(label, value string) {
 	fmt.Fprintln(out, renderField(okStyle, "✓", label, value, ""))
 }
 
-// WarnField stampa una riga diagnostica "! chiave: valore (nota)" (giallo) su
-// stderr; la nota è in grigio e può essere vuota. Come Warn non è gated da --quiet.
+// WarnField prints a diagnostic row "! key: value (note)" (yellow) to
+// stderr; the note is in gray and can be empty. Like Warn, not gated by --quiet.
 func WarnField(label, value, note string) {
 	fmt.Fprintln(os.Stderr, renderField(warnStyle, "!", label, value, note))
 }
 
-// Fail stampa un messaggio di errore su stderr (rosso).
+// Fail prints an error message to stderr (red).
 func Fail(msg string, args ...any) {
 	fmt.Fprintln(os.Stderr, render(failStyle, "✗", fmt.Sprintf(msg, args...)))
 }
 
-// Warn stampa un avviso visibile su stderr (giallo).
-// A differenza di Info non è gated da --verbose: è usato per avvisi di sicurezza
-// (es. tool installato senza verifica di integrità) che devono restare visibili.
+// Warn prints a visible warning to stderr (yellow).
+// Unlike Info it is not gated by --verbose: it's used for security warnings
+// (e.g. a tool installed without integrity verification) that must stay visible.
 func Warn(msg string, args ...any) {
 	fmt.Fprintln(os.Stderr, render(warnStyle, "!", fmt.Sprintf(msg, args...)))
 }
 
-// Hint stampa un suggerimento su stderr (blu): un'indicazione su come risolvere
-// l'errore appena mostrato. Soppresso con --quiet.
+// Hint prints a suggestion to stderr (blue): guidance on how to resolve the
+// error just shown. Suppressed with --quiet.
 func Hint(msg string, args ...any) {
 	if Global.Quiet {
 		return
@@ -122,8 +122,8 @@ func Hint(msg string, args ...any) {
 	fmt.Fprintln(os.Stderr, render(hintStyle, "↪", "hint: "+fmt.Sprintf(msg, args...)))
 }
 
-// Info stampa un messaggio informativo (con --verbose o --debug).
-// In modalità --json viene scritto su stderr per non sporcare stdout.
+// Info prints an informational message (with --verbose or --debug).
+// In --json mode it is written to stderr to avoid polluting stdout.
 func Info(msg string, args ...any) {
 	if !Global.Verbose && !Global.Debug {
 		return
@@ -135,9 +135,8 @@ func Info(msg string, args ...any) {
 	fmt.Fprintln(out, render(infoStyle, "·", fmt.Sprintf(msg, args...)))
 }
 
-// Debug stampa diagnostica dettagliata su stderr (con --debug): mostra i
-// passaggi interni (URL risolti, path temporanei, hash, ...) per capire cosa
-// sta facendo paq.
+// Debug prints detailed diagnostics to stderr (with --debug): shows internal
+// steps (resolved URLs, temp paths, hashes, ...) to understand what paq is doing.
 func Debug(msg string, args ...any) {
 	if !Global.Debug {
 		return

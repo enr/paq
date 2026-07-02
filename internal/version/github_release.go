@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// GitHubReleaseProvider risolve la versione più recente da GitHub releases.
+// GitHubReleaseProvider resolves the latest version from GitHub releases.
 type GitHubReleaseProvider struct {
-	Repo       string       // es. "BurntSushi/ripgrep"
-	HTTPClient *http.Client // se nil usa http.DefaultClient
+	Repo       string       // e.g. "BurntSushi/ripgrep"
+	HTTPClient *http.Client // if nil, uses http.DefaultClient
 }
 
 type githubReleaseResponse struct {

@@ -3,6 +3,7 @@ package archive
 import (
 	"archive/zip"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -25,10 +26,17 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 			continue
 		}
 
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("entry %q is a symlink: not supported", f.Name)
+		}
+
 		switch {
 		case opts.Extract != "":
 			if filepath.Base(stripped) == opts.Extract {
-				dest := filepath.Join(opts.Dest, opts.Extract)
+				dest, err := securePath(opts.Dest, opts.Extract)
+				if err != nil {
+					return err
+				}
 				rc, err := f.Open()
 				if err != nil {
 					return err
@@ -46,7 +54,10 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 			if !match || rel == "" {
 				continue
 			}
-			dest := filepath.Join(opts.Dest, filepath.FromSlash(rel))
+			dest, err := securePath(opts.Dest, rel)
+			if err != nil {
+				return err
+			}
 			if f.FileInfo().IsDir() {
 				continue
 			}
@@ -61,7 +72,10 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 			}
 
 		default:
-			dest := filepath.Join(opts.Dest, filepath.FromSlash(stripped))
+			dest, err := securePath(opts.Dest, stripped)
+			if err != nil {
+				return err
+			}
 			if f.FileInfo().IsDir() {
 				continue
 			}

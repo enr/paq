@@ -14,8 +14,11 @@ var registryListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List tool definitions in the embedded registry",
 	Long:    "List the tool specs bundled in the embedded registry, optionally filtered by a substring query on the spec name.",
-	Args:    cobra.MaximumNArgs(1),
-	RunE:    runRegistryList,
+	Example: `  paq registry list
+  paq registry list jdk   # filter by substring on the name`,
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeRegistrySpecs,
+	RunE:              runRegistryList,
 }
 
 func runRegistryList(cmd *cobra.Command, args []string) error {
@@ -26,8 +29,8 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 	return listDefinitions(query)
 }
 
-// listDefinitions stampa le definizioni del registry, filtrate per sottostringa
-// sul nome se query non è vuota. Condivisa da "registry list" e "search".
+// listDefinitions prints the registry definitions, filtered by substring
+// match on the name if query is non-empty. Shared by "registry list" and "search".
 func listDefinitions(query string) error {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -48,7 +51,7 @@ func listDefinitions(query string) error {
 		})
 	}
 
-	if len(rows) == 0 {
+	if len(rows) == 0 && !ui.Global.JSON {
 		if query != "" {
 			fmt.Printf("No tool definitions matching %q in the embedded registry.\n", query)
 		} else {

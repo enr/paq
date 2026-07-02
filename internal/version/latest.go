@@ -23,9 +23,9 @@ type LatestRequest struct {
 	ArchPkg  string // package name in the official Arch repos (strategy "arch-linux")
 }
 
-// Resolvable indica se "latest" è risolvibile da una strategia/backend reale.
-// Tiene allineata la logica di LatestProvider per i chiamanti che devono sapere
-// in anticipo se "latest" produrrà una versione o un errore (es. import).
+// Resolvable indicates whether "latest" is resolvable by a real strategy/backend.
+// Kept in sync with LatestProvider's logic for callers that need to know
+// upfront whether "latest" will produce a version or an error (e.g. import).
 func (req LatestRequest) Resolvable() bool {
 	if req.Strategy != "" {
 		return req.Strategy == "arch-linux"

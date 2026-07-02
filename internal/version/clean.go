@@ -8,25 +8,25 @@ import (
 
 var semverRe = regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
 
-// Clean rimuove il prefisso "v" e qualsiasi suffisso non numerico da una stringa di versione.
-// Esempi: "v14.1.1" → "14.1.1", "jdk-21.0.2+13" → "21.0.2", "14.1.1" → "14.1.1"
+// Clean removes the "v" prefix and any non-numeric suffix from a version string.
+// Examples: "v14.1.1" → "14.1.1", "jdk-21.0.2+13" → "21.0.2", "14.1.1" → "14.1.1"
 func Clean(raw string) string {
-	// rimuovi prefisso "v" case-insensitive
+	// Remove the "v" prefix, case-insensitive.
 	s := strings.TrimPrefix(raw, "v")
 	s = strings.TrimPrefix(s, "V")
 
-	// estrai la prima sequenza di tipo N.N o N.N.N
+	// Extract the first N.N or N.N.N sequence.
 	match := semverRe.FindString(s)
 	if match != "" {
 		return match
 	}
 
-	// fallback: ritorna la stringa senza prefisso "v"
+	// Fallback: return the string without the "v" prefix.
 	return s
 }
 
-// Build estrae il numero di build da un tag/versione, cioè la parte dopo il
-// primo "+". Esempi: "jdk-21.0.11+10" → "10", "21.0.2+13" → "13", "14.1.1" → "".
+// Build extracts the build number from a tag/version, i.e. the part after
+// the first "+". Examples: "jdk-21.0.11+10" → "10", "21.0.2+13" → "13", "14.1.1" → "".
 func Build(raw string) string {
 	if idx := strings.IndexByte(raw, '+'); idx >= 0 {
 		return raw[idx+1:]
@@ -34,9 +34,9 @@ func Build(raw string) string {
 	return ""
 }
 
-// Compare confronta due versioni già pulite (es. "14.1.1") numericamente
-// campo per campo (major, minor, patch). Ritorna <0 se a < b, 0 se uguali,
-// >0 se a > b. Campi mancanti o non numerici valgono 0.
+// Compare compares two already-clean versions (e.g. "14.1.1") numerically,
+// field by field (major, minor, patch). Returns <0 if a < b, 0 if equal,
+// >0 if a > b. Missing or non-numeric fields count as 0.
 func Compare(a, b string) int {
 	aMajor, aMinor, aPatch := Parse(a)
 	bMajor, bMinor, bPatch := Parse(b)
@@ -55,8 +55,8 @@ func compareNumeric(a, b string) int {
 	return ai - bi
 }
 
-// Parse estrae major, minor, patch da una versione già pulita (es. "14.1.1").
-// Se un campo non è presente, ritorna stringa vuota per quel campo.
+// Parse extracts major, minor, patch from an already-clean version (e.g. "14.1.1").
+// If a field is not present, returns an empty string for that field.
 func Parse(version string) (major, minor, patch string) {
 	parts := strings.SplitN(version, ".", 3)
 	if len(parts) >= 1 {
@@ -66,12 +66,12 @@ func Parse(version string) (major, minor, patch string) {
 		minor = parts[1]
 	}
 	if len(parts) >= 3 {
-		// rimuovi eventuale suffisso dopo la patch (es. "2+13" → "2")
+		// Remove any suffix after the patch (e.g. "2+13" → "2").
 		patch = semverRe.FindString(parts[2])
 		if patch == "" {
 			patch = parts[2]
 		}
-		// patch è solo il numero, non contenere punti
+		// patch is just the number, must not contain dots.
 		if idx := strings.IndexByte(patch, '.'); idx >= 0 {
 			patch = patch[:idx]
 		}

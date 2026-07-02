@@ -5,20 +5,20 @@ import (
 	"strings"
 )
 
-// Provider risolve la versione per un'app.
+// Provider resolves the version for an app.
 type Provider interface {
 	Resolve(ctx context.Context) (version string, tag string, err error)
 }
 
-// PinProvider ritorna sempre la versione configurata (versione pinnata).
+// PinProvider always returns the configured version (pinned version).
 type PinProvider struct {
-	Version string // es. "21.0.2" oppure "v21.0.2"
+	Version string // e.g. "21.0.2" or "v21.0.2"
 }
 
 func (p PinProvider) Resolve(_ context.Context) (string, string, error) {
 	clean := Clean(p.Version)
-	// Il tag su GitHub di solito ha il prefisso "v", ma alcune repo non ce l'hanno.
-	// Usiamo la stringa originale se inizia con "v", altrimenti aggiungiamo "v".
+	// GitHub tags usually have a "v" prefix, but some repos don't.
+	// Use the original string if it starts with "v", otherwise add "v".
 	tag := p.Version
 	if !strings.HasPrefix(tag, "v") && !strings.HasPrefix(tag, "V") {
 		tag = "v" + clean

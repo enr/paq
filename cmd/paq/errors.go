@@ -18,9 +18,9 @@ type hintError struct {
 
 func (e hintError) Error() string { return e.msg }
 
-// reportError è il punto unico di presentazione degli errori del CLI.
-// Stampa l'errore in rosso (se non già mostrato dalla pipeline) e, quando
-// possibile, un suggerimento concreto su come risolverlo.
+// reportError is the single point of presentation for CLI errors.
+// Prints the error in red (if not already shown by the pipeline) and, when
+// possible, a concrete suggestion on how to resolve it.
 func reportError(err error) {
 	if err == nil {
 		return
@@ -41,14 +41,14 @@ func reportError(err error) {
 	}
 }
 
-// hintFor restituisce un suggerimento azionabile in base al contenuto
-// dell'errore. Le euristiche si basano sui messaggi prodotti dai vari layer
+// hintFor returns an actionable suggestion based on the error's content.
+// The heuristics rely on the messages produced by the various layers
 // (pipeline, download, version provider, ...).
 func hintFor(err error) string {
 	msg := strings.ToLower(err.Error())
 
 	switch {
-	// Sicurezza: integrità o firma non valide. È il caso più importante.
+	// Security: invalid integrity or signature. The most important case.
 	case strings.Contains(msg, "sha256 mismatch"),
 		strings.Contains(msg, "sha512 mismatch"),
 		strings.Contains(msg, "integrity check"):
@@ -59,7 +59,7 @@ func hintFor(err error) string {
 		return "the cryptographic signature could not be verified — the file or the configured public key may be wrong. " +
 			"Do NOT trust the binary until this passes."
 
-	// Configurazione mancante.
+	// Missing configuration.
 	case strings.Contains(msg, "not found in manifest"):
 		return "add the app to your manifest (~/.config/paq/config.toml), e.g.\n" +
 			"    [apps.<name>]\n    use = \"<spec>\"\n    version = \"latest\""
@@ -67,7 +67,7 @@ func hintFor(err error) string {
 	case strings.Contains(msg, "not found in registry"):
 		return "list available specs with `paq registry`, and check the `use` field of the app in your manifest."
 
-	// Risoluzione versione / API GitHub.
+	// Version resolution / GitHub API.
 	case strings.Contains(msg, "github api returned 404"),
 		strings.Contains(msg, "github api returned"):
 		return "check the repository name in the spec; if you are rate-limited, set the GITHUB_TOKEN environment variable."
@@ -76,12 +76,12 @@ func hintFor(err error) string {
 		strings.Contains(msg, "resolve latest version"):
 		return "verify the spec `repo` and your network connection; `latest` requires a GitHub-backed spec."
 
-	// Piattaforma non supportata dalla ricetta.
+	// Platform not supported by the recipe.
 	case strings.Contains(msg, "is not available for"):
 		return "this tool has no build for your OS/architecture; " +
 			"see supported platforms with `paq registry show <name>`."
 
-	// Download fallito (artefatto o asset ausiliari).
+	// Failed download (artifact or auxiliary assets).
 	case strings.Contains(msg, "asset") && strings.Contains(msg, "not found"):
 		return "the release exists but has no matching asset — check the `asset` template, the version, and your OS/arch."
 
@@ -90,12 +90,12 @@ func hintFor(err error) string {
 		return "the file was not found at the resolved URL — verify the version and that a build exists for your platform. " +
 			"Re-run with --debug to see the exact URLs."
 
-	// Permessi sulla destinazione.
+	// Destination permissions.
 	case strings.Contains(msg, "permission denied"):
 		return "paq cannot write to the destination — choose a writable `dest` or adjust permissions."
 	}
 
-	// Suggerimento generico: indirizza verso --debug per la diagnosi.
+	// Generic suggestion: point to --debug for diagnosis.
 	if !ui.Global.Debug {
 		return "re-run with --debug for a detailed trace of what paq attempted."
 	}

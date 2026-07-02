@@ -19,7 +19,7 @@ var (
 	labelStyle  = lipgloss.NewStyle().Bold(true).Width(16)
 )
 
-// PrintLsTable stampa la tabella dei pacchetti installati.
+// PrintLsTable prints the table of installed packages.
 func PrintLsTable(packages []state.InstalledApp) {
 	if Global.JSON {
 		data, _ := json.MarshalIndent(packages, "", "  ")
@@ -29,43 +29,51 @@ func PrintLsTable(packages []state.InstalledApp) {
 
 	pkgs := sortedPackages(packages)
 
+	headers := []string{"NAME", "VERSION", "KIND"}
+	rows := make([][]string, len(pkgs))
+	for i, rec := range pkgs {
+		rows[i] = []string{rec.Name, rec.Version, rec.Kind}
+	}
+	w := colWidths(headers, rows)
+
 	if !IsColorEnabled() {
 		// Output plain text
-		fmt.Printf("%-20s %-12s %-8s %s\n", "NAME", "VERSION", "KIND", "DEST")
-		fmt.Printf("%-20s %-12s %-8s %s\n", "----", "-------", "----", "----")
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "DEST")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), strings.Repeat("-", w[2]), "----")
 		for _, rec := range pkgs {
-			fmt.Printf("%-20s %-12s %-8s %s\n", rec.Name, rec.Version, rec.Kind, rec.Dest)
+			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, rec.Dest)
 		}
 		return
 	}
 
 	header := fmt.Sprintf("%s  %s  %s  %s",
-		headerStyle.Width(20).Render("NAME"),
-		headerStyle.Width(12).Render("VERSION"),
-		headerStyle.Width(8).Render("KIND"),
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
+		headerStyle.Width(w[2]).Render(headers[2]),
 		headerStyle.Render("DEST"),
 	)
 	fmt.Println(header)
 
 	for _, rec := range pkgs {
 		row := fmt.Sprintf("%s  %s  %s  %s",
-			nameStyle.Width(20).Render(rec.Name),
-			lipgloss.NewStyle().Width(12).Render(rec.Version),
-			dimStyle.Width(8).Render(rec.Kind),
+			nameStyle.Width(w[0]).Render(rec.Name),
+			lipgloss.NewStyle().Width(w[1]).Render(rec.Version),
+			dimStyle.Width(w[2]).Render(rec.Kind),
 			dimStyle.Render(rec.Dest),
 		)
 		fmt.Println(row)
 	}
 }
 
-// RegistryEntry è una riga della tabella delle spec disponibili nella registry.
+// RegistryEntry is a row of the table of specs available in the registry.
 type RegistryEntry struct {
 	Name    string `json:"name"`
 	Backend string `json:"backend"`
 	Repo    string `json:"repo"`
 }
 
-// PrintAvailableTable stampa la tabella delle spec disponibili nella registry embedded.
+// PrintAvailableTable prints the table of specs available in the embedded registry.
 func PrintAvailableTable(entries []RegistryEntry) {
 	if Global.JSON {
 		data, _ := json.MarshalIndent(entries, "", "  ")
@@ -80,34 +88,98 @@ func PrintAvailableTable(entries []RegistryEntry) {
 		return s
 	}
 
+	headers := []string{"NAME", "BACKEND"}
+	rows := make([][]string, len(entries))
+	for i, r := range entries {
+		rows[i] = []string{r.Name, cell(r.Backend)}
+	}
+	w := colWidths(headers, rows)
+
 	if !IsColorEnabled() {
-		fmt.Printf("%-20s %-8s %s\n", "NAME", "BACKEND", "REPO")
-		fmt.Printf("%-20s %-8s %s\n", "----", "-------", "----")
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%s\n", w[0], w[1])
+		fmt.Printf(fmtStr, headers[0], headers[1], "REPO")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "----")
 		for _, r := range entries {
-			fmt.Printf("%-20s %-8s %s\n", r.Name, cell(r.Backend), cell(r.Repo))
+			fmt.Printf(fmtStr, r.Name, cell(r.Backend), cell(r.Repo))
 		}
 		return
 	}
 
 	header := fmt.Sprintf("%s  %s  %s",
-		headerStyle.Width(20).Render("NAME"),
-		headerStyle.Width(8).Render("BACKEND"),
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
 		headerStyle.Render("REPO"),
 	)
 	fmt.Println(header)
 
 	for _, r := range entries {
 		row := fmt.Sprintf("%s  %s  %s",
-			nameStyle.Width(20).Render(r.Name),
-			dimStyle.Width(8).Render(cell(r.Backend)),
+			nameStyle.Width(w[0]).Render(r.Name),
+			dimStyle.Width(w[1]).Render(cell(r.Backend)),
 			dimStyle.Render(cell(r.Repo)),
 		)
 		fmt.Println(row)
 	}
 }
 
-// PrintConfigShow stampa il path della configurazione utente valutata e i suoi
-// dati: i default effettivi (configurati o built-in) e le app dichiarate.
+// OutdatedEntry is a row of the "paq outdated" table: an app pinned to
+// "latest" whose installed version differs from the resolved upstream one.
+type OutdatedEntry struct {
+	Name      string `json:"name"`
+	Installed string `json:"installed"`
+	Latest    string `json:"latest"`
+}
+
+// PrintOutdatedTable prints the apps that have a newer upstream version available.
+func PrintOutdatedTable(entries []OutdatedEntry) {
+	if Global.JSON {
+		data, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("All tools are up to date.")
+		return
+	}
+
+	headers := []string{"APP", "INSTALLED"}
+	rows := make([][]string, len(entries))
+	for i, e := range entries {
+		rows[i] = []string{e.Name, e.Installed}
+	}
+	w := colWidths(headers, rows)
+
+	if !IsColorEnabled() {
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%s\n", w[0], w[1])
+		fmt.Printf(fmtStr, headers[0], headers[1], "LATEST")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "------")
+		for _, e := range entries {
+			fmt.Printf(fmtStr, e.Name, e.Installed, e.Latest)
+		}
+		return
+	}
+
+	header := fmt.Sprintf("%s  %s  %s",
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
+		headerStyle.Render("LATEST"),
+	)
+	fmt.Println(header)
+
+	latestStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow: draws the eye to the new version
+	for _, e := range entries {
+		row := fmt.Sprintf("%s  %s  %s",
+			nameStyle.Width(w[0]).Render(e.Name),
+			dimStyle.Width(w[1]).Render(e.Installed),
+			latestStyle.Render(e.Latest),
+		)
+		fmt.Println(row)
+	}
+}
+
+// PrintConfigShow prints the evaluated user configuration path and its data:
+// the effective defaults (configured or built-in) and the declared apps.
 func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry) {
 	if Global.JSON {
 		out := map[string]any{
@@ -122,8 +194,8 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 		return
 	}
 
-	// Chiave in blu grassetto, valore in verde, annotazioni in grigio, così da
-	// distinguere a colpo d'occhio etichette e valori.
+	// Key in bold blue, value in green, annotations in gray, so labels and
+	// values are distinguishable at a glance.
 	keyStyle := labelStyle.Foreground(lipgloss.Color("12"))
 	val := func(s string) string {
 		if IsColorEnabled() {
@@ -184,18 +256,10 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 	}
 	sort.Strings(keys)
 
-	header := fmt.Sprintf("%s  %s  %s  %s",
-		headerStyle.Width(16).Render("APP"),
-		headerStyle.Width(16).Render("USE"),
-		headerStyle.Width(10).Render("VERSION"),
-		headerStyle.Render("DEST"),
-	)
-	if IsColorEnabled() {
-		fmt.Println(header)
-	} else {
-		fmt.Printf("%-16s %-16s %-10s %s\n", "APP", "USE", "VERSION", "DEST")
-	}
-	for _, k := range keys {
+	type appRow struct{ use, ver, dest string }
+	rowData := make(map[string]appRow, len(keys))
+	tableRows := make([][]string, len(keys))
+	for i, k := range keys {
 		a := apps[k]
 		use := a.Use
 		if use == "" {
@@ -209,21 +273,43 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 		if dest == "" {
 			dest = "(default)"
 		}
+		rowData[k] = appRow{use, ver, dest}
+		tableRows[i] = []string{k, use, ver}
+	}
+
+	headers := []string{"APP", "USE", "VERSION"}
+	w := colWidths(headers, tableRows)
+
+	if IsColorEnabled() {
+		header := fmt.Sprintf("%s  %s  %s  %s",
+			headerStyle.Width(w[0]).Render(headers[0]),
+			headerStyle.Width(w[1]).Render(headers[1]),
+			headerStyle.Width(w[2]).Render(headers[2]),
+			headerStyle.Render("DEST"),
+		)
+		fmt.Println(header)
+	} else {
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "DEST")
+	}
+	for _, k := range keys {
+		row := rowData[k]
 		if IsColorEnabled() {
 			fmt.Printf("%s  %s  %s  %s\n",
-				nameStyle.Width(16).Render(k),
-				dimStyle.Width(16).Render(use),
-				lipgloss.NewStyle().Width(10).Render(ver),
-				dimStyle.Render(dest),
+				nameStyle.Width(w[0]).Render(k),
+				dimStyle.Width(w[1]).Render(row.use),
+				lipgloss.NewStyle().Width(w[2]).Render(row.ver),
+				dimStyle.Render(row.dest),
 			)
 		} else {
-			fmt.Printf("%-16s %-16s %-10s %s\n", k, use, ver, dest)
+			fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+			fmt.Printf(fmtStr, k, row.use, row.ver, row.dest)
 		}
 	}
 }
 
-// PrintInfoDetail stampa i dettagli di un'app (ricetta + versioni installate).
-// installed contiene tutte le versioni dell'app presenti nello state (può essere vuoto).
+// PrintInfoDetail prints an app's details (recipe + installed versions).
+// installed contains all the app's versions present in the state (can be empty).
 func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp) {
 	if Global.JSON {
 		out := map[string]any{
@@ -285,7 +371,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 	}
 }
 
-// PrintSpecDetail stampa i dettagli di una singola spec della registry.
+// PrintSpecDetail prints the details of a single registry spec.
 func PrintSpecDetail(name string, spec config.Spec) {
 	if Global.JSON {
 		out := map[string]any{
@@ -301,7 +387,7 @@ func PrintSpecDetail(name string, spec config.Spec) {
 		if value == "" {
 			return
 		}
-		// Un'etichetta vuota (riga di continuazione) viene allineata senza i due punti.
+		// An empty label (continuation row) is aligned without the colon.
 		text := label
 		if label != "" {
 			text = label + ":"
@@ -366,8 +452,8 @@ func PrintSpecDetail(name string, spec config.Spec) {
 	render("Minisign sig", spec.Verify.Minisign.SignedAsset)
 }
 
-// formatBinaries rende ogni Binary in "from → to" (o solo "from"/"to" quando
-// uno dei due manca, es. download nudo). Ritorna nil se la lista è vuota.
+// formatBinaries renders each Binary as "from → to" (or just "from"/"to" when
+// one of the two is missing, e.g. a bare download). Returns nil if the list is empty.
 func formatBinaries(bins []config.Binary) []string {
 	if len(bins) == 0 {
 		return nil
@@ -386,7 +472,25 @@ func formatBinaries(bins []config.Binary) []string {
 	return out
 }
 
-// sortedPackages ritorna una copia ordinata per nome poi versione.
+// colWidths computes, for each column, the width needed to fit both its
+// header and every row's cell: max(len(header), max(len(cell))). Used so
+// table columns don't truncate or misalign on long values.
+func colWidths(headers []string, rows [][]string) []int {
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) && len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
+	}
+	return widths
+}
+
+// sortedPackages returns a copy sorted by name then version.
 func sortedPackages(in []state.InstalledApp) []state.InstalledApp {
 	out := make([]state.InstalledApp, len(in))
 	copy(out, in)

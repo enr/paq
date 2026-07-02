@@ -9,15 +9,15 @@ import (
 	"github.com/enr/paq/internal/archive"
 )
 
-// InstallFile estrae il singolo binario dall'archivio e lo installa atomicamente in dest.
-// Se extractName è vuoto, l'archivio viene estratto direttamente come file singolo.
+// InstallFile extracts the single binary from the archive and atomically installs it to dest.
+// If extractName is empty, the archive is extracted directly as a single file.
 func InstallFile(archivePath, archiveType, extractName, dest, chmod string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	// Estrai in una directory temporanea nella stessa dir di dest
-	// (stesso filesystem → rename atomico cross-device garantito)
+	// Extract into a temp directory in the same dir as dest
+	// (same filesystem → atomic cross-device rename guaranteed).
 	tmpDir, err := os.MkdirTemp(filepath.Dir(dest), "paq-install-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -35,7 +35,7 @@ func InstallFile(archivePath, archiveType, extractName, dest, chmod string) erro
 
 	extracted := filepath.Join(tmpDir, extractName)
 
-	// Applica chmod
+	// Apply chmod.
 	if chmod != "" {
 		mode, err := strconv.ParseUint(chmod, 8, 32)
 		if err != nil {
@@ -46,7 +46,7 @@ func InstallFile(archivePath, archiveType, extractName, dest, chmod string) erro
 		}
 	}
 
-	// Rename atomico su dest
+	// Atomic rename onto dest.
 	if err := os.Rename(extracted, dest); err != nil {
 		return fmt.Errorf("install file: %w", err)
 	}

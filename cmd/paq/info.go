@@ -9,10 +9,11 @@ import (
 )
 
 var infoCmd = &cobra.Command{
-	Use:   "info <app>",
-	Short: "Show spec and install state for a tool",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runInfo,
+	Use:               "info <app>",
+	Short:             "Show spec and install state for a tool",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeManifestApps,
+	RunE:              runInfo,
 }
 
 func init() {
@@ -44,7 +45,7 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("spec %q not found in registry", specName)
 	}
 
-	// Carica le versioni installate (può essercene più di una)
+	// Load the installed versions (there may be more than one).
 	var installed []state.InstalledApp
 	if st, err := state.Load(); err == nil {
 		installed = st.ByName(appName)

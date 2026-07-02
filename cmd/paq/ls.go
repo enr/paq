@@ -26,7 +26,7 @@ func runLs(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 
-	if len(st.Packages) == 0 {
+	if len(st.Packages) == 0 && !ui.Global.JSON {
 		fmt.Println("No tools installed.")
 		return nil
 	}

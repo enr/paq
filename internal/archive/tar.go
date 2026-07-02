@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-// extractTar estrae un archivio tar da reader con le opzioni specificate.
-// Questa funzione è condivisa da tar.gz e tar.xz.
+// extractTar extracts a tar archive from reader with the given options.
+// This function is shared by tar.gz and tar.xz.
 func extractTar(r io.Reader, opts ExtractOpts) error {
 	tr := tar.NewReader(r)
 
-	found := false // usato per modalità Extract (file singolo)
+	found := false // used for Extract mode (single file)
 
 	for {
 		hdr, err := tr.Next()
@@ -25,7 +25,7 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			return fmt.Errorf("read tar: %w", err)
 		}
 
-		// Normalizza il path e applica StripComponents
+		// Normalize the path and apply StripComponents.
 		name := filepath.ToSlash(hdr.Name)
 		name = strings.TrimPrefix(name, "./")
 		stripped, ok := stripComponents(name, opts.StripComponents)
@@ -33,11 +33,18 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			continue
 		}
 
+		if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink {
+			return fmt.Errorf("entry %q is a symlink/hardlink: not supported", hdr.Name)
+		}
+
 		switch {
 		case opts.Extract != "":
-			// Modalità file singolo: cerca il file per basename
+			// Single-file mode: look up the file by basename.
 			if filepath.Base(stripped) == opts.Extract {
-				dest := filepath.Join(opts.Dest, opts.Extract)
+				dest, err := securePath(opts.Dest, opts.Extract)
+				if err != nil {
+					return err
+				}
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
@@ -45,12 +52,15 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			}
 
 		case opts.Subdir != "":
-			// Modalità sottoalbero: estrai solo i file sotto subdir (con glob sul primo segmento)
+			// Subtree mode: extract only files under subdir (with a glob on the first segment).
 			rel, match := matchSubdir(stripped, opts.Subdir)
 			if !match || rel == "" {
 				continue
 			}
-			dest := filepath.Join(opts.Dest, filepath.FromSlash(rel))
+			dest, err := securePath(opts.Dest, rel)
+			if err != nil {
+				return err
+			}
 			if hdr.Typeflag == tar.TypeDir {
 				if err := os.MkdirAll(dest, 0755); err != nil {
 					return err
@@ -62,8 +72,11 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			}
 
 		default:
-			// Modalità standard: estrai tutto
-			dest := filepath.Join(opts.Dest, filepath.FromSlash(stripped))
+			// Standard mode: extract everything.
+			dest, err := securePath(opts.Dest, stripped)
+			if err != nil {
+				return err
+			}
 			if hdr.Typeflag == tar.TypeDir {
 				if err := os.MkdirAll(dest, 0755); err != nil {
 					return err
@@ -82,8 +95,8 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 	return nil
 }
 
-// stripComponents rimuove i primi n componenti del path.
-// Ritorna ("", false) se il path ha meno di n componenti.
+// stripComponents removes the first n components of the path.
+// Returns ("", false) if the path has fewer than n components.
 func stripComponents(path string, n int) (string, bool) {
 	if n <= 0 {
 		return path, true
@@ -95,8 +108,8 @@ func stripComponents(path string, n int) (string, bool) {
 	return parts[n], true
 }
 
-// matchSubdir verifica se path inizia con il prefisso subdir (che può avere "*" come glob nel primo segmento).
-// Se c'è match, ritorna il path relativo rispetto a subdir.
+// matchSubdir checks whether path starts with the subdir prefix (which may have
+// "*" as a glob in the first segment). On a match, returns the path relative to subdir.
 func matchSubdir(path, subdir string) (rel string, ok bool) {
 	subdirParts := strings.Split(strings.TrimSuffix(subdir, "/"), "/")
 	pathParts := strings.Split(path, "/")
@@ -108,7 +121,7 @@ func matchSubdir(path, subdir string) (rel string, ok bool) {
 	for i, sp := range subdirParts {
 		pp := pathParts[i]
 		if sp == "*" {
-			continue // glob: qualsiasi segmento va bene
+			continue // glob: any segment matches
 		}
 		if sp != pp {
 			return "", false
@@ -119,7 +132,7 @@ func matchSubdir(path, subdir string) (rel string, ok bool) {
 	return rel, true
 }
 
-// writeFile scrive il contenuto del reader nel file dest, creando le directory necessarie.
+// writeFile writes the reader's content to file dest, creating the necessary directories.
 func writeFile(r io.Reader, dest string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
@@ -132,6 +145,6 @@ func writeFile(r io.Reader, dest string, mode os.FileMode) error {
 	if _, err := io.Copy(f, r); err != nil {
 		return fmt.Errorf("write %s: %w", dest, err)
 	}
-	// Applica i permessi corretti dopo la scrittura
+	// Apply the correct permissions after writing.
 	return os.Chmod(dest, mode&0777|0200)
 }

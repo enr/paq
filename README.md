@@ -87,6 +87,9 @@ is the easy way to guarantee this.
 ## Commands
 
 ```bash
+# Create a commented manifest skeleton to start from
+paq init
+
 # Install a registry tool: records a default entry in the manifest, then installs
 paq install ripgrep
 # install without recording it in the manifest (ephemeral)
@@ -102,6 +105,9 @@ paq install rg
 
 # Install all tools from manifest
 paq install
+
+# Install multiple tools at once
+paq install ripgrep bat delta
 
 # List tool definitions in the embedded registry
 paq registry list
@@ -120,10 +126,17 @@ paq ls
 # Show recipe and install state
 paq info rg
 
-# Uninstall a tool
-paq uninstall rg
+# Print the installed path of a tool (for scripting)
+paq which rg
 
-# Shell completion
+# Check for available updates without installing them
+paq outdated
+
+# Uninstall a tool (or several at once)
+paq uninstall rg
+paq uninstall rg bat
+
+# Shell completion (app and tool names are completed dynamically)
 paq completion bash   # or zsh, fish, powershell
 ```
 
@@ -132,12 +145,21 @@ paq completion bash   # or zsh, fish, powershell
 | Flag | Description |
 |------|-------------|
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (for ls, registry list/show, info, config show) |
+| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`, `info`, `config show`, `import`, `search`, `outdated`, `which`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
-| `-d`, `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
+| `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
 
 `NO_COLOR` env var also disables colors. Progress bar goes to stderr; data to stdout.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Generic failure (network, missing config, app/spec not found, ...) |
+| `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
+| `4` | Checksum or signature verification failed |
 
 ## Adding a custom recipe
 

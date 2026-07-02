@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// CheckFileSHA512 calcola lo SHA512 di filePath e lo confronta con expected (stringa hex).
-// Ritorna errore descrittivo se non corrispondono.
+// CheckFileSHA512 computes the SHA512 of filePath and compares it with expected (hex string).
+// Returns a descriptive error if they don't match.
 func CheckFileSHA512(filePath string, expected string) error {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -33,10 +33,10 @@ func CheckFileSHA512(filePath string, expected string) error {
 	return nil
 }
 
-// ParseSHA512File legge un file checksum sha512 e ritorna l'hash per fileName.
-// Supporta due formati:
-//   - bare hash: il file contiene solo l'hash (layout usato da Apache Maven);
-//   - "<hash>  <filename>" / "<hash> *<filename>": riga con nome file (layout coreutils).
+// ParseSHA512File reads a sha512 checksum file and returns the hash for fileName.
+// Supports two formats:
+//   - bare hash: the file contains only the hash (layout used by Apache Maven);
+//   - "<hash>  <filename>" / "<hash> *<filename>": line with file name (coreutils layout).
 func ParseSHA512File(checksumPath string, fileName string) (string, error) {
 	f, err := os.Open(checksumPath)
 	if err != nil {
@@ -54,7 +54,7 @@ func ParseSHA512File(checksumPath string, fileName string) (string, error) {
 		parts := strings.Fields(line)
 		switch {
 		case len(parts) == 1:
-			// Bare hash: una sola colonna, l'hash si riferisce all'unico artefatto.
+			// Bare hash: a single column, the hash refers to the only artifact.
 			return strings.ToLower(parts[0]), nil
 		default:
 			name := strings.TrimPrefix(parts[1], "*")

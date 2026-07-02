@@ -2,7 +2,7 @@ package config
 
 import "strings"
 
-// PlatformOverride contiene i campi di una spec che possono essere sovrascritti per-OS.
+// PlatformOverride contains the fields of a spec that can be overridden per-OS.
 type PlatformOverride struct {
 	StripComponents *int   `toml:"strip_components"`
 	Subdir          string `toml:"subdir"`
@@ -13,15 +13,15 @@ type PlatformOverride struct {
 	Archive         string `toml:"archive"`
 }
 
-// Binary è un eseguibile da estrarre da un archivio multi-binary.
-// From è il basename (templated) del file dentro l'archivio; To, se vuoto,
-// vale come il basename di From.
+// Binary is an executable to extract from a multi-binary archive.
+// From is the (templated) basename of the file inside the archive; To, if
+// empty, defaults to From's basename.
 type Binary struct {
 	From string `toml:"from"`
 	To   string `toml:"to"`
 }
 
-// Spec è una spec della registry: descrive come scaricare e installare un tool.
+// Spec is a registry spec: describes how to download and install a tool.
 type Spec struct {
 	Backend string `toml:"backend"`
 	Repo    string `toml:"repo"`
@@ -32,14 +32,14 @@ type Spec struct {
 	LatestStrategy string `toml:"latest_strategy"`
 	// ArchPkg is the package name in the official Arch repos (strategy "arch-linux").
 	ArchPkg string `toml:"arch_pkg"`
-	// DefaultVersion è la versione usata come "latest" quando il backend/strategia
-	// non sa risolvere "latest" (es. backend "url"). Ignorato se "latest" è
-	// risolvibile o se l'app pinna una versione esplicita.
+	// DefaultVersion is the version used as "latest" when the backend/strategy
+	// cannot resolve "latest" (e.g. backend "url"). Ignored if "latest" is
+	// resolvable or if the app pins an explicit version.
 	DefaultVersion string `toml:"default_version"`
 	Archive        string `toml:"archive"`
 	Extract        string `toml:"extract"`
-	// Binaries elenca più eseguibili da estrarre dall'archivio e installare in
-	// dest (interpretato come directory bin). Mutuamente esclusivo con Extract.
+	// Binaries lists multiple executables to extract from the archive and
+	// install into dest (interpreted as a bin directory). Mutually exclusive with Extract.
 	Binaries        []Binary                     `toml:"binaries"`
 	Subdir          string                       `toml:"subdir"`
 	StripComponents int                          `toml:"strip_components"`
@@ -50,17 +50,17 @@ type Spec struct {
 	Templates       map[string]string            `toml:"templates"`
 	TemplatesOS     map[string]map[string]string `toml:"templates_os"`
 	Verify          VerifyConfig                 `toml:"verify"`
-	// Platforms elenca le piattaforme supportate in vocabolario canonico paq
-	// (es. "linux/amd64" o "linux"). Vuoto = nessuna restrizione (tutte ammesse).
-	// L'arch è opzionale: "linux" matcha tutte le arch.
+	// Platforms lists the supported platforms in paq's canonical vocabulary
+	// (e.g. "linux/amd64" or "linux"). Empty = no restriction (all allowed).
+	// The arch is optional: "linux" matches all arches.
 	Platforms []string `toml:"platforms"`
-	// OSOverrides contiene override di campi per OS specifico (es. [jdk.darwin])
+	// OSOverrides contains per-OS field overrides (e.g. [jdk.darwin]).
 	OSOverrides map[string]PlatformOverride `toml:"-"`
 }
 
-// SupportsPlatform riporta se la spec supporta la coppia os/arch (in
-// vocabolario canonico paq). Platforms vuoto = tutte ammesse. Una voce senza
-// arch ("linux") matcha tutte le arch di quell'OS; "linux/amd64" solo quella.
+// SupportsPlatform reports whether the spec supports the os/arch pair (in
+// paq's canonical vocabulary). Empty Platforms = all allowed. An entry
+// without an arch ("linux") matches all arches of that OS; "linux/amd64" only that one.
 func (r Spec) SupportsPlatform(os, arch string) bool {
 	if len(r.Platforms) == 0 {
 		return true
@@ -77,7 +77,7 @@ func (r Spec) SupportsPlatform(os, arch string) bool {
 	return false
 }
 
-// ApplyOSOverride applica l'override per-OS se presente, ritornando una copia modificata.
+// ApplyOSOverride applies the per-OS override if present, returning a modified copy.
 func (r Spec) ApplyOSOverride(os string) Spec {
 	ov, ok := r.OSOverrides[os]
 	if !ok {
@@ -107,7 +107,7 @@ func (r Spec) ApplyOSOverride(os string) Spec {
 	return r
 }
 
-// VerifyConfig configura la verifica di integrità e firma.
+// VerifyConfig configures integrity and signature verification.
 type VerifyConfig struct {
 	SHA256      string         `toml:"sha256"`
 	SHA256Asset string         `toml:"sha256_asset"`
@@ -116,21 +116,21 @@ type VerifyConfig struct {
 	Minisign    MinisignConfig `toml:"minisign"`
 }
 
-// MinisignConfig configura la verifica della firma minisign.
+// MinisignConfig configures minisign signature verification.
 type MinisignConfig struct {
 	PublicKey   string `toml:"public_key"`
 	SignedAsset string `toml:"signed_asset"`
 }
 
-// Enabled indica se la spec configura almeno una verifica di integrità o firma.
-// È usato per avvisare l'utente quando un tool viene installato senza alcuna verifica.
+// Enabled indicates whether the spec configures at least one integrity or
+// signature check. Used to warn the user when a tool is installed with no verification.
 func (v VerifyConfig) Enabled() bool {
 	return v.SHA256 != "" || v.SHA256Asset != "" ||
 		v.SHA512 != "" || v.SHA512Asset != "" ||
 		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "")
 }
 
-// AppEntry è la configurazione di un'app nel manifest utente (~/.config/paq/config.toml).
+// AppEntry is an app's configuration in the user manifest (~/.config/paq/config.toml).
 type AppEntry struct {
 	Use     string            `toml:"use"`
 	Version string            `toml:"version"`
@@ -141,23 +141,23 @@ type AppEntry struct {
 	Chmod   string            `toml:"chmod"`
 }
 
-// Defaults raccoglie i valori di default configurabili dall'utente nel manifest
-// (sezione [defaults]). Bin e Opt sono le directory base usate per derivare il
-// dest quando un'app non lo specifica. Vuoti → si usano i default built-in
-// (vedi DefaultDestRoots).
+// Defaults collects the user-configurable default values in the manifest
+// ([defaults] section). Bin and Opt are the base directories used to derive
+// dest when an app doesn't specify one. Empty → falls back to the built-in
+// defaults (see DefaultDestRoots).
 type Defaults struct {
 	Bin string `toml:"bin"`
 	Opt string `toml:"opt"`
 }
 
-// Config è la configurazione completa post-merge (registry + manifest utente).
+// Config is the fully merged configuration (registry + user manifest).
 type Config struct {
 	Specs map[string]Spec
 	Apps  map[string]AppEntry
-	// Defaults sono i default configurabili dall'utente (sezione [defaults]).
+	// Defaults are the user-configurable defaults ([defaults] section).
 	Defaults Defaults
-	// GlobalTemplates contiene i meta-template globali da templates.toml
+	// GlobalTemplates contains the global meta-templates from templates.toml.
 	GlobalTemplates map[string]string
-	// GlobalTemplatesOS contiene i meta-template per-OS da templates.toml
+	// GlobalTemplatesOS contains the per-OS meta-templates from templates.toml.
 	GlobalTemplatesOS map[string]map[string]string
 }

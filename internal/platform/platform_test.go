@@ -56,11 +56,11 @@ func TestApplyMap(t *testing.T) {
 	if got := ApplyMap(m, "arm64", "arm64"); got != "aarch64" {
 		t.Errorf("ApplyMap arm64 = %q, want aarch64", got)
 	}
-	// chiave non presente: ritorna il default
+	// key not present: returns the default.
 	if got := ApplyMap(m, "riscv64", "riscv64"); got != "riscv64" {
 		t.Errorf("ApplyMap riscv64 = %q, want riscv64", got)
 	}
-	// mappa nil: ritorna il default
+	// nil map: returns the default.
 	if got := ApplyMap(nil, "amd64", "amd64"); got != "amd64" {
 		t.Errorf("ApplyMap nil = %q, want amd64", got)
 	}

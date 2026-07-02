@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -22,11 +23,16 @@ var (
 const maxParallel = 3
 
 var installCmd = &cobra.Command{
-	Use:     "install [app]",
+	Use:     "install [app...]",
 	Aliases: []string{"i"},
 	Short:   "Install a tool (or all tools from manifest if no app specified)",
-	Args:    cobra.MaximumNArgs(1),
-	RunE:    runInstall,
+	Example: `  paq install ripgrep            # install, recording it in the manifest
+  paq install ripgrep --no-save  # install without recording it (ephemeral)
+  paq install ripgrep bat delta  # install multiple tools
+  paq install                    # install every tool from the manifest`,
+	Args:              cobra.ArbitraryArgs,
+	ValidArgsFunction: completeInstallableNames,
+	RunE:              runInstall,
 }
 
 func init() {
@@ -43,6 +49,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
+	// A single explicit app gets the friendlier single-app UX: no [name]
+	// prefix on its output, and a progress bar for the download.
 	if len(args) == 1 {
 		name := args[0]
 		path, err := ensureManifestEntry(cfg, name, !flagInstallNoSave)
@@ -58,27 +66,57 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return install.Run(ctx, cfg, name, progress, hooks)
 	}
 
-	// Installa tutte le app del manifest in parallelo (max maxParallel goroutine)
+	if len(args) > 1 {
+		// Validate every name before touching the manifest or installing
+		// anything, so a typo in the last argument doesn't leave earlier
+		// apps auto-imported into the manifest.
+		for _, name := range args {
+			if err := validateAppName(cfg, name); err != nil {
+				return err
+			}
+		}
+		for _, name := range args {
+			path, err := ensureManifestEntry(cfg, name, !flagInstallNoSave)
+			if err != nil {
+				return err
+			}
+			if path != "" {
+				ui.OK("added %s to %s", name, path)
+			}
+		}
+		return installParallel(ctx, cfg, args)
+	}
+
+	// No args: install all apps from the manifest.
 	if len(cfg.Apps) == 0 {
 		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
 		return nil
 	}
+	names := make([]string, 0, len(cfg.Apps))
+	for name := range cfg.Apps {
+		names = append(names, name)
+	}
+	return installParallel(ctx, cfg, names)
+}
 
-	// stdoutMu serializza le scritture su stdout/stderr per evitare output mescolato
+// installParallel installs names concurrently (max maxParallel goroutines),
+// each with a [name]-prefixed, mutex-serialized set of hooks so output from
+// different goroutines doesn't interleave.
+func installParallel(ctx context.Context, cfg *config.Config, names []string) error {
 	var stdoutMu sync.Mutex
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxParallel)
 
-	for name := range cfg.Apps {
-		name := name // cattura per la goroutine
+	for _, name := range names {
+		name := name // capture for the goroutine
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)
 			lockedHooks := lockedAppHooks(prefix, &stdoutMu)
 			lockedHooks.Force = flagInstallForce
 			if err := install.Run(ctx, cfg, name, nil, lockedHooks); err != nil {
-				// La pipeline mostra già l'errore via OnFail; lo ristampiamo solo
-				// se per qualche motivo non è stato mostrato.
+				// The pipeline already shows the error via OnFail; we only
+				// reprint it if for some reason it wasn't shown.
 				if !install.ErrAlreadyShown(err) {
 					stdoutMu.Lock()
 					ui.Fail("%s%v", prefix, err)
@@ -93,39 +131,28 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return g.Wait()
 }
 
-// ensureManifestEntry garantisce che cfg.Apps[name] esista, così che install
-// possa procedere. Se name manca dal manifest ma corrisponde a una spec del
-// registry, sintetizza una entry di default (auto-import): la inietta in
-// cfg.Apps in memoria e — se save è true — la persiste nel manifest utente.
-// Ritorna il path scritto ("" se non persistito o se l'app era già presente)
-// oppure un hintError se name non è né un'app né una spec nota.
+// ensureManifestEntry ensures that cfg.Apps[name] exists, so that install
+// can proceed. If name is missing from the manifest but matches a registry
+// spec, it synthesizes a default entry (auto-import): injects it into
+// cfg.Apps in memory and, if save is true, persists it to the user manifest.
+// Returns the written path ("" if not persisted or the app already existed)
+// or a hintError if name is neither a known app nor a known spec.
 func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, error) {
 	if _, exists := cfg.Apps[name]; exists {
 		return "", nil
 	}
 
-	spec, ok := cfg.Specs[name]
-	if !ok {
-		hint := "list available definitions with `paq registry`"
-		if s := similarSpecs(cfg.Specs, name); len(s) > 0 {
-			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
-		}
-		return "", hintError{
-			msg:  fmt.Sprintf("%q is not in your manifest and not a known registry spec", name),
-			hint: hint,
-		}
+	if err := validateAppName(cfg, name); err != nil {
+		return "", err
 	}
 
-	if !validAppKey(name) {
-		return "", fmt.Errorf("invalid app name %q: use only letters, digits, '-' or '_'", name)
-	}
-
+	spec := cfg.Specs[name]
 	entry := config.AppEntry{
 		Use:     name,
 		Version: defaultImportVersion(spec),
 		Dest:    config.DefaultDest(spec, name, cfg.Defaults),
 	}
-	// Rende l'app installabile in memoria, a prescindere dalla persistenza.
+	// Makes the app installable in memory, regardless of persistence.
 	cfg.Apps[name] = entry
 
 	if !save {
@@ -140,7 +167,30 @@ func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, er
 	return path, nil
 }
 
-// appHooks costruisce gli Hooks per un singolo app (usato per install singola).
+// validateAppName reports whether name can be installed: either it's already
+// in the manifest, or it matches a known registry spec with a valid app key.
+// Used to fail fast on a typo before installing or auto-importing anything.
+func validateAppName(cfg *config.Config, name string) error {
+	if _, exists := cfg.Apps[name]; exists {
+		return nil
+	}
+	if _, ok := cfg.Specs[name]; !ok {
+		hint := "list available definitions with `paq registry`"
+		if s := similarSpecs(cfg.Specs, name); len(s) > 0 {
+			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
+		}
+		return hintError{
+			msg:  fmt.Sprintf("%q is not in your manifest and not a known registry spec", name),
+			hint: hint,
+		}
+	}
+	if !validAppKey(name) {
+		return fmt.Errorf("invalid app name %q: use only letters, digits, '-' or '_'", name)
+	}
+	return nil
+}
+
+// appHooks builds the Hooks for a single app (used for single-app install).
 func appHooks(name, prefix string) *install.Hooks {
 	return &install.Hooks{
 		OnStep:  func(msg string) { ui.Step("%s%s", prefix, msg) },
@@ -152,8 +202,8 @@ func appHooks(name, prefix string) *install.Hooks {
 	}
 }
 
-// lockedAppHooks costruisce Hooks serializzati su un mutex condiviso, per evitare
-// output mescolato durante le operazioni parallele (install/upgrade di più app).
+// lockedAppHooks builds Hooks serialized on a shared mutex, to avoid
+// interleaved output during parallel operations (install/upgrade of multiple apps).
 func lockedAppHooks(prefix string, mu *sync.Mutex) *install.Hooks {
 	return &install.Hooks{
 		OnStep:  func(msg string) { mu.Lock(); ui.Step("%s%s", prefix, msg); mu.Unlock() },
@@ -165,7 +215,7 @@ func lockedAppHooks(prefix string, mu *sync.Mutex) *install.Hooks {
 	}
 }
 
-// loadConfig carica registry + template globali + manifest utente e li unisce.
+// loadConfig loads the registry + global templates + user manifest and merges them.
 func loadConfig() (*config.Config, error) {
 	registry, err := config.LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
