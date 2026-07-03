@@ -109,8 +109,10 @@ is the easy way to guarantee this.
 | `paq ls` | `list` | List installed tools |
 | `paq info <app>` | | Show definition and install state for a manifest app |
 | `paq search <query>` | `s` | Search the registry for tool definitions |
-| `paq registry list [query]` | `reg` | List tool definitions in the embedded registry |
+| `paq registry list [query]` | `reg` | List tool definitions in the registry (with their source) |
 | `paq registry show <name>` | `reg` | Show details of a single registry definition |
+| `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
+| `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
 | `paq config show` | | Show the config path, effective default directories, and apps |
 | `paq doctor` | | Check the paq environment, paths, and `PATH` |
 | `paq self-update` | | Update paq itself to the latest release |
@@ -207,7 +209,7 @@ paq self-update --force    # reinstall even if already up to date
 | Flag | Description |
 |------|-------------|
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (for `ls`, `registry list`/`show`, `info`, `config show`) |
+| `-j`, `--json` | Output as JSON (for `ls`, `registry list`/`show`/`status`, `info`, `config show`) |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `-d`, `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
@@ -343,6 +345,37 @@ tag = "bun-v{{version}}"       # release tags are bun-v1.3.14, not v1.3.14
 
 `tag` only affects pinned versions (including `default_version`); `"latest"`
 always reads the real tag from the releases API.
+
+## External registry
+
+The registry is compiled into the binary, so paq works fully offline. It can
+also be overlaid with an **external snapshot** updated independently of the
+binary, to pick up new or fixed recipes without a paq release:
+
+```bash
+paq registry update    # download, verify and install the latest snapshot
+paq registry status    # embedded vs external versions and overrides
+```
+
+The snapshot is cached under `${XDG_CACHE_HOME:-~/.cache}/paq/registry`
+(`%LOCALAPPDATA%\paq\cache\registry` on Windows). Only `paq registry update`
+uses the network; every other command reads the cache, and a missing or corrupt
+cache silently falls back to the embedded registry. Precedence is
+**embedded < external snapshot < your `[specs.*]`**.
+
+The archive is verified with a SHA-256 checksum signed with
+[minisign](https://jedisct1.github.io/minisign/); the public key is embedded in
+the binary as the trust anchor, and a failed verification aborts with exit code
+`4`. To use a custom source, set a `[registry]` table (the URL must be `https`
+and supply its own public key, which replaces the default trust anchor):
+
+```toml
+[registry]
+url = "https://example.com/paq/registry.tar.gz"
+public_key = "RWQ...your-minisign-public-key..."
+```
+
+`paq registry update` then fetches `url`, `url.sha256` and `url.sha256.minisig`.
 
 ## Template placeholders
 

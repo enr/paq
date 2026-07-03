@@ -11,8 +11,8 @@ import (
 
 var registryShowCmd = &cobra.Command{
 	Use:               "show <name>",
-	Short:             "Show details of a single tool spec in the embedded registry",
-	Long:              "Show the full spec for a tool in the embedded registry, regardless of whether it is in the user manifest.",
+	Short:             "Show details of a single tool spec in the registry",
+	Long:              "Show the full spec for a tool in the registry, regardless of whether it is in the user manifest.",
 	Example:           `  paq registry show ripgrep`,
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeRegistrySpecs,

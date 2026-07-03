@@ -11,6 +11,7 @@ import (
 	"github.com/enr/paq/embedded"
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/install"
+	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -217,26 +218,47 @@ func lockedAppHooks(prefix string, mu *sync.Mutex) *install.Hooks {
 
 // loadConfig loads the registry + global templates + user manifest and merges them.
 func loadConfig() (*config.Config, error) {
-	registry, err := config.LoadEmbeddedRegistry(embedded.RegistryFS)
+	cfg, _, err := loadConfigWithMeta()
+	return cfg, err
+}
+
+// loadConfigWithMeta is loadConfig plus the metadata of the external registry
+// snapshot in use (nil when running on the embedded registry only).
+// A missing or broken snapshot never fails the load: it degrades to the
+// embedded registry with a warning on stderr. No network is ever involved.
+func loadConfigWithMeta() (*config.Config, *registry.Meta, error) {
+	specs, err := config.LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
-		return nil, fmt.Errorf("load registry: %w", err)
+		return nil, nil, fmt.Errorf("load registry: %w", err)
 	}
 
 	globalTmpl, globalTmplOS, err := config.LoadGlobalTemplates(embedded.RegistryFS)
 	if err != nil {
-		return nil, fmt.Errorf("load global templates: %w", err)
+		return nil, nil, fmt.Errorf("load global templates: %w", err)
+	}
+
+	var regMeta *registry.Meta
+	snapFS, meta, err := registry.Open()
+	if err != nil {
+		ui.Warn("external registry cache is unusable (%v): using the embedded registry, run `paq registry update` to refresh it", err)
+	} else if snapFS != nil {
+		if err := config.OverlayRegistry(specs, globalTmpl, globalTmplOS, snapFS); err != nil {
+			ui.Warn("external registry cache is unusable (%v): using the embedded registry, run `paq registry update` to refresh it", err)
+		} else {
+			regMeta = meta
+		}
 	}
 
 	userCfg, err := config.LoadUserConfig()
 	if err != nil {
-		return nil, fmt.Errorf("load user config: %w", err)
+		return nil, nil, fmt.Errorf("load user config: %w", err)
 	}
 	userCfg.GlobalTemplates = globalTmpl
 	userCfg.GlobalTemplatesOS = globalTmplOS
 
-	cfg, err := config.Merge(registry, userCfg)
+	cfg, err := config.Merge(specs, userCfg)
 	if err != nil {
-		return nil, fmt.Errorf("merge config: %w", err)
+		return nil, nil, fmt.Errorf("merge config: %w", err)
 	}
-	return cfg, nil
+	return cfg, regMeta, nil
 }

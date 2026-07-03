@@ -11,15 +11,16 @@ import (
 // jsonCapableCommands lists the full command paths that honor --json.
 // Any other runnable command rejects --json instead of silently ignoring it.
 var jsonCapableCommands = map[string]bool{
-	"paq ls":            true,
-	"paq registry list": true,
-	"paq registry show": true,
-	"paq info":          true,
-	"paq config show":   true,
-	"paq import":        true,
-	"paq search":        true,
-	"paq outdated":      true,
-	"paq which":         true,
+	"paq ls":              true,
+	"paq registry list":   true,
+	"paq registry show":   true,
+	"paq registry status": true,
+	"paq info":            true,
+	"paq config show":     true,
+	"paq import":          true,
+	"paq search":          true,
+	"paq outdated":        true,
+	"paq which":           true,
 }
 
 var (

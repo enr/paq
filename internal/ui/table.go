@@ -71,6 +71,7 @@ type RegistryEntry struct {
 	Name    string `json:"name"`
 	Backend string `json:"backend"`
 	Repo    string `json:"repo"`
+	Source  string `json:"source"` // embedded, registry or user
 }
 
 // PrintAvailableTable prints the table of specs available in the embedded registry.
@@ -88,34 +89,36 @@ func PrintAvailableTable(entries []RegistryEntry) {
 		return s
 	}
 
-	headers := []string{"NAME", "BACKEND"}
+	headers := []string{"NAME", "BACKEND", "SOURCE"}
 	rows := make([][]string, len(entries))
 	for i, r := range entries {
-		rows[i] = []string{r.Name, cell(r.Backend)}
+		rows[i] = []string{r.Name, cell(r.Backend), cell(r.Source)}
 	}
 	w := colWidths(headers, rows)
 
 	if !IsColorEnabled() {
-		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%s\n", w[0], w[1])
-		fmt.Printf(fmtStr, headers[0], headers[1], "REPO")
-		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "----")
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%-%ds %%s\n", w[0], w[1], w[2])
+		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "REPO")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), strings.Repeat("-", w[2]), "----")
 		for _, r := range entries {
-			fmt.Printf(fmtStr, r.Name, cell(r.Backend), cell(r.Repo))
+			fmt.Printf(fmtStr, r.Name, cell(r.Backend), cell(r.Source), cell(r.Repo))
 		}
 		return
 	}
 
-	header := fmt.Sprintf("%s  %s  %s",
+	header := fmt.Sprintf("%s  %s  %s  %s",
 		headerStyle.Width(w[0]).Render(headers[0]),
 		headerStyle.Width(w[1]).Render(headers[1]),
+		headerStyle.Width(w[2]).Render(headers[2]),
 		headerStyle.Render("REPO"),
 	)
 	fmt.Println(header)
 
 	for _, r := range entries {
-		row := fmt.Sprintf("%s  %s  %s",
+		row := fmt.Sprintf("%s  %s  %s  %s",
 			nameStyle.Width(w[0]).Render(r.Name),
 			dimStyle.Width(w[1]).Render(cell(r.Backend)),
+			dimStyle.Width(w[2]).Render(cell(r.Source)),
 			dimStyle.Render(cell(r.Repo)),
 		)
 		fmt.Println(row)
@@ -180,13 +183,14 @@ func PrintOutdatedTable(entries []OutdatedEntry) {
 
 // PrintConfigShow prints the evaluated user configuration path and its data:
 // the effective defaults (configured or built-in) and the declared apps.
-func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry) {
+func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry, registry config.RegistrySettings) {
 	if Global.JSON {
 		out := map[string]any{
 			"path":               path,
 			"exists":             exists,
 			"defaults":           map[string]string{"bin": defaults.Bin, "opt": defaults.Opt},
 			"effective_defaults": map[string]string{"bin": effBin, "opt": effOpt},
+			"registry":           map[string]string{"url": registry.URL, "public_key": registry.PublicKey},
 			"apps":               apps,
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")
@@ -241,6 +245,13 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 	section("Defaults")
 	render("bin", fmt.Sprintf("%s  %s", val(effBin), dim(source(defaults.Bin))))
 	render("opt", fmt.Sprintf("%s  %s", val(effOpt), dim(source(defaults.Opt))))
+
+	if registry.URL != "" || registry.PublicKey != "" {
+		fmt.Println()
+		section("Registry")
+		render("url", val(registry.URL))
+		render("public_key", val(registry.PublicKey))
+	}
 
 	fmt.Println()
 	if len(apps) == 0 {
@@ -340,6 +351,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 	render("Dest", app.Dest)
 	fmt.Println()
 	render("Spec", app.Use)
+	render("Origin", spec.Origin)
 	render("Backend", spec.Backend)
 	render("Repo", spec.Repo)
 	render("Source", spec.Source)
@@ -421,6 +433,7 @@ func PrintSpecDetail(name string, spec config.Spec) {
 
 	fmt.Println()
 	render("Spec", name)
+	render("Origin", spec.Origin)
 	render("Backend", spec.Backend)
 	render("Repo", spec.Repo)
 	render("Default version", spec.DefaultVersion)

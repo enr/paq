@@ -32,6 +32,6 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	}
 
 	effBin, effOpt := config.DefaultDestRoots(cfg.Defaults)
-	ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps)
+	ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps, cfg.Registry)
 	return nil
 }

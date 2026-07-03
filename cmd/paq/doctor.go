@@ -5,8 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"fmt"
+
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/platform"
+	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
@@ -42,6 +45,15 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		} else {
 			ui.WarnField("State", stPath, "(not found — no apps installed yet)")
 		}
+	}
+
+	if _, meta, rerr := registry.Open(); rerr != nil {
+		ui.WarnField("Registry", "external cache unusable", "("+rerr.Error()+")")
+		ui.Hint("run `paq registry update` to refresh the external registry")
+	} else if meta != nil {
+		ui.OKField("Registry", fmt.Sprintf("external %s, %d recipes, fetched %s", meta.Version, meta.SpecCount, humanAge(meta.FetchedAt)))
+	} else {
+		ui.OKField("Registry", "embedded only")
 	}
 
 	cfg, err := loadConfig()
