@@ -53,6 +53,12 @@ var rootCmd = &cobra.Command{
 		}
 		return nil
 	},
+	// Runs only after a successful command: never delays the work and never
+	// nags on failure.
+	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+		maybeNotifyUpdate(cmd)
+		return nil
+	},
 }
 
 func Execute() {

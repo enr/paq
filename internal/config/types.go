@@ -162,6 +162,10 @@ type AppEntry struct {
 type Defaults struct {
 	Bin string `toml:"bin"`
 	Opt string `toml:"opt"`
+	// CheckUpdates controls the daily "new paq version available" notice.
+	// Nil (unset) means enabled; only an explicit `check_updates = false`
+	// disables it.
+	CheckUpdates *bool `toml:"check_updates"`
 }
 
 // RegistrySettings configures a custom source for "paq registry update"

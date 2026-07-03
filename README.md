@@ -142,6 +142,10 @@ paq outdated
 paq uninstall rg
 paq uninstall rg bat
 
+# Update paq itself to the latest release (see "Updating paq" below)
+paq self-update
+paq self-update --check   # only report whether an update is available
+
 # Shell completion (app and tool names are completed dynamically)
 paq completion bash   # or zsh, fish, powershell
 ```
@@ -333,6 +337,27 @@ explicit opt-in to the newest release.
 | `{{version_patch}}` | e.g. `1` |
 | `{{rust_target}}` | e.g. `x86_64-unknown-linux-gnu` |
 | `{{asset}}` | Resolved asset filename |
+
+## Updating paq
+
+`paq self-update` downloads the latest release from GitHub, verifies its checksum, and replaces the running binary. Use `--check` to only report whether a newer version exists.
+
+Additionally, paq checks for a newer release **at most once a day** and prints a one-line hint after a command when one is available. The check runs in a detached background process, so it never delays the command you ran; the network lookup happens for the *next* invocation to display. It is skipped in non-interactive contexts (output redirected/piped, or `--json`/`--quiet`) and for source builds.
+
+Disable the daily check with either:
+
+```bash
+export PAQ_NO_UPDATE_CHECK=1
+```
+
+or in `~/.config/paq/config.toml`:
+
+```toml
+[defaults]
+check_updates = false
+```
+
+The last check timestamp and latest known version are cached in `~/.cache/paq/update-check.json` (Linux/macOS) or `%LOCALAPPDATA%\paq\cache\update-check.json` (Windows).
 
 ## State
 
