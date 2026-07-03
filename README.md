@@ -109,13 +109,19 @@ paq install
 # Install multiple tools at once
 paq install ripgrep bat delta
 
-# List tool definitions in the embedded registry
+# List tool definitions in the registry (SOURCE shows embedded/registry/user)
 paq registry list
 paq registry list jdk   # filter by name
 paq search jdk          # shortcut for the line above
 
 # Show details of a single definition in the registry
 paq registry show ripgrep
+
+# Show the registry status (embedded vs external snapshot, overrides)
+paq registry status
+
+# Download the latest registry snapshot (see "External registry" below)
+paq registry update
 
 # Show the evaluated config path, effective default directories, and apps
 paq config show
@@ -145,7 +151,7 @@ paq completion bash   # or zsh, fish, powershell
 | Flag | Description |
 |------|-------------|
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`, `info`, `config show`, `import`, `search`, `outdated`, `which`); fails on commands that don't support it |
+| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `which`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
@@ -238,6 +244,48 @@ source = "https://example.com/releases/mytool-{{version}}-{{os}}-{{arch}}.tar.gz
 archive = "tar.gz"
 strip_components = 1
 ```
+
+## External registry
+
+The registry is compiled into the binary, so out of the box paq works fully
+offline. You can also overlay it with an **external snapshot** that is updated
+independently of the binary — handy for picking up new or fixed recipes without
+waiting for a paq release:
+
+```bash
+paq registry update    # download, verify and install the latest snapshot
+paq registry status    # show embedded vs external versions and overrides
+```
+
+`paq registry update` downloads the registry published with the latest paq
+release, verifies it (see below) and installs it into a cache directory
+(`${XDG_CACHE_HOME:-~/.cache}/paq/registry`, `%LOCALAPPDATA%\paq\cache\registry`
+on Windows). Nothing else ever touches the network: all other commands read the
+snapshot from the cache, and a missing or corrupt cache silently falls back to
+the embedded registry. Precedence is **embedded < external snapshot < your
+`[specs.*]`**, so a recipe you define always wins.
+
+### Verification and trust
+
+The archive is protected by a SHA-256 checksum that is itself signed with
+[minisign](https://jedisct1.github.io/minisign/); paq embeds the public key as
+the trust anchor and refuses to install anything that fails verification
+(exit code `4`). Because a registry controls what gets downloaded and executed,
+the signature is the security boundary — it is never optional.
+
+### Custom source
+
+To pull the registry from your own location, set a `[registry]` table in
+`~/.config/paq/config.toml`. A custom URL must use `https://` and carry its own
+minisign public key (you are explicitly replacing the default trust anchor):
+
+```toml
+[registry]
+url = "https://example.com/paq/registry.tar.gz"
+public_key = "RWQ...your-minisign-public-key..."
+```
+
+`paq registry update` then fetches `url`, `url.sha256` and `url.sha256.minisig`.
 
 ### Resolving `latest`
 

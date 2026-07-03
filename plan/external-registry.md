@@ -356,7 +356,25 @@ Tutti i punti usano `loadConfigWithMeta()` (già disponibile) e/o `Spec.Origin`.
 
 ---
 
-## FASE 4 — Pipeline di release, e2e, docs [TODO]
+## FASE 4 — Pipeline di release, e2e, docs [DONE]
+
+Implementato:
+
+- **`.github/workflows/release.yml`**: step `Package registry` (scrive
+  `${GITHUB_REF_NAME}` in `embedded/registry/VERSION` — più corretto del `cp
+  VERSION` del piano, che in sviluppo è uno SNAPSHOT — poi `tar -C embedded`
+  + sha256) e `Sign registry checksums` (minisign con `MINISIGN_SECRET_KEY`);
+  i tre asset aggiunti a `files:` della release action.
+- **Test degradazione offline**: `cmd/paq/registry_offline_test.go` (non
+  `e2e/e2e_test.go` — quel file è network-dipendente e build-tagged; il test
+  di degradazione non richiede rete e così gira nella CI standard). Con cache
+  corrotta, `loadConfig`, `registry list`, `registry status`, `doctor`
+  ritornano senza errore usando l'embedded.
+- **Docs**: `README.md` e `docs/content/docs/_index.md` — sezione "External
+  registry" (update/status, posizione cache, precedenza, verifica minisign,
+  `[registry]` custom), comandi nelle tabelle, riga `--json` aggiornata.
+
+## FASE 4 (design originale) — Pipeline di release, e2e, docs
 
 ### 4.1 `.github/workflows/release.yml`
 

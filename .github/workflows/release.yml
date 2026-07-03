@@ -43,9 +43,29 @@ jobs:
           cd artifacts
           sha256sum paq-*.zip > SHA256SUMS
 
+      - name: Package registry
+        run: |
+          echo "${GITHUB_REF_NAME}" > embedded/registry/VERSION
+          tar -C embedded -czf artifacts/registry.tar.gz registry
+          rm embedded/registry/VERSION
+          cd artifacts
+          sha256sum registry.tar.gz > registry.tar.gz.sha256
+
+      - name: Sign registry checksums
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
+          minisign -S -s /tmp/minisign.key -m artifacts/registry.tar.gz.sha256
+          rm /tmp/minisign.key
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             artifacts/*.zip
             artifacts/SHA256SUMS
+            artifacts/registry.tar.gz
+            artifacts/registry.tar.gz.sha256
+            artifacts/registry.tar.gz.sha256.minisig
           generate_release_notes: true
