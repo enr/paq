@@ -48,6 +48,7 @@ func listDefinitions(query string) error {
 			Name:    name,
 			Backend: spec.Backend,
 			Repo:    spec.Repo,
+			Source:  spec.Origin,
 		})
 	}
 

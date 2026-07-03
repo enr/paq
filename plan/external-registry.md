@@ -270,7 +270,29 @@ Casi da coprire:
 
 ---
 
-## FASE 3 — Visibilità del registry nei comandi [TODO]
+## FASE 3 — Visibilità del registry nei comandi [DONE]
+
+Implementato e testato (`go build/vet/test ./...` verde):
+
+- **`cmd/paq/registry_status.go`** (nuovo) + `"paq registry status"` in
+  `jsonCapableCommands` (`root.go`): versione embedded, snapshot esterno
+  (versione/tag/sorgente/età fetch/recipe), cache corrotta (`WarnField`),
+  elenco spec sovrascritti da snapshot e da `[specs.*]`; `--json`.
+- **`internal/ui/table.go`**: colonna `SOURCE` in `PrintAvailableTable`
+  (`RegistryEntry.Source`, entrambi i rami color/no-color), riga `Origin` in
+  `PrintSpecDetail` e `PrintInfoDetail`, sezione `Registry` in
+  `PrintConfigShow` (url/public_key, + campo JSON).
+- **`cmd/paq/registry_list.go`**: popola `Source: spec.Origin`.
+- **`cmd/paq/version.go`**: riga `registry: <versione> (external)` / `embedded`.
+- **`cmd/paq/doctor.go`**: riga `Registry` (embedded/external con età,
+  `WarnField` se cache corrotta).
+- **`cmd/paq/config_show.go`**: passa `cfg.Registry` a `PrintConfigShow`.
+
+Nota: la versione dello snapshot in `registry show`/`info` è resa come origine
+(`registry`); il dettaglio di versione vive in `registry status`/`version`/
+`doctor` per non cambiare la firma/JSON di `PrintSpecDetail`.
+
+## FASE 3 (design originale) — Visibilità del registry nei comandi
 
 Tutti i punti usano `loadConfigWithMeta()` (già disponibile) e/o `Spec.Origin`.
 
