@@ -3,11 +3,13 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"fmt"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/pathenv"
 	"github.com/enr/paq/internal/platform"
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
@@ -23,7 +25,10 @@ var doctorCmd = &cobra.Command{
 	RunE:  runDoctor,
 }
 
+var doctorFix bool
+
 func init() {
+	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "add the bin dir to the user PATH if missing (Windows only)")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -73,9 +78,24 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		}
 		if inPath {
 			ui.OK("Bin dir is in PATH")
+		} else if doctorFix {
+			added, err := pathenv.AddToUserPath(resolvedBin)
+			if err != nil {
+				return err
+			}
+			if added {
+				ui.OK("Added %s to the user PATH", resolvedBin)
+			} else {
+				ui.OK("Bin dir %s is already in the user PATH", resolvedBin)
+			}
+			ui.Hint("restart your terminal to pick up the new PATH")
 		} else {
 			ui.Warn("Bin dir %s is NOT in PATH", resolvedBin)
-			ui.Hint("add `export PATH=\"%s:$PATH\"` to your shell profile", resolvedBin)
+			if runtime.GOOS == "windows" {
+				ui.Hint("run `paq doctor --fix` to add it to your user PATH")
+			} else {
+				ui.Hint("add `export PATH=\"%s:$PATH\"` to your shell profile", resolvedBin)
+			}
 		}
 	}
 
