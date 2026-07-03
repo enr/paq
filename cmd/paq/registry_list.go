@@ -12,8 +12,8 @@ import (
 var registryListCmd = &cobra.Command{
 	Use:     "list [query]",
 	Aliases: []string{"ls"},
-	Short:   "List tool definitions in the embedded registry",
-	Long:    "List the tool specs bundled in the embedded registry, optionally filtered by a substring query on the spec name.",
+	Short:   "List tool definitions in the registry",
+	Long:    "List the tool specs available in the registry, optionally filtered by a substring query on the spec name.",
 	Example: `  paq registry list
   paq registry list jdk   # filter by substring on the name`,
 	Args:              cobra.MaximumNArgs(1),
@@ -53,9 +53,9 @@ func listDefinitions(query string) error {
 
 	if len(rows) == 0 && !ui.Global.JSON {
 		if query != "" {
-			fmt.Printf("No tool definitions matching %q in the embedded registry.\n", query)
+			fmt.Printf("No tool definitions matching %q in the registry.\n", query)
 		} else {
-			fmt.Println("No tool definitions in the embedded registry.")
+			fmt.Println("No tool definitions in the registry.")
 		}
 		return nil
 	}

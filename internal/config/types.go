@@ -60,7 +60,17 @@ type Spec struct {
 	Platforms []string `toml:"platforms"`
 	// OSOverrides contains per-OS field overrides (e.g. [jdk.darwin]).
 	OSOverrides map[string]PlatformOverride `toml:"-"`
+	// Origin records where the definition came from (OriginEmbedded,
+	// OriginRegistry or OriginUser). Set at load time, not part of the TOML format.
+	Origin string `toml:"-"`
 }
+
+// Spec origins, in ascending precedence order.
+const (
+	OriginEmbedded = "embedded" // bundled in the binary
+	OriginRegistry = "registry" // external registry snapshot (paq registry update)
+	OriginUser     = "user"     // [specs.*] in the user manifest
+)
 
 // SupportsPlatform reports whether the spec supports the os/arch pair (in
 // paq's canonical vocabulary). Empty Platforms = all allowed. An entry

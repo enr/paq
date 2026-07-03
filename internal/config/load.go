@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -88,11 +89,49 @@ func LoadEmbeddedRegistry(registryFS fs.FS) (map[string]Spec, error) {
 			return nil, fmt.Errorf("parse %s: %w", e.Name(), err)
 		}
 		for k, v := range parsed {
+			v.Origin = OriginEmbedded
 			specs[k] = v
 		}
 	}
 
 	return specs, nil
+}
+
+// OverlayRegistry applies an external registry snapshot on top of the
+// embedded specs and global templates, in place. Specs override by name
+// (marked OriginRegistry); templates merge per key. On error nothing is
+// modified, so a broken snapshot degrades to embedded-only.
+func OverlayRegistry(specs map[string]Spec, global map[string]string, globalOS map[string]map[string]string, snapshotFS fs.FS) error {
+	extSpecs, err := LoadEmbeddedRegistry(snapshotFS)
+	if err != nil {
+		return err
+	}
+	extGlobal, extGlobalOS, err := LoadGlobalTemplates(snapshotFS)
+	if err != nil {
+		// A snapshot without templates.toml keeps the embedded templates;
+		// an unparsable one invalidates the whole snapshot.
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		extGlobal, extGlobalOS = nil, nil
+	}
+
+	for k, v := range extSpecs {
+		v.Origin = OriginRegistry
+		specs[k] = v
+	}
+	for k, v := range extGlobal {
+		global[k] = v
+	}
+	for osName, m := range extGlobalOS {
+		if globalOS[osName] == nil {
+			globalOS[osName] = make(map[string]string, len(m))
+		}
+		for k, v := range m {
+			globalOS[osName][k] = v
+		}
+	}
+	return nil
 }
 
 // parseSpecFile parses a recipe TOML file.
@@ -232,6 +271,10 @@ func LoadUserConfig() (*Config, error) {
 	specs, err := parseSpecsFromRaw(raw.Specs)
 	if err != nil {
 		return nil, fmt.Errorf("parse user specs: %w", err)
+	}
+	for k, v := range specs {
+		v.Origin = OriginUser
+		specs[k] = v
 	}
 
 	return &Config{Apps: raw.Apps, Defaults: raw.Defaults, Specs: specs}, nil

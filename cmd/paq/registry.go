@@ -7,8 +7,8 @@ import (
 var registryCmd = &cobra.Command{
 	Use:     "registry",
 	Aliases: []string{"reg"},
-	Short:   "Inspect the embedded registry of tool definitions",
-	Long:    "Browse and show the tool definitions bundled in the embedded registry.",
+	Short:   "Inspect and update the registry of tool definitions",
+	Long:    "Browse, show and update the tool definitions provided by the registry (embedded in the binary, optionally overlaid by a downloaded snapshot).",
 	// With no subcommand, show the help.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
