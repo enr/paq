@@ -194,13 +194,21 @@ func TestExtractTarGzPathTraversalRejected(t *testing.T) {
 	}
 }
 
-// makeTarGzWithSymlink creates a .tar.gz containing a single symlink entry
-// pointing at target, used to verify symlink entries are rejected.
-func makeTarGzWithSymlink(t *testing.T, name, target string) string {
+// makeTarGzWithSymlink creates a .tar.gz containing the given regular files
+// plus a single symlink entry pointing at target.
+func makeTarGzWithSymlink(t *testing.T, files map[string]string, name, target string) string {
 	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
+	for fname, content := range files {
+		tw.WriteHeader(&tar.Header{
+			Name: fname,
+			Mode: 0755,
+			Size: int64(len(content)),
+		})
+		tw.Write([]byte(content))
+	}
 	tw.WriteHeader(&tar.Header{
 		Name:     name,
 		Typeflag: tar.TypeSymlink,
@@ -216,16 +224,60 @@ func makeTarGzWithSymlink(t *testing.T, name, target string) string {
 	return tmp.Name()
 }
 
-func TestExtractTarGzSymlinkRejected(t *testing.T) {
-	tgz := makeTarGzWithSymlink(t, "evil-link", "/etc/passwd")
+func TestExtractTarGzSymlink(t *testing.T) {
+	// Node-style layout: bin/npm is a symlink into lib/.
+	tgz := makeTarGzWithSymlink(t, map[string]string{
+		"node-v24/bin/node":                            "node-binary",
+		"node-v24/lib/node_modules/npm/bin/npm-cli.js": "npm-cli",
+	}, "node-v24/bin/npm", "../lib/node_modules/npm/bin/npm-cli.js")
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{StripComponents: 1, Dest: dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	link := filepath.Join(dest, "bin", "npm")
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != filepath.FromSlash("../lib/node_modules/npm/bin/npm-cli.js") {
+		t.Errorf("link target = %q", target)
+	}
+	data, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "npm-cli" {
+		t.Errorf("content through symlink = %q, want npm-cli", string(data))
+	}
+}
+
+func TestExtractTarGzSymlinkAbsoluteTargetRejected(t *testing.T) {
+	tgz := makeTarGzWithSymlink(t, nil, "evil-link", "/etc/passwd")
 
 	dest := t.TempDir()
 	err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest})
 	if err == nil {
-		t.Fatal("expected error for symlink entry, got nil")
+		t.Fatal("expected error for symlink with absolute target, got nil")
 	}
 
-	if _, statErr := os.Stat(filepath.Join(dest, "evil-link")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Lstat(filepath.Join(dest, "evil-link")); !os.IsNotExist(statErr) {
+		t.Error("symlink entry should not have been extracted")
+	}
+}
+
+func TestExtractTarGzSymlinkEscapingTargetRejected(t *testing.T) {
+	tgz := makeTarGzWithSymlink(t, nil, "dir/evil-link", "../../outside")
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest})
+	if err == nil {
+		t.Fatal("expected error for symlink escaping the destination, got nil")
+	}
+
+	if _, statErr := os.Lstat(filepath.Join(dest, "dir", "evil-link")); !os.IsNotExist(statErr) {
 		t.Error("symlink entry should not have been extracted")
 	}
 }
