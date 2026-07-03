@@ -2,8 +2,8 @@
 title: "paq"
 ---
 
-`paq` installs and manages CLI tools from GitHub releases and direct URLs,
-driven by a simple TOML configuration.
+Grab a tool from the embedded registry, or drive everything from a TOML
+manifest — no runtime, no daemon, one static binary.
 
 ```bash
 # Install a tool from the registry
@@ -16,4 +16,5 @@ paq registry list
 paq registry show ripgrep
 ```
 
-Pre-built binaries for `linux`, `darwin`, and `windows` on `amd64` / `arm64`.
+Then head to the [documentation](docs/) for the manifest format, custom recipes,
+and the full command reference.

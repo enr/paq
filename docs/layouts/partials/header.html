@@ -1,11 +1,14 @@
 <header class="site-header">
   <div class="container header-inner">
-    <a class="brand" href="{{ "" | relURL }}">paq</a>
+    <a class="brand" href="{{ "" | relURL }}">
+      <span class="brand-mark">paq</span>
+      <span class="brand-meta">pkg&nbsp;manager</span>
+    </a>
     <nav class="nav">
       {{ range site.Menus.main }}
         <a href="{{ .URL }}">{{ .Name }}</a>
       {{ end }}
-      <a href="{{ site.Params.repo }}">GitHub</a>
+      <a class="nav-ext" href="{{ site.Params.repo }}">GitHub&nbsp;<span aria-hidden="true">↗</span></a>
     </nav>
   </div>
 </header>

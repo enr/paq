@@ -1,15 +1,65 @@
 {{ define "main" }}
 <section class="hero">
-  <h1>paq</h1>
+  <p class="section-label"><span class="tick">▚</span> cli package manager · single static binary</p>
+
+  <h1 class="wordmark" aria-label="paq">
+    <span>p</span><span>a</span><span>q</span>
+  </h1>
+
   <p class="tagline">{{ site.Params.description }}</p>
+
+  <div class="cmd" data-copy>
+    <span class="cmd-prompt" aria-hidden="true">$</span>
+    <code class="cmd-text">paq install ripgrep</code>
+    <button class="cmd-copy" type="button" aria-label="Copy command">copy</button>
+  </div>
+
   <div class="hero-actions">
-    <a class="btn btn-primary" href="{{ "docs" | relURL }}">Get started</a>
+    <a class="btn btn-primary" href="{{ "docs" | relURL }}">Get started <span aria-hidden="true">→</span></a>
+    <a class="btn" href="{{ site.Params.repo }}/releases">Download</a>
     <a class="btn" href="{{ site.Params.repo }}">GitHub</a>
   </div>
-  <p class="version">latest: {{ site.Params.currentAppVersion }}</p>
+
+  <dl class="spec-strip">
+    <div><dt>latest</dt><dd>{{ site.Params.currentAppVersion }}</dd></div>
+    <div><dt>platforms</dt><dd>6 targets</dd></div>
+    <div><dt>runtime</dt><dd>offline</dd></div>
+    <div><dt>license</dt><dd>Apache-2.0</dd></div>
+  </dl>
 </section>
 
-<section class="content">
+<section class="specsheet">
+  <p class="section-label"><span class="idx">01</span> capabilities</p>
+  <div class="grid">
+    <article class="cell">
+      <h3>GitHub &amp; URLs</h3>
+      <p>Install from GitHub release assets or any direct download URL, verified with SHA-256 checksums.</p>
+    </article>
+    <article class="cell">
+      <h3>TOML manifest</h3>
+      <p>Declare the tools you want in a plain config file. One command reproduces your whole toolbox.</p>
+    </article>
+    <article class="cell">
+      <h3>Embedded registry</h3>
+      <p>Curated recipes are compiled into the binary, so paq works fully offline — with optional live updates.</p>
+    </article>
+    <article class="cell">
+      <h3>Latest &amp; upgrade</h3>
+      <p>Pin exact versions or track <code>latest</code>; <code>paq upgrade</code> rolls everything forward cleanly.</p>
+    </article>
+    <article class="cell">
+      <h3>Six targets</h3>
+      <p>Pre-built binaries for linux, macOS and windows on both <code>amd64</code> and <code>arm64</code>.</p>
+    </article>
+    <article class="cell">
+      <h3>Self-updating</h3>
+      <p><code>paq self-update</code> keeps the tool current; <code>paq doctor</code> checks your PATH and setup.</p>
+    </article>
+  </div>
+</section>
+
+<section class="content readme">
+  <p class="section-label"><span class="idx">02</span> quickstart</p>
   {{ .Content }}
 </section>
 {{ end }}

@@ -7,7 +7,29 @@ driven by a simple TOML configuration.
 
 ## Install
 
-Build from source:
+### Download a release
+
+Pre-built binaries are published on the
+[GitHub releases page](https://github.com/enr/paq/releases) for `linux/amd64`,
+`linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and
+`windows/arm64`. Each asset is a zip named
+`paq-<version>-<os>-<arch>.zip`, and every release ships a `SHA256SUMS` file to
+verify the download.
+
+```bash
+# Download and extract the binary for your platform (linux/amd64 shown)
+VERSION=v0.0.6
+curl -LO "https://github.com/enr/paq/releases/download/${VERSION}/paq-${VERSION}-linux-amd64.zip"
+unzip "paq-${VERSION}-linux-amd64.zip"
+install -m 0755 paq ~/.local/bin/paq
+```
+
+On Windows, download `paq-<version>-windows-amd64.zip`, unzip it, and move
+`paq.exe` somewhere on your `PATH`.
+
+Once paq is installed, keep it current with `paq self-update`.
+
+### Build from source
 
 ```bash
 git clone https://github.com/enr/paq
@@ -15,9 +37,6 @@ cd paq
 ./.sdlc/build
 # Binary: ./bin/paq
 ```
-
-Pre-built binaries are published for `linux/amd64`, `linux/arm64`,
-`darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 
 Once installed, run `paq doctor` to check that the install directory is on your
 `PATH` and that the environment is set up correctly. On Windows,
