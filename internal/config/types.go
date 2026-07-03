@@ -164,12 +164,23 @@ type Defaults struct {
 	Opt string `toml:"opt"`
 }
 
+// RegistrySettings configures a custom source for "paq registry update"
+// ([registry] section in the manifest). Setting URL requires PublicKey: the
+// user is explicitly replacing the default trust anchor, so verification stays
+// mandatory. Empty = use the default source (paq release assets).
+type RegistrySettings struct {
+	URL       string `toml:"url"`
+	PublicKey string `toml:"public_key"`
+}
+
 // Config is the fully merged configuration (registry + user manifest).
 type Config struct {
 	Specs map[string]Spec
 	Apps  map[string]AppEntry
 	// Defaults are the user-configurable defaults ([defaults] section).
 	Defaults Defaults
+	// Registry configures the external registry source ([registry] section).
+	Registry RegistrySettings
 	// GlobalTemplates contains the global meta-templates from templates.toml.
 	GlobalTemplates map[string]string
 	// GlobalTemplatesOS contains the per-OS meta-templates from templates.toml.

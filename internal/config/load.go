@@ -237,6 +237,7 @@ func userConfigPath() (string, error) {
 type userConfigRaw struct {
 	Apps     map[string]AppEntry `toml:"apps"`
 	Defaults Defaults            `toml:"defaults"`
+	Registry RegistrySettings    `toml:"registry"`
 	// Specs collects the user-defined recipes in the [specs.*] section, in the
 	// same format as the embedded registry files. Decoded in generic form and
 	// then converted into Spec by parseSpecsFromRaw.
@@ -277,7 +278,7 @@ func LoadUserConfig() (*Config, error) {
 		specs[k] = v
 	}
 
-	return &Config{Apps: raw.Apps, Defaults: raw.Defaults, Specs: specs}, nil
+	return &Config{Apps: raw.Apps, Defaults: raw.Defaults, Registry: raw.Registry, Specs: specs}, nil
 }
 
 // Merge combines the embedded registry with the user manifest.
@@ -303,6 +304,7 @@ func Merge(embeddedSpecs map[string]Spec, user *Config) (*Config, error) {
 			cfg.Apps[k] = v
 		}
 		cfg.Defaults = user.Defaults
+		cfg.Registry = user.Registry
 		if user.GlobalTemplates != nil {
 			cfg.GlobalTemplates = user.GlobalTemplates
 		}

@@ -97,7 +97,37 @@ default deve fallire con un errore chiaro (vedi Fase 2, guardia su
 
 ---
 
-## FASE 2 — Lato scrittura: `paq registry update` [TODO]
+## FASE 2 — Lato scrittura: `paq registry update` [DONE]
+
+Implementato e testato (`go build ./... && go vet ./... && go test ./...` verde):
+
+- **`internal/registry/trust.go`** (nuovo): `const DefaultPublicKey = ""`
+  (trust anchor; vuota finché il maintainer non esegue la Fase 0). L'update da
+  sorgente di default si rifiuta di partire finché è vuota.
+- **`internal/config/types.go` + `load.go`**: `RegistrySettings{URL, PublicKey}`
+  (`toml:"registry"`), aggiunta a `userConfigRaw`, `Config`, al ritorno di
+  `LoadUserConfig` e copiata da `Merge`.
+- **`cmd/paq/registry_update.go`** (nuovo): comando `paq registry update` (flag
+  `--force`), con `resolveRegistrySource` (default = release asset di
+  `enr/paq` via `GitHubReleaseProvider`+`GitHubBackend`; custom = `[registry].url`
+  solo https con `public_key` obbligatoria), download via `download.ToTemp`
+  (client iniettabile `registryUpdateClient`), cap dimensione (`registryMaxBytes`,
+  var per i test), `verify.Run` (minisign+sha256), estrazione post-firma in
+  `registry.StagingDir()`, validazione pre-swap (specs>0, templates ok o
+  assenti, `registry/VERSION` non vuoto), anti-downgrade con `version.Compare`
+  e `--force`, `registry.Install`, report `ui.OK`.
+- **`cmd/paq/registry_update_test.go`** (nuovo): firme minisign generate a
+  runtime (ed25519 + `PrivateKey.Sign`, la libreria sa firmare — niente helper
+  a mano), server `httptest.NewTLSServer` sul percorso url custom. Casi: happy
+  path (spec visibile con origin `registry`), firma invalida (→ exit 4),
+  tarball manomesso (→ exit 4), http rifiutato, url senza public_key,
+  downgrade rifiutato / con `--force`, già aggiornato (no-op), archivio
+  oversize, archivio senza recipe, archivio senza VERSION.
+
+Nota: `exitcode.go` non ha richiesto modifiche — gli errori di `verify.Run`
+contengono già le sottostringhe riconosciute (exit code 4 verificato dai test).
+
+## FASE 2 (design originale) — Lato scrittura: `paq registry update`
 
 ### 2.1 Trust anchor — `internal/registry/trust.go` (nuovo)
 
