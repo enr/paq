@@ -20,7 +20,9 @@ Pre-built binaries are published for `linux/amd64`, `linux/arm64`,
 `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 
 Once installed, run `paq doctor` to check that the install directory is on your
-`PATH` and that the environment is set up correctly.
+`PATH` and that the environment is set up correctly. On Windows,
+`paq doctor --fix` adds the bin dir to your user `PATH` (no administrator
+rights needed); restart the terminal afterwards.
 
 ## Configuration
 
