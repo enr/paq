@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -256,6 +257,60 @@ func TestPipelineAssetTemplateErrorSurfaces(t *testing.T) {
 	err := Run(context.Background(), cfg, "tool", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "resolve asset name") {
 		t.Fatalf("expected asset name resolution error, got %v", err)
+	}
+}
+
+// TestPipelineAppliesEnvMapping verifies that [x.env] (and the app-level
+// override) affects {{env}} in the source URL template, mirroring how
+// spec.OS/spec.Arch are applied.
+func TestPipelineAppliesEnvMapping(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("env mapping keys off the linux-only \"gnu\" canonical value")
+	}
+	isolateState(t)
+	fileContent := []byte("payload")
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", fileContent)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}-{{env}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+				Env:             map[string]string{"gnu": "musl"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if !strings.Contains(gotPath, "musl") {
+		t.Errorf("request path = %q, want it to contain \"musl\"", gotPath)
+	}
+
+	// App-level env override takes precedence over the spec's.
+	gotPath = ""
+	cfg.Apps["tool"] = config.AppEntry{
+		Use: "tool", Version: "1.0.0", Dest: t.TempDir(),
+		Env: map[string]string{"gnu": "override"},
+	}
+	if err := Run(context.Background(), cfg, "tool", nil, &Hooks{Force: true}); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if !strings.Contains(gotPath, "override") {
+		t.Errorf("request path = %q, want it to contain \"override\"", gotPath)
 	}
 }
 

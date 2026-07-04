@@ -191,12 +191,16 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if app.OS != nil {
 		resolvedOS = platform.ApplyMap(app.OS, plat.OS, resolvedOS)
 	}
+	resolvedEnv := platform.ApplyMap(spec.Env, plat.Env, plat.Env)
+	if app.Env != nil {
+		resolvedEnv = platform.ApplyMap(app.Env, plat.Env, resolvedEnv)
+	}
 
 	vars := template.Vars{
 		OS:           resolvedOS,
 		Arch:         resolvedArch,
 		Vendor:       plat.Vendor,
-		Env:          plat.Env,
+		Env:          resolvedEnv,
 		Ext:          plat.Ext,
 		Version:      ver,
 		VersionMajor: versionMajor,
@@ -242,7 +246,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("resolve download URL: %w", err)
 	}
 	ok(fmt.Sprintf("URL: %s", downloadURL))
-	dbg("resolved: os=%q arch=%q dest=%q", resolvedOS, resolvedArch, dest)
+	dbg("resolved: os=%q arch=%q env=%q dest=%q", resolvedOS, resolvedArch, resolvedEnv, dest)
 
 	// Variables for asset names.
 	assetName := filepath.Base(downloadURL)

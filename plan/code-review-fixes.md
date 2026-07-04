@@ -18,7 +18,7 @@ Conventions used below:
 
 ---
 
-## M1. Apply the `env` mapping (or remove the field)
+## M1. Apply the `env` mapping (or remove the field) — DONE
 
 **Problem.** `Spec.Env` and `AppEntry.Env` (`internal/config/types.go`) are
 decoded from TOML and rendered by `paq registry show`
