@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -146,6 +147,52 @@ func TestExtractZipSingleFile(t *testing.T) {
 	}
 	if string(data) != "exe-content" {
 		t.Errorf("content = %q, want exe-content", string(data))
+	}
+}
+
+// TestExtractTarGzAmbiguousNameRejected verifies that Extract fails loudly
+// when two entries share the wanted basename, instead of silently letting
+// the last match win.
+func TestExtractTarGzAmbiguousNameRejected(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"bin/rg":   "bin-content",
+		"debug/rg": "debug-content",
+	})
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extract: "rg", Dest: dest})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected an ambiguous-extract error, got %v", err)
+	}
+}
+
+// TestExtractZipSkipsDirectoryEntryMatchingBasename verifies that a
+// directory entry named "rg" doesn't win over a real file, and doesn't
+// produce an empty output file.
+func TestExtractZipSkipsDirectoryEntryMatchingBasename(t *testing.T) {
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-zip-dir-*.zip")
+	zw := zip.NewWriter(tmp)
+	// Explicit directory entry named "rg/".
+	_, err := zw.CreateHeader(&zip.FileHeader{Name: "rg/", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := zw.Create("sub/rg")
+	f.Write([]byte("real-content"))
+	zw.Close()
+	tmp.Close()
+
+	dest := t.TempDir()
+	if err := Extract(tmp.Name(), "zip", ExtractOpts{Extract: "rg", Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dest, "rg"))
+	if err != nil {
+		t.Fatalf("extracted file not found: %v", err)
+	}
+	if string(data) != "real-content" {
+		t.Errorf("content = %q, want real-content", string(data))
 	}
 }
 

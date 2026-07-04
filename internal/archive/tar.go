@@ -55,7 +55,10 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 		switch {
 		case opts.Extract != "":
 			// Single-file mode: look up the file by basename.
-			if hdr.Typeflag != tar.TypeSymlink && filepath.Base(stripped) == opts.Extract {
+			if hdr.Typeflag != tar.TypeSymlink && hdr.Typeflag != tar.TypeDir && filepath.Base(stripped) == opts.Extract {
+				if found {
+					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", opts.Extract)
+				}
 				dest, err := securePath(opts.Dest, opts.Extract)
 				if err != nil {
 					return err

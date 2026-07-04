@@ -494,7 +494,7 @@ file (correct digest). The warn path is not worth a dedicated test.
 
 ---
 
-## L2. Extract-by-basename: skip directories, reject ambiguity
+## L2. Extract-by-basename: skip directories, reject ambiguity — DONE
 
 **Problem.** Both `internal/archive/tar.go` and `zip.go` in Extract mode match
 *any* entry whose basename equals `opts.Extract`; the last match wins

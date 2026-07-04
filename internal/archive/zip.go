@@ -32,7 +32,13 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 
 		switch {
 		case opts.Extract != "":
+			if f.FileInfo().IsDir() {
+				continue
+			}
 			if filepath.Base(stripped) == opts.Extract {
+				if found {
+					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", opts.Extract)
+				}
 				dest, err := securePath(opts.Dest, opts.Extract)
 				if err != nil {
 					return err
