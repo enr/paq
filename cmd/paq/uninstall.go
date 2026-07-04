@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/enr/paq/internal/state"
@@ -162,6 +163,24 @@ func removeRecordFiles(rec state.InstalledApp) error {
 			return fmt.Errorf("remove %s: %w", rec.Dest, err)
 		}
 	case "dir":
+		info, statErr := os.Stat(rec.Dest)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				return nil
+			}
+			return fmt.Errorf("stat %s: %w", rec.Dest, statErr)
+		}
+		if !info.IsDir() {
+			if err := os.Remove(rec.Dest); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove %s: %w", rec.Dest, err)
+			}
+			return nil
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			if clean := filepath.Clean(rec.Dest); clean == filepath.Clean(home) || clean == filepath.Dir(clean) {
+				return fmt.Errorf("refusing to remove %s: not a paq-managed directory", rec.Dest)
+			}
+		}
 		if err := os.RemoveAll(rec.Dest); err != nil {
 			return fmt.Errorf("remove %s: %w", rec.Dest, err)
 		}

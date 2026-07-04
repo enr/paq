@@ -150,6 +150,27 @@ func TestRunUninstallMultiAppFailsFastOnUnknownName(t *testing.T) {
 	}
 }
 
+// TestRemoveRecordFilesRefusesHomeDir verifies that a "dir" kind record whose
+// Dest is the user's home directory is refused instead of being wiped out
+// (e.g. a manifest typo like dest = "~").
+func TestRemoveRecordFilesRefusesHomeDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	marker := filepath.Join(home, "marker")
+	if err := os.WriteFile(marker, []byte("keep me"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := state.InstalledApp{Name: "oops", Version: "1.0.0", Kind: "dir", Dest: home}
+	err := removeRecordFiles(rec)
+	if err == nil || !strings.Contains(err.Error(), "refusing to remove") {
+		t.Fatalf("expected 'refusing to remove' error, got %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("home directory contents were removed: %v", err)
+	}
+}
+
 func TestParseAppRef(t *testing.T) {
 	cases := []struct {
 		ref, name, version string

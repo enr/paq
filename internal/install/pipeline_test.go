@@ -314,6 +314,112 @@ func TestPipelineAppliesEnvMapping(t *testing.T) {
 	}
 }
 
+// TestPipelineRefusesToReplaceUnownedDest verifies that installing a "dir"
+// kind spec over a pre-existing, non-empty directory that paq didn't create
+// fails instead of silently wiping it out, and that Force overrides the guard.
+func TestPipelineRefusesToReplaceUnownedDest(t *testing.T) {
+	isolateState(t)
+	fileContent := []byte("payload")
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", fileContent)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "unrelated-file"), []byte("pre-existing"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "not created by paq") {
+		t.Fatalf("expected 'not created by paq' error, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "unrelated-file")); err != nil {
+		t.Errorf("pre-existing file was removed: %v", err)
+	}
+
+	// Force overrides the guard.
+	if err := Run(context.Background(), cfg, "tool", nil, &Hooks{Force: true}); err != nil {
+		t.Fatalf("install with Force failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	if err != nil {
+		t.Fatalf("installed file not found: %v", err)
+	}
+	if !bytes.Equal(data, fileContent) {
+		t.Errorf("content = %q, want %q", data, fileContent)
+	}
+}
+
+// TestPipelineReinstallOwnedDestSucceedsWithoutForce verifies that a dest
+// already recorded in state from a previous install (a different version)
+// can be reinstalled into without --force: the upgrade/reinstall flow is
+// unaffected by the "not created by paq" guard.
+func TestPipelineReinstallOwnedDestSucceedsWithoutForce(t *testing.T) {
+	isolateState(t)
+	zipDataV1 := makeFakeZip("tool-1.0.0", "bin/tool", []byte("v1"))
+	zipDataV2 := makeFakeZip("tool-2.0.0", "bin/tool", []byte("v2"))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "2.0.0") {
+			w.Write(zipDataV2)
+			return
+		}
+		w.Write(zipDataV1)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+
+	cfg.Apps["tool"] = config.AppEntry{Use: "tool", Version: "2.0.0", Dest: dest}
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("reinstall over owned dest failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	if err != nil {
+		t.Fatalf("installed file not found: %v", err)
+	}
+	if string(data) != "v2" {
+		t.Errorf("content = %q, want v2", data)
+	}
+}
+
 // TestPipelineSHA512Mismatch verifies that a wrong sha512 checksum makes the
 // install fail without creating the destination.
 func TestPipelineSHA512Mismatch(t *testing.T) {

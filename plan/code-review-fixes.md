@@ -359,7 +359,7 @@ suite green.
 
 ---
 
-## M9. Refuse to replace or remove a dest that paq does not own
+## M9. Refuse to replace or remove a dest that paq does not own — DONE
 
 **Problem.** Two sides of the same trust gap:
 

@@ -469,6 +469,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	default:
 		// Dest is a directory.
 		kind = "dir"
+		if !hooks.Force {
+			if err := checkDestSafeToReplace(dest); err != nil {
+				return err
+			}
+		}
 		if err := InstallDir(artifactPath, spec.Archive, dest, archiveOpts); err != nil {
 			return fmt.Errorf("install dir: %w", err)
 		}
@@ -539,6 +544,45 @@ func buildAuxURL(downloadURL, assetName, auxName string) (string, error) {
 		return "", fmt.Errorf("cannot derive %q: download URL %q does not end with asset name %q", auxName, downloadURL, assetName)
 	}
 	return strings.TrimSuffix(downloadURL, assetName) + auxName, nil
+}
+
+// checkDestSafeToReplace fails if dest exists, is a non-empty directory, and
+// is not recorded in the state DB as the destination of a previous install.
+// It guards against a manifest typo (e.g. dest = "~/.local") wiping out an
+// unrelated directory; --force (handled by the caller) remains the escape hatch.
+func checkDestSafeToReplace(dest string) error {
+	info, err := os.Stat(dest)
+	if err != nil {
+		return nil // doesn't exist: nothing to protect
+	}
+	if !info.IsDir() {
+		return nil // InstallDir's rename swap handles this; bounded blast radius
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil || len(entries) == 0 {
+		return nil // empty (or unreadable): nothing valuable to lose
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		st = &state.State{} // load error: treat as not-owned (fail closed)
+	}
+	if destOwnedByPaq(st, dest) {
+		return nil
+	}
+	return fmt.Errorf("destination %s already exists and was not created by paq: remove it or use --force", dest)
+}
+
+// destOwnedByPaq reports whether dest is recorded in the state DB as the
+// destination of any installed app (any version).
+func destOwnedByPaq(st *state.State, dest string) bool {
+	clean := filepath.Clean(dest)
+	for _, rec := range st.Packages {
+		if filepath.Clean(rec.Dest) == clean {
+			return true
+		}
+	}
+	return false
 }
 
 func expandHome(path string) string {
