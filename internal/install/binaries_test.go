@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enr/paq/internal/archive"
@@ -107,6 +108,31 @@ func TestInstallBinariesBare(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0755 {
 		t.Errorf("mode = %o, want 0755", info.Mode().Perm())
+	}
+}
+
+// TestInstallBinariesMissingFromNamesIt verifies that a From that isn't
+// present in the archive fails with an error naming it.
+func TestInstallBinariesMissingFromNamesIt(t *testing.T) {
+	files := map[string][]byte{
+		"zipts": []byte("ts"),
+	}
+	zipData := makeMultiBinZip("zipp-0.8.1_linux_amd64", files)
+
+	src := filepath.Join(t.TempDir(), "zipp.zip")
+	if err := os.WriteFile(src, zipData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	destDir := filepath.Join(t.TempDir(), "bin")
+	bins := []ResolvedBinary{
+		{From: "zipts", To: "zipts"},
+		{From: "does-not-exist", To: "missing"},
+	}
+
+	_, err := InstallBinaries(src, "zip", bins, destDir, "0755", archive.ExtractOpts{StripComponents: 1})
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist") {
+		t.Fatalf("expected error naming does-not-exist, got %v", err)
 	}
 }
 

@@ -15,7 +15,8 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 	}
 	defer zr.Close()
 
-	found := false
+	wanted := extractSet(opts.Extracts)
+	found := make(map[string]bool, len(wanted))
 
 	for _, f := range zr.File {
 		name := filepath.ToSlash(f.Name)
@@ -31,15 +32,16 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 		}
 
 		switch {
-		case opts.Extract != "":
+		case wanted != nil:
 			if f.FileInfo().IsDir() {
 				continue
 			}
-			if filepath.Base(stripped) == opts.Extract {
-				if found {
-					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", opts.Extract)
+			base := filepath.Base(stripped)
+			if wanted[base] {
+				if found[base] {
+					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", base)
 				}
-				dest, err := securePath(opts.Dest, opts.Extract)
+				dest, err := securePath(opts.Dest, base)
 				if err != nil {
 					return err
 				}
@@ -52,7 +54,7 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 				if werr != nil {
 					return werr
 				}
-				found = true
+				found[base] = true
 			}
 
 		case opts.Subdir != "":
@@ -97,8 +99,8 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 		}
 	}
 
-	if opts.Extract != "" && !found {
-		return fmt.Errorf("file %q not found in zip", opts.Extract)
+	if err := missingExtractsError(wanted, found); err != nil {
+		return err
 	}
 	return nil
 }

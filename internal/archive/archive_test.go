@@ -196,6 +196,47 @@ func TestExtractZipSkipsDirectoryEntryMatchingBasename(t *testing.T) {
 	}
 }
 
+// TestExtractMultipleNamesSinglePass verifies that ExtractOpts.Extracts pulls
+// several files out of the archive in one pass, and that a missing name is
+// reported by name.
+func TestExtractMultipleNamesSinglePass(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"bin/rg":  "rg-content",
+		"bin/bat": "bat-content",
+		"bin/fd":  "fd-content",
+	})
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extracts: []string{"rg", "bat"}, Dest: dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"rg": "rg-content", "bat": "bat-content"} {
+		data, err := os.ReadFile(filepath.Join(dest, name))
+		if err != nil {
+			t.Fatalf("%s not extracted: %v", name, err)
+		}
+		if string(data) != want {
+			t.Errorf("%s content = %q, want %q", name, data, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dest, "fd")); !os.IsNotExist(err) {
+		t.Error("fd should not have been extracted (not in Extracts)")
+	}
+}
+
+func TestExtractMultipleNamesMissingReportsName(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"bin/rg": "rg-content",
+	})
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extracts: []string{"rg", "missing-tool"}, Dest: dest})
+	if err == nil || !strings.Contains(err.Error(), "missing-tool") {
+		t.Fatalf("expected error naming missing-tool, got %v", err)
+	}
+}
+
 func TestExtractMissingFile(t *testing.T) {
 	tgz := makeTarGz(t, map[string]string{
 		"dir/other": "content",

@@ -528,7 +528,7 @@ unique basename).
 
 ---
 
-## L3. Single-pass multi-binary extraction; dedupe chmod parsing
+## L3. Single-pass multi-binary extraction; dedupe chmod parsing — DONE
 
 **Problem.** `internal/install/binaries.go` calls `archive.Extract` once per
 binary — N full decompressions of the same archive. Also `file.go` duplicates
