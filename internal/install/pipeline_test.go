@@ -234,6 +234,31 @@ func TestPipelineLatestNoStrategyErrors(t *testing.T) {
 	}
 }
 
+// TestPipelineAssetTemplateErrorSurfaces verifies that a spec.Asset template
+// referencing an unknown placeholder fails the install instead of silently
+// falling back to the URL's basename.
+func TestPipelineAssetTemplateErrorSurfaces(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend: "url",
+				Source:  "https://example.com/tool-{{version}}.tar.gz",
+				Asset:   "tool-{{bogus}}.tar.gz",
+				Archive: "tar.gz",
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "resolve asset name") {
+		t.Fatalf("expected asset name resolution error, got %v", err)
+	}
+}
+
 // TestPipelineSHA512Mismatch verifies that a wrong sha512 checksum makes the
 // install fail without creating the destination.
 func TestPipelineSHA512Mismatch(t *testing.T) {

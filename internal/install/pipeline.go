@@ -101,10 +101,6 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	dbg("app=%q spec=%q backend=%q version=%q dest=%q", appName, specName, spec.Backend, app.Version, app.Dest)
 
-	if spec.Extract != "" && len(spec.Binaries) > 0 {
-		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
-	}
-
 	// Reject a broken minisign configuration before any network access.
 	// Minisign signs the sha256 checksum file: without sha256_asset there is
 	// nothing to verify the signature against, and a half-configured minisign
@@ -179,6 +175,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 
 	// Apply the spec's per-OS override (e.g. jdk has [jdk.darwin]).
 	spec = spec.ApplyOSOverride(plat.OS)
+
+	if spec.Extract != "" && len(spec.Binaries) > 0 {
+		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
+	}
 
 	// Apply the spec's arch/os override (maps [ripgrep.arch]).
 	resolvedArch := platform.ApplyMap(spec.Arch, plat.Arch, plat.Arch)
@@ -255,10 +255,12 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// Resolve the asset name from the template and add it to vars.Extra so
 	// that {{asset}} is available in subsequent templates (e.g. sha256_asset).
 	if spec.Asset != "" {
-		if name, err2 := template.Resolve(spec.Asset, vars); err2 == nil {
-			assetName = name
-			vars.Extra["asset"] = name
+		name, err2 := template.Resolve(spec.Asset, vars)
+		if err2 != nil {
+			return fmt.Errorf("resolve asset name: %w", err2)
 		}
+		assetName = name
+		vars.Extra["asset"] = name
 	}
 	dbg("asset name: %q", assetName)
 
@@ -301,7 +303,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		if err2 != nil {
 			return fmt.Errorf("resolve sha256_asset URL: %w", err2)
 		}
-		step(fmt.Sprintf("Downloading checksum file..."))
+		step("Downloading checksum file...")
 		dbg("sha256 checksum URL: %s", checksumURL)
 		checksumPath, err = download.ToTemp(ctx, client, checksumURL, nil)
 		if err != nil {

@@ -47,3 +47,10 @@ func TestToTemp(t *testing.T) {
 		t.Error("progress callback was never called")
 	}
 }
+
+func TestToTempRejectsNonHTTPScheme(t *testing.T) {
+	_, err := ToTemp(context.Background(), http.DefaultClient, "file:///etc/passwd", nil)
+	if err == nil {
+		t.Fatal("expected an error for a non-http(s) scheme")
+	}
+}

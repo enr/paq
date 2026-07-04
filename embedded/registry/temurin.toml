@@ -1,7 +1,7 @@
-# Eclipse Temurin (Adoptium) JDK, una ricetta per major version.
-# L'asset usa il numero di build ({{version_build}}, es. il "10" di 21.0.11+10),
-# estratto dal tag GitHub. Verifica SHA256 tramite il file .sha256.txt pubblicato
-# accanto a ogni asset. Solo linux/macOS: su Windows l'asset è .zip.
+# Eclipse Temurin (Adoptium) JDK, one recipe per major version.
+# The asset uses the build number ({{version_build}}, e.g. the "10" in 21.0.11+10),
+# extracted from the GitHub tag. Verifies SHA256 via the .sha256.txt file published
+# alongside each asset. linux/macOS only: on Windows the asset is a .zip.
 
 [temurin-26]
 backend = "github"

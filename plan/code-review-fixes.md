@@ -675,7 +675,7 @@ checksum files; dev builds (no key) behave as today.
 
 ---
 
-## L7. Housekeeping batch
+## L7. Housekeeping batch — DONE
 
 Small, zero-risk cleanups; land as one commit.
 

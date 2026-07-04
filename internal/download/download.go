@@ -33,6 +33,9 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported URL scheme %q: only http and https are allowed", req.URL.Scheme)
+	}
 
 	// GitHub release assets are downloaded via the API asset endpoint
 	// (api.github.com/.../releases/assets/{id}) with Accept: octet-stream and,
