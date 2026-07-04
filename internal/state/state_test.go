@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -103,6 +104,61 @@ func TestConcurrentUpdate(t *testing.T) {
 	}
 	if len(st.Packages) != n {
 		t.Errorf("got %d packages, want %d — concurrent Update lost records", len(st.Packages), n)
+	}
+}
+
+// TestUpdateFailsWhenLockedByAnotherProcess verifies that a pre-existing
+// lock file (simulating another paq process holding it) makes Update fail
+// after the timeout with a message naming the lock file.
+func TestUpdateFailsWhenLockedByAnotherProcess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	prevInterval, prevTimeout := lockRetryInterval, lockTimeout
+	lockRetryInterval = 5 * time.Millisecond
+	lockTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { lockRetryInterval, lockTimeout = prevInterval, prevTimeout })
+
+	path, err := StatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := path + ".lock"
+	if err := os.WriteFile(lockPath, []byte("99999\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err = Update(func(st *State) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "locked by another paq process") {
+		t.Fatalf("expected lock error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), lockPath) {
+		t.Errorf("error = %q, want it to name the lock file %q", err, lockPath)
+	}
+}
+
+// TestUpdateLeavesNoLockFileOnSuccess verifies the happy path removes the
+// lock file it created.
+func TestUpdateLeavesNoLockFileOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	if err := Update(func(st *State) error {
+		st.Set(InstalledApp{Name: "rg", Version: "1.0.0", Kind: "file", Dest: "/bin/rg"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := StatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".lock"); !os.IsNotExist(err) {
+		t.Errorf("lock file should have been removed, stat err = %v", err)
 	}
 }
 

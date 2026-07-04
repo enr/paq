@@ -181,11 +181,53 @@ func (s *State) sort() {
 	})
 }
 
-// Update runs fn inside a mutex that serializes the load-modify-save
-// sequence, preventing concurrent goroutines from clobbering each other.
+// lockRetryInterval and lockTimeout control how long Update waits for another
+// process's lock to clear. Vars (not consts) so tests can shrink the timeout.
+var (
+	lockRetryInterval = 100 * time.Millisecond
+	lockTimeout       = 5 * time.Second
+)
+
+// Update runs fn inside a mutex (for goroutines of this process) and a
+// cross-process lock file (for concurrent paq invocations), preventing a
+// load-modify-save race from losing a record.
 func Update(fn func(*State) error) error {
 	mu.Lock()
 	defer mu.Unlock()
+	return lockedUpdate(fn)
+}
+
+// lockedUpdate acquires the cross-process lock file, then runs the
+// load-modify-save sequence. Callers must already hold mu.
+func lockedUpdate(fn func(*State) error) error {
+	path, err := StatePath()
+	if err != nil {
+		return err
+	}
+	lockPath := path + ".lock"
+
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		return fmt.Errorf("create state dir: %w", err)
+	}
+
+	deadline := time.Now().Add(lockTimeout)
+	for {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if err == nil {
+			fmt.Fprintf(f, "%d\n", os.Getpid())
+			f.Close()
+			break
+		}
+		if !os.IsExist(err) {
+			return fmt.Errorf("create lock file %s: %w", lockPath, err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("state is locked by another paq process (remove %s if stale)", lockPath)
+		}
+		time.Sleep(lockRetryInterval)
+	}
+	defer os.Remove(lockPath)
+
 	st, err := Load()
 	if err != nil {
 		return err

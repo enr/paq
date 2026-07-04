@@ -604,7 +604,7 @@ release notes.
 
 ---
 
-## L5. Cross-process lock for the state file
+## L5. Cross-process lock for the state file — DONE
 
 **Problem.** `internal/state`'s mutex serializes goroutines, not processes.
 Two concurrent `paq` invocations lose each other's `state.json` updates
