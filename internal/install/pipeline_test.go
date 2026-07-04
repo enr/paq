@@ -739,3 +739,54 @@ func TestPipelineHalfConfiguredMinisignFails(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildAuxURL(t *testing.T) {
+	cases := []struct {
+		name        string
+		downloadURL string
+		assetName   string
+		auxName     string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:        "happy path",
+			downloadURL: "https://example.com/dl/tool-1.0.0.tar.gz",
+			assetName:   "tool-1.0.0.tar.gz",
+			auxName:     "tool-1.0.0.tar.gz.sha256",
+			want:        "https://example.com/dl/tool-1.0.0.tar.gz.sha256",
+		},
+		{
+			name:        "url with query string",
+			downloadURL: "https://example.com/dl/tool-1.0.0.tar.gz?token=abc",
+			assetName:   "tool-1.0.0.tar.gz",
+			auxName:     "tool-1.0.0.tar.gz.sha256",
+			wantErr:     true,
+		},
+		{
+			name:        "mismatched asset name",
+			downloadURL: "https://example.com/dl/other.tar.gz",
+			assetName:   "tool-1.0.0.tar.gz",
+			auxName:     "tool-1.0.0.tar.gz.sha256",
+			wantErr:     true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := buildAuxURL(c.downloadURL, c.assetName, c.auxName)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("buildAuxURL() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

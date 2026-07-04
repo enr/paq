@@ -275,7 +275,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			gb := backend.GitHubBackend{Repo: spec.Repo, Asset: auxName}
 			return gb.Resolve(ctx, tag, vars)
 		}
-		return buildAuxURL(downloadURL, assetName, auxName), nil
+		return buildAuxURL(downloadURL, assetName, auxName)
 	}
 
 	client := download.NewClient()
@@ -528,9 +528,11 @@ func loadTemplates(cfg *config.Config, spec config.Spec) (template.MetaTemplates
 
 // buildAuxURL builds the URL of an auxiliary asset (checksum, signature) by
 // substituting the main asset's name with the auxiliary one in the URL.
-func buildAuxURL(downloadURL, assetName, auxName string) string {
-	base := strings.TrimSuffix(downloadURL, assetName)
-	return base + auxName
+func buildAuxURL(downloadURL, assetName, auxName string) (string, error) {
+	if !strings.HasSuffix(downloadURL, assetName) {
+		return "", fmt.Errorf("cannot derive %q: download URL %q does not end with asset name %q", auxName, downloadURL, assetName)
+	}
+	return strings.TrimSuffix(downloadURL, assetName) + auxName, nil
 }
 
 func expandHome(path string) string {

@@ -201,7 +201,7 @@ green.
 
 ---
 
-## M5. `buildAuxURL` must fail instead of producing a wrong URL
+## M5. `buildAuxURL` must fail instead of producing a wrong URL — DONE
 
 **Problem.** `internal/install/pipeline.go`:
 
