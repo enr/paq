@@ -319,7 +319,7 @@ registry response are ever written to disk; suite green.
 
 ---
 
-## M8. tar: extract only regular files, dirs and symlinks
+## M8. tar: extract only regular files, dirs and symlinks — DONE
 
 **Problem.** `internal/archive/tar.go`, in both the Subdir and standard
 branches, the `default:` case of the `switch hdr.Typeflag` writes *any*

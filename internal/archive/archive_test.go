@@ -160,6 +160,58 @@ func TestExtractMissingFile(t *testing.T) {
 	}
 }
 
+// TestExtractTarGzSkipsMetadataAndSpecialEntries verifies that a
+// pax_global_header entry (as produced by "git archive") and a FIFO special
+// file are skipped rather than materialized as regular files, while the
+// real regular file is still extracted.
+func TestExtractTarGzSkipsMetadataAndSpecialEntries(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.WriteHeader(&tar.Header{
+		Name:     "pax_global_header",
+		Typeflag: tar.TypeXGlobalHeader,
+		Size:     0,
+	})
+	tw.WriteHeader(&tar.Header{
+		Name:     "a-fifo",
+		Typeflag: tar.TypeFifo,
+		Mode:     0644,
+	})
+	content := "actual-content"
+	tw.WriteHeader(&tar.Header{
+		Name: "real-file",
+		Mode: 0644,
+		Size: int64(len(content)),
+	})
+	tw.Write([]byte(content))
+	tw.Close()
+	gz.Close()
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-metadata-*.tar.gz")
+	tmp.Write(buf.Bytes())
+	tmp.Close()
+
+	dest := t.TempDir()
+	if err := Extract(tmp.Name(), "tar.gz", ExtractOpts{StripComponents: 0, Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dest, "pax_global_header")); !os.IsNotExist(err) {
+		t.Error("pax_global_header should not have been extracted")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "a-fifo")); !os.IsNotExist(err) {
+		t.Error("FIFO entry should not have been extracted")
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "real-file"))
+	if err != nil {
+		t.Fatalf("real-file not extracted: %v", err)
+	}
+	if string(data) != content {
+		t.Errorf("real-file content = %q, want %q", data, content)
+	}
+}
+
 func TestExtractZipPathTraversalRejected(t *testing.T) {
 	z := makeZip(t, map[string]string{
 		"../../evil.txt": "pwned",

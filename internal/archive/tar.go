@@ -45,6 +45,13 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			return fmt.Errorf("entry %q is a hardlink: not supported", hdr.Name)
 		}
 
+		switch hdr.Typeflag {
+		case tar.TypeXGlobalHeader, tar.TypeXHeader, tar.TypeGNULongName, tar.TypeGNULongLink:
+			continue // metadata entries, never materialized
+		case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
+			continue // special files: never useful in a tool archive, skip
+		}
+
 		switch {
 		case opts.Extract != "":
 			// Single-file mode: look up the file by basename.
@@ -76,10 +83,12 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 				}
 			case tar.TypeSymlink:
 				symlinks = append(symlinks, symlinkEntry{dest: dest, linkname: hdr.Linkname})
-			default:
+			case tar.TypeReg:
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
+			default:
+				continue
 			}
 
 		default:
@@ -95,10 +104,12 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 				}
 			case tar.TypeSymlink:
 				symlinks = append(symlinks, symlinkEntry{dest: dest, linkname: hdr.Linkname})
-			default:
+			case tar.TypeReg:
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
+			default:
+				continue
 			}
 		}
 	}
