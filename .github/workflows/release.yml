@@ -57,7 +57,7 @@ jobs:
           cd artifacts
           sha256sum registry.tar.gz > registry.tar.gz.sha256
 
-      - name: Sign registry checksums
+      - name: Sign registry and self-update checksums
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
           MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
@@ -71,17 +71,19 @@ jobs:
               echo "binaries would require a registry signature that is never published." >&2
               exit 1
             fi
-            echo "MINISIGN_SECRET_KEY not set: skipping registry signing (checksum-only release)"
+            echo "MINISIGN_SECRET_KEY not set: skipping signing (checksum-only release)"
             exit 0
           fi
           sudo apt-get update -qq && sudo apt-get install -y -qq minisign
           printf '%s\n' "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
           minisign -S -s /tmp/minisign.key -m artifacts/registry.tar.gz.sha256
+          minisign -S -s /tmp/minisign.key -m artifacts/SHA256SUMS
           rm /tmp/minisign.key
           # If the public key is configured, prove secret and public key are
           # the same pair before publishing anything.
           if [ -n "${MINISIGN_PUBLIC_KEY}" ]; then
             minisign -Vm artifacts/registry.tar.gz.sha256 -P "${MINISIGN_PUBLIC_KEY}"
+            minisign -Vm artifacts/SHA256SUMS -P "${MINISIGN_PUBLIC_KEY}"
           fi
 
       - uses: softprops/action-gh-release@v2
@@ -89,6 +91,7 @@ jobs:
           files: |
             artifacts/*.zip
             artifacts/SHA256SUMS
+            artifacts/SHA256SUMS.minisig
             artifacts/registry.tar.gz
             artifacts/registry.tar.gz.sha256
             artifacts/registry.tar.gz.sha256.minisig

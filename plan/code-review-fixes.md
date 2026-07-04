@@ -639,7 +639,7 @@ processes cannot lose a record; readers unaffected.
 
 ---
 
-## L6. Sign SHA256SUMS and verify it in self-update
+## L6. Sign SHA256SUMS and verify it in self-update — DONE
 
 **Problem.** `paq self-update` verifies the binary only against a same-origin
 `SHA256SUMS`: transport integrity, not authenticity. The minisign
