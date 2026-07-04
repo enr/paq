@@ -15,6 +15,8 @@ MODULE="github.com/enr/paq"
 # Le variabili Version/Revision/BuildTime stanno nel package main di cmd/grab:
 # il linker indirizza il main package come "main", non con l'import path completo.
 VERSION_PKG="main"
+# Package che ospita la trust anchor del registry (minisign public key).
+REGISTRY_PKG="${MODULE}/internal/registry"
 
 # Version: use APP_VERSION env var if set, otherwise read VERSION file, otherwise derive from git tags.
 if [ -n "${APP_VERSION:-}" ]; then
@@ -41,7 +43,8 @@ go build \
     -ldflags "-s \
         -X ${VERSION_PKG}.Version=${app_version} \
         -X ${VERSION_PKG}.BuildTime=${buildtime} \
-        -X ${VERSION_PKG}.Revision=${git_commit}" \
+        -X ${VERSION_PKG}.Revision=${git_commit} \
+        -X ${REGISTRY_PKG}.DefaultPublicKey=${MINISIGN_PUBLIC_KEY:-}" \
     -o "${BIN_DIR}/${APP_NAME}" \
     "./cmd/${APP_NAME}"
 

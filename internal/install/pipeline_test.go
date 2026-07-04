@@ -645,3 +645,72 @@ func (rt *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error
 	req2.URL.Host = strings.TrimPrefix(rt.base, "http://")
 	return rt.inner.RoundTrip(req2)
 }
+
+// TestPipelineMinisignWithoutSHA256AssetFails verifies that a spec configuring
+// minisign without sha256_asset is rejected before any network access: the
+// signature is verified against the checksum file, so without it the check
+// would otherwise be silently skipped while looking enabled.
+func TestPipelineMinisignWithoutSHA256AssetFails(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend: "url",
+				Source:  "https://unreachable.invalid/tool-{{version}}.tar.gz",
+				Archive: "tar.gz",
+				Verify: config.VerifyConfig{
+					Minisign: config.MinisignConfig{
+						PublicKey:   "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
+						SignedAsset: "{{asset}}.minisig",
+					},
+				},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil {
+		t.Fatal("expected error for minisign without sha256_asset, got nil")
+	}
+	if !strings.Contains(err.Error(), "sha256_asset") {
+		t.Errorf("error = %q, want mention of sha256_asset", err)
+	}
+}
+
+// TestPipelineHalfConfiguredMinisignFails verifies that setting only one of
+// public_key/signed_asset is rejected instead of being silently ignored.
+func TestPipelineHalfConfiguredMinisignFails(t *testing.T) {
+	isolateState(t)
+	for name, ms := range map[string]config.MinisignConfig{
+		"only public_key":   {PublicKey: "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3"},
+		"only signed_asset": {SignedAsset: "{{asset}}.minisig"},
+	} {
+		cfg := &config.Config{
+			Specs: map[string]config.Spec{
+				"tool": {
+					Backend: "url",
+					Source:  "https://unreachable.invalid/tool-{{version}}.tar.gz",
+					Archive: "tar.gz",
+					Verify: config.VerifyConfig{
+						SHA256Asset: "{{asset}}.sha256",
+						Minisign:    ms,
+					},
+				},
+			},
+			Apps: map[string]config.AppEntry{
+				"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+			},
+		}
+
+		err := Run(context.Background(), cfg, "tool", nil, nil)
+		if err == nil {
+			t.Fatalf("%s: expected error, got nil", name)
+		}
+		if !strings.Contains(err.Error(), "public_key and signed_asset") {
+			t.Errorf("%s: error = %q, want mention of public_key and signed_asset", name, err)
+		}
+	}
+}

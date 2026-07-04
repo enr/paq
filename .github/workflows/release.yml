@@ -21,7 +21,17 @@ jobs:
       - name: Cross-build all targets
         env:
           APP_VERSION: ${{ github.ref_name }}
-        run: ./.sdlc/cross
+          # Minisign public key (repository variable): baked into the binaries
+          # as the trust anchor for `paq registry update`. Must match the
+          # secret key used below to sign the registry checksums.
+          MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
+        run: |
+          if [ -z "${MINISIGN_PUBLIC_KEY}" ]; then
+            echo "MINISIGN_PUBLIC_KEY repository variable is not set:" >&2
+            echo "released binaries would have no trust anchor and 'paq registry update' would refuse to run." >&2
+            exit 1
+          fi
+          ./.sdlc/cross
 
       - name: Package
         run: |
