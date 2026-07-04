@@ -21,6 +21,12 @@ jobs:
       - name: Cross-build all targets
         env:
           APP_VERSION: ${{ github.ref_name }}
+          # Minisign public key (repository variable): baked into the binaries
+          # as the trust anchor for `paq registry update`. Must match the
+          # secret key used below to sign the registry checksums. Optional
+          # for now: when unset the binaries fall back to checksum-only
+          # registry verification (see plan/registry-signing-enablement.md).
+          MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
         run: ./.sdlc/cross
 
       - name: Package
@@ -54,11 +60,29 @@ jobs:
       - name: Sign registry checksums
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
         run: |
+          # Signing is optional for now (see plan/registry-signing-enablement.md).
+          # The only forbidden state is public key without secret key: binaries
+          # would require a signature that is never published.
+          if [ -z "${MINISIGN_SECRET_KEY}" ]; then
+            if [ -n "${MINISIGN_PUBLIC_KEY}" ]; then
+              echo "MINISIGN_PUBLIC_KEY is set but MINISIGN_SECRET_KEY is not:" >&2
+              echo "binaries would require a registry signature that is never published." >&2
+              exit 1
+            fi
+            echo "MINISIGN_SECRET_KEY not set: skipping registry signing (checksum-only release)"
+            exit 0
+          fi
           sudo apt-get update -qq && sudo apt-get install -y -qq minisign
           printf '%s\n' "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
           minisign -S -s /tmp/minisign.key -m artifacts/registry.tar.gz.sha256
           rm /tmp/minisign.key
+          # If the public key is configured, prove secret and public key are
+          # the same pair before publishing anything.
+          if [ -n "${MINISIGN_PUBLIC_KEY}" ]; then
+            minisign -Vm artifacts/registry.tar.gz.sha256 -P "${MINISIGN_PUBLIC_KEY}"
+          fi
 
       - uses: softprops/action-gh-release@v2
         with:

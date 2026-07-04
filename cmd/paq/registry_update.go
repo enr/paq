@@ -91,13 +91,21 @@ func runRegistryUpdate(cmd *cobra.Command, args []string) error {
 	}
 	defer os.Remove(sumsPath)
 
-	sigPath, err := download.ToTemp(ctx, client, src.sigURL, nil)
-	if err != nil {
-		return fmt.Errorf("download signature: %w", err)
+	// Signature verification is temporarily optional: a build without an
+	// embedded public key (src.pubKey == "") verifies the checksum only.
+	// See plan/registry-signing-enablement.md for re-enabling enforcement.
+	var sigPath string
+	if src.pubKey != "" {
+		sigPath, err = download.ToTemp(ctx, client, src.sigURL, nil)
+		if err != nil {
+			return fmt.Errorf("download signature: %w", err)
+		}
+		defer os.Remove(sigPath)
+		ui.Step("Verifying signature...")
+	} else {
+		ui.Warn("this build has no registry signing key: signature not verified (checksum only)")
+		ui.Step("Verifying checksum...")
 	}
-	defer os.Remove(sigPath)
-
-	ui.Step("Verifying signature...")
 	if err := verify.Run(verify.Plan{
 		SHA256AssetPath: sumsPath,
 		ArtifactName:    registryAsset,
@@ -175,7 +183,10 @@ type registrySource struct {
 
 // resolveRegistrySource determines where to fetch the registry from: a custom
 // [registry].url (which must be https and carry its own public_key) or the
-// default paq release assets (which require the embedded signing key).
+// default paq release assets. For the default source, an empty embedded
+// signing key downgrades the update to checksum-only verification (temporary,
+// until the signing infrastructure is enabled: see
+// plan/registry-signing-enablement.md).
 func resolveRegistrySource(ctx context.Context, rs config.RegistrySettings) (registrySource, error) {
 	if rs.URL != "" {
 		if !strings.HasPrefix(rs.URL, "https://") {
@@ -191,10 +202,6 @@ func resolveRegistrySource(ctx context.Context, rs config.RegistrySettings) (reg
 			pubKey:  rs.PublicKey,
 			tag:     "custom",
 		}, nil
-	}
-
-	if registry.DefaultPublicKey == "" {
-		return registrySource{}, fmt.Errorf("this build has no registry signing key; configure a custom source in [registry] (url + public_key)")
 	}
 
 	ui.Step("Resolving latest registry release...")

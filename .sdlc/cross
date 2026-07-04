@@ -13,6 +13,9 @@ APP_NAME="paq"
 DIST_DIR="dist"
 # Le variabili Version/Revision/BuildTime stanno nel package main di cmd/paq.
 VERSION_PKG="main"
+MODULE="github.com/enr/paq"
+# Package che ospita la trust anchor del registry (minisign public key).
+REGISTRY_PKG="${MODULE}/internal/registry"
 
 # Version: use APP_VERSION env var if set, otherwise read VERSION file, otherwise derive from git tags.
 if [ -n "${APP_VERSION:-}" ]; then
@@ -31,7 +34,8 @@ git_commit="${git_hash}${git_dirty}"
 ldflags="-s \
     -X ${VERSION_PKG}.Version=${app_version} \
     -X ${VERSION_PKG}.BuildTime=${buildtime} \
-    -X ${VERSION_PKG}.Revision=${git_commit}"
+    -X ${VERSION_PKG}.Revision=${git_commit} \
+    -X ${REGISTRY_PKG}.DefaultPublicKey=${MINISIGN_PUBLIC_KEY:-}"
 
 # Target di cross-compilazione: "os/arch".
 targets=(

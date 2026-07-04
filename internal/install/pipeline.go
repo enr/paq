@@ -105,6 +105,17 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
 	}
 
+	// Reject a broken minisign configuration before any network access.
+	// Minisign signs the sha256 checksum file: without sha256_asset there is
+	// nothing to verify the signature against, and a half-configured minisign
+	// would otherwise be silently skipped while looking enabled.
+	if (spec.Verify.Minisign.PublicKey != "") != (spec.Verify.Minisign.SignedAsset != "") {
+		return fmt.Errorf("spec %q: verify.minisign requires both public_key and signed_asset", specName)
+	}
+	if spec.Verify.Minisign.PublicKey != "" && spec.Verify.SHA256Asset == "" {
+		return fmt.Errorf("spec %q: verify.minisign requires sha256_asset (the signature is verified against the checksum file)", specName)
+	}
+
 	// Reject unsupported platforms immediately, before any network access.
 	// The check uses the raw canonical values (plat.OS/plat.Arch), not the
 	// tool's post-mapping ones.
