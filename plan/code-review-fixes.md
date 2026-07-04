@@ -101,7 +101,7 @@ case: `canonicalOS: "linux"` → the global template applies.
 
 ---
 
-## M3. Make meta-template expansion deterministic
+## M3. Make meta-template expansion deterministic — DONE
 
 **Problem.** `template.Expand` iterates `MetaTemplates` (a Go map) in random
 order while writing results into `v.Extra`, which later iterations can read.

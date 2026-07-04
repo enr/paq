@@ -155,6 +155,27 @@ func TestExpandOverrideKeyedByCanonicalOS(t *testing.T) {
 	}
 }
 
+// TestExpandDeterministicCrossReferenceFails verifies that a meta-template
+// referencing another meta-template always fails, regardless of Go's random
+// map iteration order (run many times to catch order dependence).
+func TestExpandDeterministicCrossReferenceFails(t *testing.T) {
+	mt := MetaTemplates{
+		"a": "{{arch}}",
+		"b": "{{a}}",
+	}
+	v := Vars{Arch: "x86_64"}
+
+	for i := 0; i < 50; i++ {
+		_, err := Expand(mt, nil, "linux", v)
+		if err == nil {
+			t.Fatalf("iteration %d: expected error, got nil", i)
+		}
+		if got := err.Error(); got != `unknown placeholder "a"` {
+			t.Fatalf("iteration %d: err = %q, want unknown placeholder \"a\"", i, got)
+		}
+	}
+}
+
 func TestResolveWithExtra(t *testing.T) {
 	v := Vars{
 		OS:      "linux",
