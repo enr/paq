@@ -133,6 +133,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	//   - "latest"        → live resolution via strategy/backend (no fallback)
 	//   - "x.y.z"         → explicit pin
 	step(fmt.Sprintf("Resolving version for %s...", appName))
+	// Keep in sync with AppEntry.TracksLatest (internal/config/types.go), which
+	// upgrade/outdated use to decide which apps to consider.
 	var versionProvider version.Provider
 	switch {
 	case app.Version == "" && spec.DefaultVersion != "":

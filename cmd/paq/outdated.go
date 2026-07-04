@@ -96,17 +96,6 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 func checkOutdated(ctx context.Context, cfg *config.Config, st *state.State, name string, skip func(string, ...any)) (entry ui.OutdatedEntry, checked bool, err error) {
 	app := cfg.Apps[name]
 
-	if !strings.EqualFold(app.Version, "latest") {
-		skip("%s: pinned to %s, skipping", name, app.Version)
-		return entry, false, nil
-	}
-
-	installed := st.ByName(name)
-	if len(installed) == 0 {
-		skip("%s: not installed, skipping", name)
-		return entry, false, nil
-	}
-
 	specName := app.Use
 	if specName == "" {
 		specName = name
@@ -114,6 +103,21 @@ func checkOutdated(ctx context.Context, cfg *config.Config, st *state.State, nam
 	spec, found := cfg.Specs[specName]
 	if !found {
 		return entry, false, fmt.Errorf("spec %q not found in registry", specName)
+	}
+
+	if !app.TracksLatest(spec) {
+		pinned := app.Version
+		if pinned == "" {
+			pinned = spec.DefaultVersion
+		}
+		skip("%s: pinned to %s, skipping", name, pinned)
+		return entry, false, nil
+	}
+
+	installed := st.ByName(name)
+	if len(installed) == 0 {
+		skip("%s: not installed, skipping", name)
+		return entry, false, nil
 	}
 
 	latest, resolveErr := resolveLatestVersion(ctx, spec)

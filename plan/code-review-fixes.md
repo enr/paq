@@ -146,7 +146,7 @@ loop ~50 times in the test to catch order dependence).
 
 ---
 
-## M4. One shared definition of "tracks latest" for install/upgrade/outdated
+## M4. One shared definition of "tracks latest" for install/upgrade/outdated — DONE
 
 **Problem.** The pipeline treats `version = ""` as "default_version, else
 latest" (`internal/install/pipeline.go`, the `switch` on `app.Version`), but

@@ -155,6 +155,17 @@ type AppEntry struct {
 	Chmod   string            `toml:"chmod"`
 }
 
+// TracksLatest reports whether the app entry follows the newest upstream
+// version: an explicit "latest", or an omitted version when the spec has
+// no default_version to pin to. Must stay in sync with the pipeline's
+// version-resolution switch (internal/install/pipeline.go).
+func (a AppEntry) TracksLatest(spec Spec) bool {
+	if strings.EqualFold(a.Version, "latest") {
+		return true
+	}
+	return a.Version == "" && spec.DefaultVersion == ""
+}
+
 // Defaults collects the user-configurable default values in the manifest
 // ([defaults] section). Bin and Opt are the base directories used to derive
 // dest when an app doesn't specify one. Empty → falls back to the built-in
