@@ -573,7 +573,7 @@ binaries; behavior otherwise identical; suite green.
 
 ---
 
-## L4. Non-interactive uninstall requires `--yes`
+## L4. Non-interactive uninstall requires `--yes` — DONE
 
 **Problem.** `cmd/paq/uninstall.go`: when stdout is not a TTY, the
 confirmation is *skipped* and removal proceeds. Scripts destroy files with no

@@ -18,6 +18,11 @@ var (
 	flagUninstallYes    bool
 )
 
+// uninstallIsTTY reports whether stdout is an interactive terminal. It is a
+// package var so tests can stub the terminal check (mirrors stderrIsTTY in
+// update_notify.go).
+var uninstallIsTTY = ui.IsTTY
+
 var uninstallCmd = &cobra.Command{
 	Use:     "uninstall <app[@version]>...",
 	Aliases: []string{"rm", "remove"},
@@ -33,7 +38,7 @@ var uninstallCmd = &cobra.Command{
 
 func init() {
 	uninstallCmd.Flags().BoolVar(&flagUninstallDryRun, "dry-run", false, "Show what would be removed without removing anything")
-	uninstallCmd.Flags().BoolVarP(&flagUninstallYes, "yes", "y", false, "Skip confirmation prompt")
+	uninstallCmd.Flags().BoolVarP(&flagUninstallYes, "yes", "y", false, "Skip confirmation prompt (required in non-interactive sessions)")
 	rootCmd.AddCommand(uninstallCmd)
 }
 
@@ -62,9 +67,13 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Ask for confirmation unless --yes was passed or stdout is not a
-	// terminal (non-interactive/CI invocations proceed without prompting).
-	if !flagUninstallYes && ui.IsTTY() {
+	// Ask for confirmation unless --yes was passed. A non-interactive session
+	// (no TTY on stdout) can't be prompted, so it must pass --yes explicitly
+	// instead of proceeding unconfirmed.
+	if !flagUninstallYes {
+		if !uninstallIsTTY() {
+			return fmt.Errorf("refusing to uninstall without confirmation in a non-interactive session: pass --yes")
+		}
 		printUninstallTargets("This will remove:", targets)
 		if !confirmYesNo(os.Stdin, "Continue?") {
 			ui.Info("aborted")

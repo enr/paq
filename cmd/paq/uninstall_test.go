@@ -33,10 +33,14 @@ func TestConfirmYesNo(t *testing.T) {
 	}
 }
 
-// TestRunUninstallNonTTYSkipsPrompt verifies that under `go test` (stdout is
-// not a terminal) runUninstall proceeds without blocking on a confirmation
-// prompt, even with --yes unset.
-func TestRunUninstallNonTTYSkipsPrompt(t *testing.T) {
+// TestRunUninstallNonTTYRequiresYes verifies that in a non-interactive
+// session (no TTY on stdout) runUninstall refuses to proceed without --yes,
+// removing nothing, and proceeds once --yes is passed.
+func TestRunUninstallNonTTYRequiresYes(t *testing.T) {
+	prevIsTTY := uninstallIsTTY
+	uninstallIsTTY = func() bool { return false }
+	t.Cleanup(func() { uninstallIsTTY = prevIsTTY })
+
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)
 
@@ -61,10 +65,17 @@ func TestRunUninstallNonTTYSkipsPrompt(t *testing.T) {
 		flagUninstallDryRun = false
 	})
 
-	if err := runUninstall(uninstallCmd, []string{"rg"}); err != nil {
-		t.Fatalf("runUninstall: %v", err)
+	if err := runUninstall(uninstallCmd, []string{"rg"}); err == nil {
+		t.Fatal("expected an error without --yes in a non-interactive session")
+	}
+	if _, err := os.Stat(binPath); err != nil {
+		t.Errorf("expected %s to survive without --yes, stat err = %v", binPath, err)
 	}
 
+	flagUninstallYes = true
+	if err := runUninstall(uninstallCmd, []string{"rg"}); err != nil {
+		t.Fatalf("runUninstall with --yes: %v", err)
+	}
 	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
 		t.Errorf("expected %s to be removed, stat err = %v", binPath, err)
 	}
@@ -94,7 +105,8 @@ func TestRunUninstallMultiApp(t *testing.T) {
 		t.Fatalf("save state: %v", err)
 	}
 
-	flagUninstallYes = false
+	// --yes: this test is about multi-app removal, not the confirmation flow.
+	flagUninstallYes = true
 	flagUninstallDryRun = false
 	t.Cleanup(func() {
 		flagUninstallYes = false
