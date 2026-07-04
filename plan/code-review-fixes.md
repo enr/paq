@@ -2,8 +2,10 @@
 
 Source: full-codebase review of 2026-07-04. The two High findings (minisign-only
 verification silently skipped; empty registry trust anchor) are already fixed on
-this branch. This document is the implementation plan for the remaining Medium
-and Low findings. Each item is self-contained: it names the exact files,
+this branch; note that registry signature enforcement is temporarily optional —
+the rollout to mandatory signing is a separate plan, see
+`plan/registry-signing-enablement.md`. This document is the implementation plan
+for the remaining Medium and Low findings. Each item is self-contained: it names the exact files,
 functions and behavior changes, the tests to add, and the acceptance criteria.
 Items are independent unless a dependency is stated; each should land as its
 own commit.
