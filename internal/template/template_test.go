@@ -100,7 +100,7 @@ func TestExpandMetaTemplate(t *testing.T) {
 	v := Vars{
 		OS: "linux", Arch: "aarch64", Vendor: "unknown", Env: "gnu",
 	}
-	expanded, err := Expand(mt, osOverrides, v)
+	expanded, err := Expand(mt, osOverrides, "linux", v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,16 +108,50 @@ func TestExpandMetaTemplate(t *testing.T) {
 		t.Errorf("linux rust_target = %q, want aarch64-unknown-linux-gnu", got)
 	}
 
-	// darwin arm64: override che omette env
+	// darwin arm64: override omits env
 	vDarwin := Vars{
 		OS: "darwin", Arch: "aarch64", Vendor: "apple", Env: "",
 	}
-	expandedDarwin, err := Expand(mt, osOverrides, vDarwin)
+	expandedDarwin, err := Expand(mt, osOverrides, "darwin", vDarwin)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := expandedDarwin.Extra["rust_target"]; got != "aarch64-apple-darwin" {
 		t.Errorf("darwin rust_target = %q, want aarch64-apple-darwin", got)
+	}
+}
+
+// TestExpandOverrideKeyedByCanonicalOS verifies that the per-OS override
+// selection uses canonicalOS, not v.OS: a spec that maps the OS (e.g.
+// [x.os] darwin = "mac") must still pick up its [templates.darwin] override.
+func TestExpandOverrideKeyedByCanonicalOS(t *testing.T) {
+	mt := MetaTemplates{
+		"rust_target": "{{arch}}-{{vendor}}-{{os}}-{{env}}",
+	}
+	osOverrides := map[string]MetaTemplates{
+		"darwin": {
+			"rust_target": "{{arch}}-{{vendor}}-{{os}}",
+		},
+	}
+
+	// v.OS carries the mapped value ("mac"), canonicalOS is the real platform OS.
+	v := Vars{OS: "mac", Arch: "aarch64", Vendor: "apple", Env: ""}
+	expanded, err := Expand(mt, osOverrides, "darwin", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := expanded.Extra["rust_target"]; got != "aarch64-apple-mac" {
+		t.Errorf("rust_target = %q, want aarch64-apple-mac (darwin override applied, {{os}} still mapped)", got)
+	}
+
+	// canonicalOS "linux" must not pick up the darwin override.
+	vLinux := Vars{OS: "linux", Arch: "x86_64", Vendor: "unknown", Env: "gnu"}
+	expandedLinux, err := Expand(mt, osOverrides, "linux", vLinux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := expandedLinux.Extra["rust_target"]; got != "x86_64-unknown-linux-gnu" {
+		t.Errorf("rust_target = %q, want x86_64-unknown-linux-gnu (global template applied)", got)
 	}
 }
 

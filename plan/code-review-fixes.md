@@ -61,7 +61,7 @@ green.
 
 ---
 
-## M2. Key per-OS meta-template overrides by canonical OS
+## M2. Key per-OS meta-template overrides by canonical OS — DONE
 
 **Problem.** `internal/install/pipeline.go` builds `template.Vars` with
 `OS: resolvedOS` (the *mapped* OS, e.g. `"mac"` for temurin) and then

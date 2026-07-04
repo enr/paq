@@ -5,9 +5,12 @@ type MetaTemplates map[string]string
 
 // Expand expands the meta-templates, adding them to v.Extra.
 // osOverrides is an OS → MetaTemplates map for per-OS overrides (e.g. darwin
-// has rust_target without {{env}}). Meta-templates are expanded in the order
-// of the global map, then the per-OS overrides are applied.
-func Expand(mt MetaTemplates, osOverrides map[string]MetaTemplates, v Vars) (Vars, error) {
+// has rust_target without {{env}}), keyed by the canonical OS name (as in
+// [templates.darwin] / [x.templates_os.darwin]) — canonicalOS selects the
+// override, independently of v.OS (which may have been remapped by the spec
+// and only feeds {{os}} substitution). Meta-templates are expanded in the
+// order of the global map, then the per-OS overrides are applied.
+func Expand(mt MetaTemplates, osOverrides map[string]MetaTemplates, canonicalOS string, v Vars) (Vars, error) {
 	if v.Extra == nil {
 		v.Extra = make(map[string]string)
 	}
@@ -23,7 +26,7 @@ func Expand(mt MetaTemplates, osOverrides map[string]MetaTemplates, v Vars) (Var
 
 	// Apply the current OS's override (overrides the globals).
 	if osOverrides != nil {
-		if osMT, ok := osOverrides[v.OS]; ok {
+		if osMT, ok := osOverrides[canonicalOS]; ok {
 			for k, tmpl := range osMT {
 				val, err := Resolve(tmpl, v)
 				if err != nil {

@@ -212,7 +212,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// 4. Expand the meta-templates.
 	// Load the embedded templates.toml.
 	globalMT, osMT := loadTemplates(cfg, spec)
-	vars, err = template.Expand(globalMT, osMT, vars)
+	vars, err = template.Expand(globalMT, osMT, plat.OS, vars)
 	if err != nil {
 		return fmt.Errorf("expand meta-templates: %w", err)
 	}
