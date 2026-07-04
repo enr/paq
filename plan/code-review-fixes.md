@@ -469,7 +469,7 @@ assets make exactly one HTTP call as today; suite green.
 
 ---
 
-## L1. Propagate hashing errors into the state record
+## L1. Propagate hashing errors into the state record — DONE
 
 **Problem.** `internal/install/pipeline.go`: `filesha256` ignores the
 `io.Copy` error, and `Run` ignores `filesha256`'s error

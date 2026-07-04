@@ -951,3 +951,22 @@ func TestBuildAuxURL(t *testing.T) {
 		})
 	}
 }
+
+func TestFilesha256(t *testing.T) {
+	if _, err := filesha256(filepath.Join(t.TempDir(), "nonexistent")); err == nil {
+		t.Error("expected error for nonexistent path, got nil")
+	}
+
+	content := []byte("hello paq")
+	f := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(f, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := filesha256(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := sha256hex(content); got != want {
+		t.Errorf("filesha256() = %q, want %q", got, want)
+	}
+}

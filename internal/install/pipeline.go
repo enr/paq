@@ -402,7 +402,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 
 	// 11. Compute the artifact's SHA256 for the state.
-	artifactSHA256, _ := filesha256(artifactPath)
+	artifactSHA256, err := filesha256(artifactPath)
+	if err != nil {
+		warn(fmt.Sprintf("could not hash artifact for the state record: %v", err))
+		artifactSHA256 = ""
+	}
 	dbg("artifact sha256: %s", artifactSHA256)
 
 	// 12. Install.
@@ -602,6 +606,8 @@ func filesha256(path string) (string, error) {
 	}
 	defer f.Close()
 	h := sha256.New()
-	io.Copy(h, f)
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
