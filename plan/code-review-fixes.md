@@ -277,7 +277,7 @@ bare-hash files (Maven-style sha512) still install.
 
 ---
 
-## M7. Enforce the registry size cap during download
+## M7. Enforce the registry size cap during download — DONE
 
 **Problem.** `cmd/paq/registry_update.go` checks `registryMaxBytes` only
 after `download.ToTemp` has streamed the whole body to disk. A hostile custom
