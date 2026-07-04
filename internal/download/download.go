@@ -25,6 +25,18 @@ func NewClient() *http.Client {
 // The caller is responsible for removing the temp file after use.
 // progress can be nil.
 func ToTemp(ctx context.Context, client *http.Client, url string, progress ProgressFn) (string, error) {
+	return toTemp(ctx, client, url, 0, progress)
+}
+
+// ToTempLimited is ToTemp with a hard cap on the response size. It fails as
+// soon as the body exceeds maxBytes, and rejects upfront a Content-Length
+// larger than maxBytes.
+func ToTempLimited(ctx context.Context, client *http.Client, url string, maxBytes int64, progress ProgressFn) (string, error) {
+	return toTemp(ctx, client, url, maxBytes, progress)
+}
+
+// toTemp is the shared implementation. maxBytes <= 0 means no limit.
+func toTemp(ctx context.Context, client *http.Client, url string, maxBytes int64, progress ProgressFn) (string, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -32,6 +44,9 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
+	}
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		return "", fmt.Errorf("unsupported URL scheme %q: only http and https are allowed", req.URL.Scheme)
 	}
 
 	// GitHub release assets are downloaded via the API asset endpoint
@@ -56,6 +71,10 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 		return "", fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
 	}
 
+	if maxBytes > 0 && resp.ContentLength > maxBytes {
+		return "", fmt.Errorf("response exceeds %d bytes (Content-Length %d)", maxBytes, resp.ContentLength)
+	}
+
 	total := resp.ContentLength // -1 if unknown
 
 	tmp, err := os.CreateTemp("", "paq-download-*")
@@ -65,14 +84,24 @@ func ToTemp(ctx context.Context, client *http.Client, url string, progress Progr
 	tmpPath := tmp.Name()
 
 	var src io.Reader = resp.Body
+	if maxBytes > 0 {
+		src = io.LimitReader(src, maxBytes+1)
+	}
 	if progress != nil {
-		src = &progressReader{r: resp.Body, total: total, fn: progress}
+		src = &progressReader{r: src, total: total, fn: progress}
 	}
 
-	if _, err := io.Copy(tmp, src); err != nil {
+	n, err := io.Copy(tmp, src)
+	if err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("write temp file: %w", err)
+	}
+
+	if maxBytes > 0 && n > maxBytes {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("response exceeds %d bytes", maxBytes)
 	}
 
 	if err := tmp.Close(); err != nil {

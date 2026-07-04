@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -149,6 +150,93 @@ func TestExtractZipSingleFile(t *testing.T) {
 	}
 }
 
+// TestExtractTarGzAmbiguousNameRejected verifies that Extract fails loudly
+// when two entries share the wanted basename, instead of silently letting
+// the last match win.
+func TestExtractTarGzAmbiguousNameRejected(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"bin/rg":   "bin-content",
+		"debug/rg": "debug-content",
+	})
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extract: "rg", Dest: dest})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected an ambiguous-extract error, got %v", err)
+	}
+}
+
+// TestExtractZipSkipsDirectoryEntryMatchingBasename verifies that a
+// directory entry named "rg" doesn't win over a real file, and doesn't
+// produce an empty output file.
+func TestExtractZipSkipsDirectoryEntryMatchingBasename(t *testing.T) {
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-zip-dir-*.zip")
+	zw := zip.NewWriter(tmp)
+	// Explicit directory entry named "rg/".
+	_, err := zw.CreateHeader(&zip.FileHeader{Name: "rg/", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := zw.Create("sub/rg")
+	f.Write([]byte("real-content"))
+	zw.Close()
+	tmp.Close()
+
+	dest := t.TempDir()
+	if err := Extract(tmp.Name(), "zip", ExtractOpts{Extract: "rg", Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dest, "rg"))
+	if err != nil {
+		t.Fatalf("extracted file not found: %v", err)
+	}
+	if string(data) != "real-content" {
+		t.Errorf("content = %q, want real-content", string(data))
+	}
+}
+
+// TestExtractMultipleNamesSinglePass verifies that ExtractOpts.Extracts pulls
+// several files out of the archive in one pass, and that a missing name is
+// reported by name.
+func TestExtractMultipleNamesSinglePass(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"bin/rg":  "rg-content",
+		"bin/bat": "bat-content",
+		"bin/fd":  "fd-content",
+	})
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extracts: []string{"rg", "bat"}, Dest: dest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"rg": "rg-content", "bat": "bat-content"} {
+		data, err := os.ReadFile(filepath.Join(dest, name))
+		if err != nil {
+			t.Fatalf("%s not extracted: %v", name, err)
+		}
+		if string(data) != want {
+			t.Errorf("%s content = %q, want %q", name, data, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dest, "fd")); !os.IsNotExist(err) {
+		t.Error("fd should not have been extracted (not in Extracts)")
+	}
+}
+
+func TestExtractMultipleNamesMissingReportsName(t *testing.T) {
+	tgz := makeTarGz(t, map[string]string{
+		"bin/rg": "rg-content",
+	})
+
+	dest := t.TempDir()
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extracts: []string{"rg", "missing-tool"}, Dest: dest})
+	if err == nil || !strings.Contains(err.Error(), "missing-tool") {
+		t.Fatalf("expected error naming missing-tool, got %v", err)
+	}
+}
+
 func TestExtractMissingFile(t *testing.T) {
 	tgz := makeTarGz(t, map[string]string{
 		"dir/other": "content",
@@ -157,6 +245,58 @@ func TestExtractMissingFile(t *testing.T) {
 	err := Extract(tgz, "tar.gz", ExtractOpts{Extract: "rg", Dest: dest})
 	if err == nil {
 		t.Error("expected error for missing extract file")
+	}
+}
+
+// TestExtractTarGzSkipsMetadataAndSpecialEntries verifies that a
+// pax_global_header entry (as produced by "git archive") and a FIFO special
+// file are skipped rather than materialized as regular files, while the
+// real regular file is still extracted.
+func TestExtractTarGzSkipsMetadataAndSpecialEntries(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.WriteHeader(&tar.Header{
+		Name:     "pax_global_header",
+		Typeflag: tar.TypeXGlobalHeader,
+		Size:     0,
+	})
+	tw.WriteHeader(&tar.Header{
+		Name:     "a-fifo",
+		Typeflag: tar.TypeFifo,
+		Mode:     0644,
+	})
+	content := "actual-content"
+	tw.WriteHeader(&tar.Header{
+		Name: "real-file",
+		Mode: 0644,
+		Size: int64(len(content)),
+	})
+	tw.Write([]byte(content))
+	tw.Close()
+	gz.Close()
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-metadata-*.tar.gz")
+	tmp.Write(buf.Bytes())
+	tmp.Close()
+
+	dest := t.TempDir()
+	if err := Extract(tmp.Name(), "tar.gz", ExtractOpts{StripComponents: 0, Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dest, "pax_global_header")); !os.IsNotExist(err) {
+		t.Error("pax_global_header should not have been extracted")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "a-fifo")); !os.IsNotExist(err) {
+		t.Error("FIFO entry should not have been extracted")
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "real-file"))
+	if err != nil {
+		t.Fatalf("real-file not extracted: %v", err)
+	}
+	if string(data) != content {
+		t.Errorf("real-file content = %q, want %q", data, content)
 	}
 }
 

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/enr/paq/internal/backend"
 	"github.com/enr/paq/internal/download"
 	"github.com/enr/paq/internal/platform"
+	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/template"
 	"github.com/enr/paq/internal/ui"
 	"github.com/enr/paq/internal/verify"
@@ -22,6 +25,15 @@ const selfUpdateRepo = "enr/paq"
 
 // selfUpdateChecksums is the name of the sha256 checksum asset in releases.
 const selfUpdateChecksums = "SHA256SUMS"
+
+// selfUpdateChecksumsSig is the name of SHA256SUMS' minisign signature asset,
+// published alongside it starting with this release. Signed with the same
+// key pair as the registry (one trust anchor, see registry.DefaultPublicKey).
+const selfUpdateChecksumsSig = "SHA256SUMS.minisig"
+
+// selfUpdateClient builds the HTTP client used for the self-update's GitHub
+// requests and downloads. Overridable in tests (mirrors registryUpdateClient).
+var selfUpdateClient = download.NewClient
 
 var selfUpdateCmd = &cobra.Command{
 	Use:   "self-update",
@@ -48,8 +60,10 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	check, _ := cmd.Flags().GetBool("check")
 	force, _ := cmd.Flags().GetBool("force")
 
+	client := selfUpdateClient()
+
 	ui.Step("Resolving latest paq release...")
-	latest, tag, err := version.GitHubReleaseProvider{Repo: selfUpdateRepo}.Resolve(ctx)
+	latest, tag, err := (version.GitHubReleaseProvider{Repo: selfUpdateRepo, HTTPClient: client}).Resolve(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve latest release: %w", err)
 	}
@@ -90,40 +104,12 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 
 	assetName := selfUpdateAssetName(tag, plat.OS, plat.Arch)
 	ui.Debug("asset name: %s", assetName)
-	gb := backend.GitHubBackend{Repo: selfUpdateRepo, Asset: assetName}
-	url, err := gb.Resolve(ctx, tag, vars)
-	if err != nil {
-		return fmt.Errorf("resolve release asset: %w", err)
-	}
-	ui.Debug("asset URL: %s", url)
 
-	sumsURL, err := backend.GitHubBackend{Repo: selfUpdateRepo, Asset: selfUpdateChecksums}.Resolve(ctx, tag, vars)
+	zipPath, err := downloadAndVerifyRelease(ctx, client, tag, vars, assetName, ui.NewProgressFn("paq"))
 	if err != nil {
-		return fmt.Errorf("resolve checksums asset: %w", err)
-	}
-	ui.Debug("checksums URL: %s", sumsURL)
-
-	ui.Step("Downloading %s...", assetName)
-	zipPath, err := download.ToTemp(ctx, download.NewClient(), url, ui.NewProgressFn("paq"))
-	if err != nil {
-		return fmt.Errorf("download release: %w", err)
-	}
-	defer os.Remove(zipPath)
-
-	sumsPath, err := download.ToTemp(ctx, download.NewClient(), sumsURL, nil)
-	if err != nil {
-		return fmt.Errorf("download checksums: %w", err)
-	}
-	defer os.Remove(sumsPath)
-
-	ui.Step("Verifying checksum...")
-	if err := verify.Run(verify.Plan{
-		SHA256AssetPath: sumsPath,
-		ArtifactName:    assetName,
-		ArtifactPath:    zipPath,
-	}); err != nil {
 		return err
 	}
+	defer os.Remove(zipPath)
 
 	// Extract the binary from the zip archive.
 	binName := "paq" + plat.Ext
@@ -152,6 +138,78 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 
 	ui.OK("paq updated to %s (%s)", latest, exePath)
 	return nil
+}
+
+// downloadAndVerifyRelease resolves the release asset and checksums URLs,
+// downloads them, and verifies the artifact's checksum before returning the
+// path of the verified zip archive (the caller must remove it). When the
+// running build has a registry public key embedded (registry.DefaultPublicKey,
+// set via -ldflags at release build time), it also requires and verifies a
+// minisign signature over SHA256SUMS: transport integrity alone is not
+// authenticity. There is no fallback to unsigned — a release published
+// before the signature asset existed fails outright when the build has a
+// key, instead of silently downgrading to checksum-only.
+func downloadAndVerifyRelease(ctx context.Context, client *http.Client, tag string, vars template.Vars, assetName string, progress download.ProgressFn) (zipPath string, err error) {
+	gb := backend.GitHubBackend{Repo: selfUpdateRepo, Asset: assetName, HTTPClient: client}
+	url, err := gb.Resolve(ctx, tag, vars)
+	if err != nil {
+		return "", fmt.Errorf("resolve release asset: %w", err)
+	}
+	ui.Debug("asset URL: %s", url)
+
+	sumsURL, err := (backend.GitHubBackend{Repo: selfUpdateRepo, Asset: selfUpdateChecksums, HTTPClient: client}).Resolve(ctx, tag, vars)
+	if err != nil {
+		return "", fmt.Errorf("resolve checksums asset: %w", err)
+	}
+	ui.Debug("checksums URL: %s", sumsURL)
+
+	ui.Step("Downloading %s...", assetName)
+	zipPath, err = download.ToTemp(ctx, client, url, progress)
+	if err != nil {
+		return "", fmt.Errorf("download release: %w", err)
+	}
+	cleanup := func() { os.Remove(zipPath) }
+
+	sumsPath, err := download.ToTemp(ctx, client, sumsURL, nil)
+	if err != nil {
+		cleanup()
+		return "", fmt.Errorf("download checksums: %w", err)
+	}
+	defer os.Remove(sumsPath)
+
+	verifyPlan := verify.Plan{
+		SHA256AssetPath: sumsPath,
+		ArtifactName:    assetName,
+		ArtifactPath:    zipPath,
+	}
+
+	if registry.DefaultPublicKey != "" {
+		sigURL, err := (backend.GitHubBackend{Repo: selfUpdateRepo, Asset: selfUpdateChecksumsSig, HTTPClient: client}).Resolve(ctx, tag, vars)
+		if err != nil {
+			cleanup()
+			return "", fmt.Errorf("resolve checksums signature asset: %w", err)
+		}
+		ui.Debug("checksums signature URL: %s", sigURL)
+
+		sigPath, err := download.ToTemp(ctx, client, sigURL, nil)
+		if err != nil {
+			cleanup()
+			return "", fmt.Errorf("download checksums signature: %w", err)
+		}
+		defer os.Remove(sigPath)
+
+		verifyPlan.MinisignPubKey = registry.DefaultPublicKey
+		verifyPlan.MinisignSigPath = sigPath
+		ui.Step("Verifying signature...")
+	} else {
+		ui.Step("Verifying checksum...")
+	}
+
+	if err := verify.Run(verifyPlan); err != nil {
+		cleanup()
+		return "", err
+	}
+	return zipPath, nil
 }
 
 // replaceExecutable replaces the binary at exePath with the one at newBinary.

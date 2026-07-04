@@ -21,7 +21,8 @@ type symlinkEntry struct {
 func extractTar(r io.Reader, opts ExtractOpts) error {
 	tr := tar.NewReader(r)
 
-	found := false // used for Extract mode (single file)
+	wanted := extractSet(opts.Extracts)
+	found := make(map[string]bool, len(wanted)) // used for Extracts mode
 	var symlinks []symlinkEntry
 
 	for {
@@ -45,18 +46,29 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			return fmt.Errorf("entry %q is a hardlink: not supported", hdr.Name)
 		}
 
+		switch hdr.Typeflag {
+		case tar.TypeXGlobalHeader, tar.TypeXHeader, tar.TypeGNULongName, tar.TypeGNULongLink:
+			continue // metadata entries, never materialized
+		case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
+			continue // special files: never useful in a tool archive, skip
+		}
+
 		switch {
-		case opts.Extract != "":
-			// Single-file mode: look up the file by basename.
-			if hdr.Typeflag != tar.TypeSymlink && filepath.Base(stripped) == opts.Extract {
-				dest, err := securePath(opts.Dest, opts.Extract)
+		case wanted != nil:
+			// Extracts mode: look up each wanted file by basename.
+			base := filepath.Base(stripped)
+			if hdr.Typeflag != tar.TypeSymlink && hdr.Typeflag != tar.TypeDir && wanted[base] {
+				if found[base] {
+					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", base)
+				}
+				dest, err := securePath(opts.Dest, base)
 				if err != nil {
 					return err
 				}
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
-				found = true
+				found[base] = true
 			}
 
 		case opts.Subdir != "":
@@ -76,10 +88,12 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 				}
 			case tar.TypeSymlink:
 				symlinks = append(symlinks, symlinkEntry{dest: dest, linkname: hdr.Linkname})
-			default:
+			case tar.TypeReg:
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
+			default:
+				continue
 			}
 
 		default:
@@ -95,10 +109,12 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 				}
 			case tar.TypeSymlink:
 				symlinks = append(symlinks, symlinkEntry{dest: dest, linkname: hdr.Linkname})
-			default:
+			case tar.TypeReg:
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
+			default:
+				continue
 			}
 		}
 	}
@@ -109,8 +125,8 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 		}
 	}
 
-	if opts.Extract != "" && !found {
-		return fmt.Errorf("file %q not found in archive", opts.Extract)
+	if err := missingExtractsError(wanted, found); err != nil {
+		return err
 	}
 	return nil
 }

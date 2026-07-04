@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -231,6 +232,191 @@ func TestPipelineLatestNoStrategyErrors(t *testing.T) {
 	err := Run(context.Background(), cfg, "tool", nil, nil)
 	if !errors.Is(err, version.ErrLatestNotImplemented) {
 		t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
+	}
+}
+
+// TestPipelineAssetTemplateErrorSurfaces verifies that a spec.Asset template
+// referencing an unknown placeholder fails the install instead of silently
+// falling back to the URL's basename.
+func TestPipelineAssetTemplateErrorSurfaces(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend: "url",
+				Source:  "https://example.com/tool-{{version}}.tar.gz",
+				Asset:   "tool-{{bogus}}.tar.gz",
+				Archive: "tar.gz",
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "resolve asset name") {
+		t.Fatalf("expected asset name resolution error, got %v", err)
+	}
+}
+
+// TestPipelineAppliesEnvMapping verifies that [x.env] (and the app-level
+// override) affects {{env}} in the source URL template, mirroring how
+// spec.OS/spec.Arch are applied.
+func TestPipelineAppliesEnvMapping(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("env mapping keys off the linux-only \"gnu\" canonical value")
+	}
+	isolateState(t)
+	fileContent := []byte("payload")
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", fileContent)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}-{{env}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+				Env:             map[string]string{"gnu": "musl"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if !strings.Contains(gotPath, "musl") {
+		t.Errorf("request path = %q, want it to contain \"musl\"", gotPath)
+	}
+
+	// App-level env override takes precedence over the spec's.
+	gotPath = ""
+	cfg.Apps["tool"] = config.AppEntry{
+		Use: "tool", Version: "1.0.0", Dest: t.TempDir(),
+		Env: map[string]string{"gnu": "override"},
+	}
+	if err := Run(context.Background(), cfg, "tool", nil, &Hooks{Force: true}); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if !strings.Contains(gotPath, "override") {
+		t.Errorf("request path = %q, want it to contain \"override\"", gotPath)
+	}
+}
+
+// TestPipelineRefusesToReplaceUnownedDest verifies that installing a "dir"
+// kind spec over a pre-existing, non-empty directory that paq didn't create
+// fails instead of silently wiping it out, and that Force overrides the guard.
+func TestPipelineRefusesToReplaceUnownedDest(t *testing.T) {
+	isolateState(t)
+	fileContent := []byte("payload")
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", fileContent)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "unrelated-file"), []byte("pre-existing"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "not created by paq") {
+		t.Fatalf("expected 'not created by paq' error, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "unrelated-file")); err != nil {
+		t.Errorf("pre-existing file was removed: %v", err)
+	}
+
+	// Force overrides the guard.
+	if err := Run(context.Background(), cfg, "tool", nil, &Hooks{Force: true}); err != nil {
+		t.Fatalf("install with Force failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	if err != nil {
+		t.Fatalf("installed file not found: %v", err)
+	}
+	if !bytes.Equal(data, fileContent) {
+		t.Errorf("content = %q, want %q", data, fileContent)
+	}
+}
+
+// TestPipelineReinstallOwnedDestSucceedsWithoutForce verifies that a dest
+// already recorded in state from a previous install (a different version)
+// can be reinstalled into without --force: the upgrade/reinstall flow is
+// unaffected by the "not created by paq" guard.
+func TestPipelineReinstallOwnedDestSucceedsWithoutForce(t *testing.T) {
+	isolateState(t)
+	zipDataV1 := makeFakeZip("tool-1.0.0", "bin/tool", []byte("v1"))
+	zipDataV2 := makeFakeZip("tool-2.0.0", "bin/tool", []byte("v2"))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "2.0.0") {
+			w.Write(zipDataV2)
+			return
+		}
+		w.Write(zipDataV1)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+
+	cfg.Apps["tool"] = config.AppEntry{Use: "tool", Version: "2.0.0", Dest: dest}
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("reinstall over owned dest failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	if err != nil {
+		t.Fatalf("installed file not found: %v", err)
+	}
+	if string(data) != "v2" {
+		t.Errorf("content = %q, want v2", data)
 	}
 }
 
@@ -712,5 +898,75 @@ func TestPipelineHalfConfiguredMinisignFails(t *testing.T) {
 		if !strings.Contains(err.Error(), "public_key and signed_asset") {
 			t.Errorf("%s: error = %q, want mention of public_key and signed_asset", name, err)
 		}
+	}
+}
+
+func TestBuildAuxURL(t *testing.T) {
+	cases := []struct {
+		name        string
+		downloadURL string
+		assetName   string
+		auxName     string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:        "happy path",
+			downloadURL: "https://example.com/dl/tool-1.0.0.tar.gz",
+			assetName:   "tool-1.0.0.tar.gz",
+			auxName:     "tool-1.0.0.tar.gz.sha256",
+			want:        "https://example.com/dl/tool-1.0.0.tar.gz.sha256",
+		},
+		{
+			name:        "url with query string",
+			downloadURL: "https://example.com/dl/tool-1.0.0.tar.gz?token=abc",
+			assetName:   "tool-1.0.0.tar.gz",
+			auxName:     "tool-1.0.0.tar.gz.sha256",
+			wantErr:     true,
+		},
+		{
+			name:        "mismatched asset name",
+			downloadURL: "https://example.com/dl/other.tar.gz",
+			assetName:   "tool-1.0.0.tar.gz",
+			auxName:     "tool-1.0.0.tar.gz.sha256",
+			wantErr:     true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := buildAuxURL(c.downloadURL, c.assetName, c.auxName)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("buildAuxURL() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestFilesha256(t *testing.T) {
+	if _, err := filesha256(filepath.Join(t.TempDir(), "nonexistent")); err == nil {
+		t.Error("expected error for nonexistent path, got nil")
+	}
+
+	content := []byte("hello paq")
+	f := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(f, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := filesha256(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := sha256hex(content); got != want {
+		t.Errorf("filesha256() = %q, want %q", got, want)
 	}
 }

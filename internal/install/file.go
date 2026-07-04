@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/enr/paq/internal/archive"
 )
@@ -36,12 +35,12 @@ func InstallFile(archivePath, archiveType, extractName, dest, chmod string) erro
 	extracted := filepath.Join(tmpDir, extractName)
 
 	// Apply chmod.
-	if chmod != "" {
-		mode, err := strconv.ParseUint(chmod, 8, 32)
-		if err != nil {
-			return fmt.Errorf("parse chmod %q: %w", chmod, err)
-		}
-		if err := os.Chmod(extracted, os.FileMode(mode)); err != nil {
+	mode, err := parseFileMode(chmod)
+	if err != nil {
+		return err
+	}
+	if mode != 0 {
+		if err := os.Chmod(extracted, mode); err != nil {
 			return fmt.Errorf("chmod: %w", err)
 		}
 	}

@@ -18,7 +18,7 @@ Conventions used below:
 
 ---
 
-## M1. Apply the `env` mapping (or remove the field)
+## M1. Apply the `env` mapping (or remove the field) — DONE
 
 **Problem.** `Spec.Env` and `AppEntry.Env` (`internal/config/types.go`) are
 decoded from TOML and rendered by `paq registry show`
@@ -61,7 +61,7 @@ green.
 
 ---
 
-## M2. Key per-OS meta-template overrides by canonical OS
+## M2. Key per-OS meta-template overrides by canonical OS — DONE
 
 **Problem.** `internal/install/pipeline.go` builds `template.Vars` with
 `OS: resolvedOS` (the *mapped* OS, e.g. `"mac"` for temurin) and then
@@ -101,7 +101,7 @@ case: `canonicalOS: "linux"` → the global template applies.
 
 ---
 
-## M3. Make meta-template expansion deterministic
+## M3. Make meta-template expansion deterministic — DONE
 
 **Problem.** `template.Expand` iterates `MetaTemplates` (a Go map) in random
 order while writing results into `v.Extra`, which later iterations can read.
@@ -146,7 +146,7 @@ loop ~50 times in the test to catch order dependence).
 
 ---
 
-## M4. One shared definition of "tracks latest" for install/upgrade/outdated
+## M4. One shared definition of "tracks latest" for install/upgrade/outdated — DONE
 
 **Problem.** The pipeline treats `version = ""` as "default_version, else
 latest" (`internal/install/pipeline.go`, the `switch` on `app.Version`), but
@@ -201,7 +201,7 @@ green.
 
 ---
 
-## M5. `buildAuxURL` must fail instead of producing a wrong URL
+## M5. `buildAuxURL` must fail instead of producing a wrong URL — DONE
 
 **Problem.** `internal/install/pipeline.go`:
 
@@ -242,7 +242,7 @@ asset name instead of downloading a bogus URL; suite green.
 
 ---
 
-## M6. Restrict bare-hash checksum parsing to single-line files
+## M6. Restrict bare-hash checksum parsing to single-line files — DONE
 
 **Problem.** `internal/verify/sha256.go` (`ParseSHA256File`) and
 `internal/verify/sha512.go` (`ParseSHA512File`): the first one-column line
@@ -277,7 +277,7 @@ bare-hash files (Maven-style sha512) still install.
 
 ---
 
-## M7. Enforce the registry size cap during download
+## M7. Enforce the registry size cap during download — DONE
 
 **Problem.** `cmd/paq/registry_update.go` checks `registryMaxBytes` only
 after `download.ToTemp` has streamed the whole body to disk. A hostile custom
@@ -319,7 +319,7 @@ registry response are ever written to disk; suite green.
 
 ---
 
-## M8. tar: extract only regular files, dirs and symlinks
+## M8. tar: extract only regular files, dirs and symlinks — DONE
 
 **Problem.** `internal/archive/tar.go`, in both the Subdir and standard
 branches, the `default:` case of the `switch hdr.Typeflag` writes *any*
@@ -359,7 +359,7 @@ suite green.
 
 ---
 
-## M9. Refuse to replace or remove a dest that paq does not own
+## M9. Refuse to replace or remove a dest that paq does not own — DONE
 
 **Problem.** Two sides of the same trust gap:
 
@@ -429,7 +429,7 @@ directory; documented upgrade/reinstall flows unchanged; suite green.
 
 ---
 
-## M10. Paginate GitHub release asset lookup
+## M10. Paginate GitHub release asset lookup — DONE
 
 **Problem.** `internal/backend/github.go` reads the `assets` array embedded
 in `GET /repos/{repo}/releases/tags/{tag}`, which contains at most the first
@@ -469,7 +469,7 @@ assets make exactly one HTTP call as today; suite green.
 
 ---
 
-## L1. Propagate hashing errors into the state record
+## L1. Propagate hashing errors into the state record — DONE
 
 **Problem.** `internal/install/pipeline.go`: `filesha256` ignores the
 `io.Copy` error, and `Run` ignores `filesha256`'s error
@@ -494,7 +494,7 @@ file (correct digest). The warn path is not worth a dedicated test.
 
 ---
 
-## L2. Extract-by-basename: skip directories, reject ambiguity
+## L2. Extract-by-basename: skip directories, reject ambiguity — DONE
 
 **Problem.** Both `internal/archive/tar.go` and `zip.go` in Extract mode match
 *any* entry whose basename equals `opts.Extract`; the last match wins
@@ -528,7 +528,7 @@ unique basename).
 
 ---
 
-## L3. Single-pass multi-binary extraction; dedupe chmod parsing
+## L3. Single-pass multi-binary extraction; dedupe chmod parsing — DONE
 
 **Problem.** `internal/install/binaries.go` calls `archive.Extract` once per
 binary — N full decompressions of the same archive. Also `file.go` duplicates
@@ -573,7 +573,7 @@ binaries; behavior otherwise identical; suite green.
 
 ---
 
-## L4. Non-interactive uninstall requires `--yes`
+## L4. Non-interactive uninstall requires `--yes` — DONE
 
 **Problem.** `cmd/paq/uninstall.go`: when stdout is not a TTY, the
 confirmation is *skipped* and removal proceeds. Scripts destroy files with no
@@ -604,7 +604,7 @@ release notes.
 
 ---
 
-## L5. Cross-process lock for the state file
+## L5. Cross-process lock for the state file — DONE
 
 **Problem.** `internal/state`'s mutex serializes goroutines, not processes.
 Two concurrent `paq` invocations lose each other's `state.json` updates
@@ -639,7 +639,7 @@ processes cannot lose a record; readers unaffected.
 
 ---
 
-## L6. Sign SHA256SUMS and verify it in self-update
+## L6. Sign SHA256SUMS and verify it in self-update — DONE
 
 **Problem.** `paq self-update` verifies the binary only against a same-origin
 `SHA256SUMS`: transport integrity, not authenticity. The minisign
@@ -675,7 +675,7 @@ checksum files; dev builds (no key) behave as today.
 
 ---
 
-## L7. Housekeeping batch
+## L7. Housekeeping batch — DONE
 
 Small, zero-risk cleanups; land as one commit.
 

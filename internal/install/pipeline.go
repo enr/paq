@@ -101,10 +101,6 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	dbg("app=%q spec=%q backend=%q version=%q dest=%q", appName, specName, spec.Backend, app.Version, app.Dest)
 
-	if spec.Extract != "" && len(spec.Binaries) > 0 {
-		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
-	}
-
 	// Reject a broken minisign configuration before any network access.
 	// Minisign signs the sha256 checksum file: without sha256_asset there is
 	// nothing to verify the signature against, and a half-configured minisign
@@ -137,6 +133,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	//   - "latest"        → live resolution via strategy/backend (no fallback)
 	//   - "x.y.z"         → explicit pin
 	step(fmt.Sprintf("Resolving version for %s...", appName))
+	// Keep in sync with AppEntry.TracksLatest (internal/config/types.go), which
+	// upgrade/outdated use to decide which apps to consider.
 	var versionProvider version.Provider
 	switch {
 	case app.Version == "" && spec.DefaultVersion != "":
@@ -180,6 +178,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// Apply the spec's per-OS override (e.g. jdk has [jdk.darwin]).
 	spec = spec.ApplyOSOverride(plat.OS)
 
+	if spec.Extract != "" && len(spec.Binaries) > 0 {
+		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
+	}
+
 	// Apply the spec's arch/os override (maps [ripgrep.arch]).
 	resolvedArch := platform.ApplyMap(spec.Arch, plat.Arch, plat.Arch)
 	resolvedOS := platform.ApplyMap(spec.OS, plat.OS, plat.OS)
@@ -191,12 +193,16 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if app.OS != nil {
 		resolvedOS = platform.ApplyMap(app.OS, plat.OS, resolvedOS)
 	}
+	resolvedEnv := platform.ApplyMap(spec.Env, plat.Env, plat.Env)
+	if app.Env != nil {
+		resolvedEnv = platform.ApplyMap(app.Env, plat.Env, resolvedEnv)
+	}
 
 	vars := template.Vars{
 		OS:           resolvedOS,
 		Arch:         resolvedArch,
 		Vendor:       plat.Vendor,
-		Env:          plat.Env,
+		Env:          resolvedEnv,
 		Ext:          plat.Ext,
 		Version:      ver,
 		VersionMajor: versionMajor,
@@ -208,7 +214,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// 4. Expand the meta-templates.
 	// Load the embedded templates.toml.
 	globalMT, osMT := loadTemplates(cfg, spec)
-	vars, err = template.Expand(globalMT, osMT, vars)
+	vars, err = template.Expand(globalMT, osMT, plat.OS, vars)
 	if err != nil {
 		return fmt.Errorf("expand meta-templates: %w", err)
 	}
@@ -242,7 +248,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("resolve download URL: %w", err)
 	}
 	ok(fmt.Sprintf("URL: %s", downloadURL))
-	dbg("resolved: os=%q arch=%q dest=%q", resolvedOS, resolvedArch, dest)
+	dbg("resolved: os=%q arch=%q env=%q dest=%q", resolvedOS, resolvedArch, resolvedEnv, dest)
 
 	// Variables for asset names.
 	assetName := filepath.Base(downloadURL)
@@ -255,10 +261,12 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// Resolve the asset name from the template and add it to vars.Extra so
 	// that {{asset}} is available in subsequent templates (e.g. sha256_asset).
 	if spec.Asset != "" {
-		if name, err2 := template.Resolve(spec.Asset, vars); err2 == nil {
-			assetName = name
-			vars.Extra["asset"] = name
+		name, err2 := template.Resolve(spec.Asset, vars)
+		if err2 != nil {
+			return fmt.Errorf("resolve asset name: %w", err2)
 		}
+		assetName = name
+		vars.Extra["asset"] = name
 	}
 	dbg("asset name: %q", assetName)
 
@@ -273,7 +281,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			gb := backend.GitHubBackend{Repo: spec.Repo, Asset: auxName}
 			return gb.Resolve(ctx, tag, vars)
 		}
-		return buildAuxURL(downloadURL, assetName, auxName), nil
+		return buildAuxURL(downloadURL, assetName, auxName)
 	}
 
 	client := download.NewClient()
@@ -301,7 +309,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		if err2 != nil {
 			return fmt.Errorf("resolve sha256_asset URL: %w", err2)
 		}
-		step(fmt.Sprintf("Downloading checksum file..."))
+		step("Downloading checksum file...")
 		dbg("sha256 checksum URL: %s", checksumURL)
 		checksumPath, err = download.ToTemp(ctx, client, checksumURL, nil)
 		if err != nil {
@@ -394,7 +402,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 
 	// 11. Compute the artifact's SHA256 for the state.
-	artifactSHA256, _ := filesha256(artifactPath)
+	artifactSHA256, err := filesha256(artifactPath)
+	if err != nil {
+		warn(fmt.Sprintf("could not hash artifact for the state record: %v", err))
+		artifactSHA256 = ""
+	}
 	dbg("artifact sha256: %s", artifactSHA256)
 
 	// 12. Install.
@@ -461,6 +473,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	default:
 		// Dest is a directory.
 		kind = "dir"
+		if !hooks.Force {
+			if err := checkDestSafeToReplace(dest); err != nil {
+				return err
+			}
+		}
 		if err := InstallDir(artifactPath, spec.Archive, dest, archiveOpts); err != nil {
 			return fmt.Errorf("install dir: %w", err)
 		}
@@ -526,9 +543,50 @@ func loadTemplates(cfg *config.Config, spec config.Spec) (template.MetaTemplates
 
 // buildAuxURL builds the URL of an auxiliary asset (checksum, signature) by
 // substituting the main asset's name with the auxiliary one in the URL.
-func buildAuxURL(downloadURL, assetName, auxName string) string {
-	base := strings.TrimSuffix(downloadURL, assetName)
-	return base + auxName
+func buildAuxURL(downloadURL, assetName, auxName string) (string, error) {
+	if !strings.HasSuffix(downloadURL, assetName) {
+		return "", fmt.Errorf("cannot derive %q: download URL %q does not end with asset name %q", auxName, downloadURL, assetName)
+	}
+	return strings.TrimSuffix(downloadURL, assetName) + auxName, nil
+}
+
+// checkDestSafeToReplace fails if dest exists, is a non-empty directory, and
+// is not recorded in the state DB as the destination of a previous install.
+// It guards against a manifest typo (e.g. dest = "~/.local") wiping out an
+// unrelated directory; --force (handled by the caller) remains the escape hatch.
+func checkDestSafeToReplace(dest string) error {
+	info, err := os.Stat(dest)
+	if err != nil {
+		return nil // doesn't exist: nothing to protect
+	}
+	if !info.IsDir() {
+		return nil // InstallDir's rename swap handles this; bounded blast radius
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil || len(entries) == 0 {
+		return nil // empty (or unreadable): nothing valuable to lose
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		st = &state.State{} // load error: treat as not-owned (fail closed)
+	}
+	if destOwnedByPaq(st, dest) {
+		return nil
+	}
+	return fmt.Errorf("destination %s already exists and was not created by paq: remove it or use --force", dest)
+}
+
+// destOwnedByPaq reports whether dest is recorded in the state DB as the
+// destination of any installed app (any version).
+func destOwnedByPaq(st *state.State, dest string) bool {
+	clean := filepath.Clean(dest)
+	for _, rec := range st.Packages {
+		if filepath.Clean(rec.Dest) == clean {
+			return true
+		}
+	}
+	return false
 }
 
 func expandHome(path string) string {
@@ -548,6 +606,8 @@ func filesha256(path string) (string, error) {
 	}
 	defer f.Close()
 	h := sha256.New()
-	io.Copy(h, f)
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

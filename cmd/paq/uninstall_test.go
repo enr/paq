@@ -33,10 +33,14 @@ func TestConfirmYesNo(t *testing.T) {
 	}
 }
 
-// TestRunUninstallNonTTYSkipsPrompt verifies that under `go test` (stdout is
-// not a terminal) runUninstall proceeds without blocking on a confirmation
-// prompt, even with --yes unset.
-func TestRunUninstallNonTTYSkipsPrompt(t *testing.T) {
+// TestRunUninstallNonTTYRequiresYes verifies that in a non-interactive
+// session (no TTY on stdout) runUninstall refuses to proceed without --yes,
+// removing nothing, and proceeds once --yes is passed.
+func TestRunUninstallNonTTYRequiresYes(t *testing.T) {
+	prevIsTTY := uninstallIsTTY
+	uninstallIsTTY = func() bool { return false }
+	t.Cleanup(func() { uninstallIsTTY = prevIsTTY })
+
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)
 
@@ -61,10 +65,17 @@ func TestRunUninstallNonTTYSkipsPrompt(t *testing.T) {
 		flagUninstallDryRun = false
 	})
 
-	if err := runUninstall(uninstallCmd, []string{"rg"}); err != nil {
-		t.Fatalf("runUninstall: %v", err)
+	if err := runUninstall(uninstallCmd, []string{"rg"}); err == nil {
+		t.Fatal("expected an error without --yes in a non-interactive session")
+	}
+	if _, err := os.Stat(binPath); err != nil {
+		t.Errorf("expected %s to survive without --yes, stat err = %v", binPath, err)
 	}
 
+	flagUninstallYes = true
+	if err := runUninstall(uninstallCmd, []string{"rg"}); err != nil {
+		t.Fatalf("runUninstall with --yes: %v", err)
+	}
 	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
 		t.Errorf("expected %s to be removed, stat err = %v", binPath, err)
 	}
@@ -94,7 +105,8 @@ func TestRunUninstallMultiApp(t *testing.T) {
 		t.Fatalf("save state: %v", err)
 	}
 
-	flagUninstallYes = false
+	// --yes: this test is about multi-app removal, not the confirmation flow.
+	flagUninstallYes = true
 	flagUninstallDryRun = false
 	t.Cleanup(func() {
 		flagUninstallYes = false
@@ -147,6 +159,27 @@ func TestRunUninstallMultiAppFailsFastOnUnknownName(t *testing.T) {
 
 	if _, statErr := os.Stat(rgPath); statErr != nil {
 		t.Errorf("rg should not have been removed when a later argument is invalid, stat err = %v", statErr)
+	}
+}
+
+// TestRemoveRecordFilesRefusesHomeDir verifies that a "dir" kind record whose
+// Dest is the user's home directory is refused instead of being wiped out
+// (e.g. a manifest typo like dest = "~").
+func TestRemoveRecordFilesRefusesHomeDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	marker := filepath.Join(home, "marker")
+	if err := os.WriteFile(marker, []byte("keep me"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := state.InstalledApp{Name: "oops", Version: "1.0.0", Kind: "dir", Dest: home}
+	err := removeRecordFiles(rec)
+	if err == nil || !strings.Contains(err.Error(), "refusing to remove") {
+		t.Fatalf("expected 'refusing to remove' error, got %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("home directory contents were removed: %v", err)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
@@ -298,11 +299,22 @@ func TestRegistryUpdateOversize(t *testing.T) {
 	registryMaxBytes = 16
 	t.Cleanup(func() { registryMaxBytes = prev })
 
+	before, _ := filepath.Glob(filepath.Join(os.TempDir(), "paq-download-*"))
+
 	s := newSigner(t)
 	url := serve(t, validFixture(t, s, "1.0.0", "[t]\nbackend = \"github\"\n"))
 	setupEnv(t, url, s.pubB64)
-	if err := runUpdate(t, false); err == nil {
+	err := runUpdate(t, false)
+	if err == nil {
 		t.Fatal("update should reject an oversized archive")
+	}
+	if !strings.Contains(err.Error(), "16") {
+		t.Errorf("error = %v, want it to mention the byte limit (16)", err)
+	}
+
+	after, _ := filepath.Glob(filepath.Join(os.TempDir(), "paq-download-*"))
+	if len(after) > len(before) {
+		t.Errorf("leftover paq-download temp files: before=%d after=%d", len(before), len(after))
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -118,9 +117,22 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 
 	app := cfg.Apps[name]
 
+	specName := app.Use
+	if specName == "" {
+		specName = name
+	}
+	spec, found := cfg.Specs[specName]
+	if !found {
+		return fmt.Errorf("spec %q not found in registry", specName)
+	}
+
 	// Apps pinned to a fixed version are not upgraded.
-	if strings.ToLower(app.Version) != "latest" {
-		step("pinned to %s, skipping", app.Version)
+	if !app.TracksLatest(spec) {
+		pinned := app.Version
+		if pinned == "" {
+			pinned = spec.DefaultVersion
+		}
+		step("pinned to %s, skipping", pinned)
 		return nil
 	}
 
@@ -134,14 +146,6 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 		return nil
 	}
 
-	specName := app.Use
-	if specName == "" {
-		specName = name
-	}
-	spec, found := cfg.Specs[specName]
-	if !found {
-		return fmt.Errorf("spec %q not found in registry", specName)
-	}
 	step("Resolving latest version...")
 	latest, err := resolveLatestVersion(ctx, spec)
 	if errors.Is(err, version.ErrLatestNotImplemented) {

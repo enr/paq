@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/install"
+	"github.com/enr/paq/internal/state"
 )
 
 // TestRunUpgradeMultiArgFailsFastOnUnknownName verifies that when multiple
@@ -51,5 +54,78 @@ func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 
 	if err := runUpgrade(upgradeCmd, []string{"rg", "bat"}); err != nil {
 		t.Errorf("expected pinned apps to be skipped without error, got: %v", err)
+	}
+}
+
+// TestUpgradeAppEmptyVersionNoDefaultTracksLatest verifies that an app with
+// NO version whose spec has NO default_version is treated as tracking latest
+// (not skipped as "pinned"), matching AppEntry.TracksLatest and the pipeline's
+// own version-resolution switch. The backend ("url", no latest_strategy)
+// can't actually resolve "latest", so it reaches the "no upstream strategy"
+// skip instead of the (buggy) "pinned to , skipping" path.
+func TestUpgradeAppEmptyVersionNoDefaultTracksLatest(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	cfg := &config.Config{
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool"}, // no version
+		},
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "url", Source: "https://example.invalid/{{version}}.tar.gz"},
+		},
+	}
+	if err := state.Update(func(st *state.State) error {
+		st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0"})
+		return nil
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	var steps []string
+	hooks := &install.Hooks{OnStep: func(msg string) { steps = append(steps, msg) }}
+
+	if err := upgradeApp(context.Background(), cfg, "tool", hooks, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, s := range steps {
+		if strings.Contains(s, "pinned to") {
+			t.Errorf("unexpected pinned skip message: %q", s)
+		}
+	}
+	if len(steps) == 0 || !strings.Contains(steps[len(steps)-1], "no upstream version to resolve") {
+		t.Fatalf("expected the \"no upstream strategy\" skip message, got %v", steps)
+	}
+}
+
+// TestUpgradeAppEmptyVersionWithDefaultSkipsWithDefaultInMessage verifies
+// that an app with NO version whose spec HAS a default_version is skipped as
+// pinned, and the skip message names the default version rather than
+// printing an empty string ("pinned to , skipping").
+func TestUpgradeAppEmptyVersionWithDefaultSkipsWithDefaultInMessage(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	cfg := &config.Config{
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool"}, // no version
+		},
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "url", Source: "https://example.invalid/{{version}}.tar.gz", DefaultVersion: "2.0.0"},
+		},
+	}
+
+	var steps []string
+	hooks := &install.Hooks{OnStep: func(msg string) { steps = append(steps, msg) }}
+
+	if err := upgradeApp(context.Background(), cfg, "tool", hooks, nil); err != nil {
+		t.Fatalf("expected pinned app to be skipped without error, got: %v", err)
+	}
+	if len(steps) != 1 {
+		t.Fatalf("expected exactly one step message, got %v", steps)
+	}
+	if !strings.Contains(steps[0], "2.0.0") {
+		t.Errorf("skip message = %q, want it to mention the default version 2.0.0", steps[0])
+	}
+	if strings.Contains(steps[0], "pinned to , ") {
+		t.Errorf("skip message = %q, must not print an empty version", steps[0])
 	}
 }

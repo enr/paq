@@ -71,21 +71,13 @@ func runRegistryUpdate(cmd *cobra.Command, args []string) error {
 	client := registryUpdateClient()
 
 	ui.Step("Downloading registry...")
-	tarPath, err := download.ToTemp(ctx, client, src.tarURL, ui.NewProgressFn("registry"))
+	tarPath, err := download.ToTempLimited(ctx, client, src.tarURL, registryMaxBytes, ui.NewProgressFn("registry"))
 	if err != nil {
 		return fmt.Errorf("download registry: %w", err)
 	}
 	defer os.Remove(tarPath)
 
-	info, err := os.Stat(tarPath)
-	if err != nil {
-		return err
-	}
-	if info.Size() > registryMaxBytes {
-		return fmt.Errorf("registry archive is too large (%d bytes, max %d)", info.Size(), registryMaxBytes)
-	}
-
-	sumsPath, err := download.ToTemp(ctx, client, src.sumsURL, nil)
+	sumsPath, err := download.ToTempLimited(ctx, client, src.sumsURL, registryMaxBytes, nil)
 	if err != nil {
 		return fmt.Errorf("download checksums: %w", err)
 	}
@@ -96,7 +88,7 @@ func runRegistryUpdate(cmd *cobra.Command, args []string) error {
 	// See plan/registry-signing-enablement.md for re-enabling enforcement.
 	var sigPath string
 	if src.pubKey != "" {
-		sigPath, err = download.ToTemp(ctx, client, src.sigURL, nil)
+		sigPath, err = download.ToTempLimited(ctx, client, src.sigURL, registryMaxBytes, nil)
 		if err != nil {
 			return fmt.Errorf("download signature: %w", err)
 		}

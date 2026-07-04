@@ -78,6 +78,9 @@ func TestCheckOutdatedSkipsPinnedVersion(t *testing.T) {
 		Apps: map[string]config.AppEntry{
 			"rg": {Use: "ripgrep", Version: "14.1.1"},
 		},
+		Specs: map[string]config.Spec{
+			"ripgrep": {},
+		},
 	}
 	st := &state.State{}
 
@@ -100,6 +103,9 @@ func TestCheckOutdatedSkipsNotInstalled(t *testing.T) {
 	cfg := &config.Config{
 		Apps: map[string]config.AppEntry{
 			"rg": {Use: "ripgrep", Version: "latest"},
+		},
+		Specs: map[string]config.Spec{
+			"ripgrep": {},
 		},
 	}
 	st := &state.State{} // nothing installed

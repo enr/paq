@@ -27,3 +27,27 @@ func TestSpecSupportsPlatform(t *testing.T) {
 		})
 	}
 }
+
+func TestAppEntryTracksLatest(t *testing.T) {
+	tests := []struct {
+		name           string
+		version        string
+		defaultVersion string
+		want           bool
+	}{
+		{"explicit latest", "latest", "", true},
+		{"explicit LATEST case-insensitive", "LATEST", "1.0.0", true},
+		{"empty version, no default", "", "", true},
+		{"empty version, has default", "", "1.0.0", false},
+		{"pinned version", "1.2.3", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := AppEntry{Version: tt.version}
+			spec := Spec{DefaultVersion: tt.defaultVersion}
+			if got := app.TracksLatest(spec); got != tt.want {
+				t.Errorf("TracksLatest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

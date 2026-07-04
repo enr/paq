@@ -54,21 +54,31 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Extract all binaries into temp and apply chmod, before touching destDir.
+	// Extract every binary in a single pass (one decompression regardless of
+	// how many binaries the spec lists), then apply chmod to each.
+	froms := make(map[string]bool, len(bins))
 	for _, b := range bins {
 		if b.From == "" {
 			return nil, fmt.Errorf("binaries: 'from' is required when 'archive' is set")
 		}
-		eopts := opts
-		eopts.Extract = b.From
-		eopts.Dest = tmpDir
-		if err := archive.Extract(artifactPath, archiveType, eopts); err != nil {
-			return nil, fmt.Errorf("extract %q: %w", b.From, err)
-		}
-		extracted := filepath.Join(tmpDir, b.From)
+		froms[b.From] = true
+	}
+	extracts := make([]string, 0, len(froms))
+	for from := range froms {
+		extracts = append(extracts, from)
+	}
+
+	eopts := opts
+	eopts.Extracts = extracts
+	eopts.Dest = tmpDir
+	if err := archive.Extract(artifactPath, archiveType, eopts); err != nil {
+		return nil, fmt.Errorf("extract binaries: %w", err)
+	}
+
+	for from := range froms {
 		if mode != 0 {
-			if err := os.Chmod(extracted, mode); err != nil {
-				return nil, fmt.Errorf("chmod %q: %w", b.From, err)
+			if err := os.Chmod(filepath.Join(tmpDir, from), mode); err != nil {
+				return nil, fmt.Errorf("chmod %q: %w", from, err)
 			}
 		}
 	}
