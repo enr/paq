@@ -429,7 +429,7 @@ directory; documented upgrade/reinstall flows unchanged; suite green.
 
 ---
 
-## M10. Paginate GitHub release asset lookup
+## M10. Paginate GitHub release asset lookup — DONE
 
 **Problem.** `internal/backend/github.go` reads the `assets` array embedded
 in `GET /repos/{repo}/releases/tags/{tag}`, which contains at most the first
