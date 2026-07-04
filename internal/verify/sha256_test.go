@@ -49,3 +49,60 @@ func TestParseSHA256File(t *testing.T) {
 		t.Error("expected error for missing filename")
 	}
 }
+
+// fakeSHA256 is a valid-length (64 hex chars) fake sha256 digest, for fixtures.
+const fakeSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+func TestParseSHA256FileBareHash(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "tool.tar.gz.sha256")
+	os.WriteFile(f, []byte(fakeSHA256+"\n"), 0644)
+
+	hash, err := ParseSHA256File(f, "tool.tar.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != fakeSHA256 {
+		t.Errorf("hash = %q, want %q", hash, fakeSHA256)
+	}
+}
+
+func TestParseSHA256FileOneFieldLineDoesNotShortCircuit(t *testing.T) {
+	// A stray one-field line precedes the real "hash  filename" line: the
+	// named hash must win, not the bare one.
+	content := "deadbeef\n" + fakeSHA256 + "  tool.tar.gz\n"
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "checksums.sha256")
+	os.WriteFile(f, []byte(content), 0644)
+
+	hash, err := ParseSHA256File(f, "tool.tar.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != fakeSHA256 {
+		t.Errorf("hash = %q, want %q", hash, fakeSHA256)
+	}
+}
+
+func TestParseSHA256FileMalformedBareHash(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "bad.sha256")
+	os.WriteFile(f, []byte("not-a-hash\n"), 0644)
+
+	if _, err := ParseSHA256File(f, "tool.tar.gz"); err == nil {
+		t.Error("expected error for malformed bare hash")
+	}
+}
+
+func TestParseSHA256FileNameNotFound(t *testing.T) {
+	content := fakeSHA256 + "  tool.tar.gz\n"
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "checksums.sha256")
+	os.WriteFile(f, []byte(content), 0644)
+
+	if _, err := ParseSHA256File(f, "nonexistent.tar.gz"); err == nil {
+		t.Error("expected error for missing filename")
+	}
+}

@@ -242,7 +242,7 @@ asset name instead of downloading a bogus URL; suite green.
 
 ---
 
-## M6. Restrict bare-hash checksum parsing to single-line files
+## M6. Restrict bare-hash checksum parsing to single-line files — DONE
 
 **Problem.** `internal/verify/sha256.go` (`ParseSHA256File`) and
 `internal/verify/sha512.go` (`ParseSHA512File`): the first one-column line
