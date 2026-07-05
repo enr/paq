@@ -2,6 +2,17 @@
 
 `paq` installs and manages CLI tools from GitHub releases and direct URLs, driven by a simple TOML configuration.
 
+paq is built for one job: **installing tools and applications, fast**, without
+touching the rest of your environment. It drops binaries into plain directories
+you own — no daemon, no runtime, no shell hooks — so it stays out of your way
+and is never invasive.
+
+It is not a version manager and won't switch "active" versions for you. What it
+*does* make effortless is keeping several versions of the same tool side by side
+(see [Installing multiple versions](#installing-multiple-versions-of-the-same-tool)):
+each install lands in its own destination, so nothing collides and nothing else
+is disturbed.
+
 ## Build from source
 
 ```bash

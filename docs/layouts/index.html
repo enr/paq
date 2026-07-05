@@ -28,8 +28,26 @@
   </dl>
 </section>
 
+<section class="principles">
+  <p class="section-label"><span class="idx">01</span> what paq is</p>
+  <div class="principle-grid">
+    <article class="principle">
+      <h3>Fast to install</h3>
+      <p>One command drops a tool or application straight onto your machine — no build step, no package database to prime, no daemon to wait on.</p>
+    </article>
+    <article class="principle">
+      <h3>Never invasive</h3>
+      <p>paq installs into plain directories you own and keeps its state to itself. No runtime, no shell hijacking — it never takes over your environment.</p>
+    </article>
+    <article class="principle">
+      <h3>Versions, your call</h3>
+      <p>paq won't switch <em>active</em> versions behind your back. It doesn't manage them for you — but running several side by side is trivial, each in its own place.</p>
+    </article>
+  </div>
+</section>
+
 <section class="specsheet">
-  <p class="section-label"><span class="idx">01</span> capabilities</p>
+  <p class="section-label"><span class="idx">02</span> capabilities</p>
   <div class="grid">
     <article class="cell">
       <h3>GitHub &amp; URLs</h3>
@@ -48,8 +66,8 @@
       <p>Pin exact versions or track <code>latest</code>; <code>paq upgrade</code> rolls everything forward cleanly.</p>
     </article>
     <article class="cell">
-      <h3>Six targets</h3>
-      <p>Pre-built binaries for linux, macOS and windows on both <code>amd64</code> and <code>arm64</code>.</p>
+      <h3>Side-by-side versions</h3>
+      <p>Keep several versions of the same tool at once — each install goes to its own <code>dest</code>, so nothing collides and nothing else is touched.</p>
     </article>
     <article class="cell">
       <h3>Self-updating</h3>
@@ -59,7 +77,7 @@
 </section>
 
 <section class="content readme">
-  <p class="section-label"><span class="idx">02</span> quickstart</p>
+  <p class="section-label"><span class="idx">03</span> quickstart</p>
   {{ .Content }}
 </section>
 {{ end }}

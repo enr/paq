@@ -5,7 +5,7 @@ enableRobotsTXT = true
 
 [params]
   currentAppVersion = "0.0.8-SNAPSHOT"
-  description = "Install and manage CLI tools from GitHub releases and direct URLs."
+  description = "Install tools and applications fast — from GitHub releases and direct URLs, without touching your environment."
   repo = "https://github.com/enr/paq"
 
 [markup.highlight]
