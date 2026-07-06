@@ -216,7 +216,7 @@ func cleanupOldVersions(name, keepVersion string, old []state.InstalledApp, ok f
 			continue
 		}
 		if rec.Dest != newDest {
-			if err := removeRecordFiles(rec); err != nil {
+			if err := removeRecordFiles(rec, nil); err != nil {
 				return err
 			}
 		}

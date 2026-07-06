@@ -132,6 +132,46 @@ func (s *State) Set(rec InstalledApp) {
 	s.Packages = append(s.Packages, rec)
 }
 
+// Record upserts rec (like Set) and additionally drops any stale record of
+// the same app that rec overwrites on disk: a previous version installed to
+// the same version-independent destination. A record of the same app whose
+// files live elsewhere (e.g. a version-specific dest) is kept, so genuine
+// side-by-side versions still coexist.
+func (s *State) Record(rec InstalledApp) {
+	kept := s.Packages[:0]
+	for _, existing := range s.Packages {
+		if existing.Name == rec.Name && existing.Version != rec.Version &&
+			pathsOverlap(existing.OwnedPaths(), rec.OwnedPaths()) {
+			continue // superseded on disk by rec
+		}
+		kept = append(kept, existing)
+	}
+	s.Packages = kept
+	s.Set(rec)
+}
+
+// OwnedPaths returns the on-disk locations a record occupies: the installed
+// files for a "binaries" install (whose Dest is a shared bin dir), otherwise
+// the single Dest path.
+func (a InstalledApp) OwnedPaths() []string {
+	if a.Kind == "binaries" {
+		return a.Files
+	}
+	return []string{a.Dest}
+}
+
+// pathsOverlap reports whether a and b share at least one path (after cleaning).
+func pathsOverlap(a, b []string) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if filepath.Clean(x) == filepath.Clean(y) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Get returns the entry for (name, version) if present.
 func (s *State) Get(name, version string) (InstalledApp, bool) {
 	for _, rec := range s.Packages {
