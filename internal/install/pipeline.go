@@ -486,7 +486,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 
 	// 13. Record in the state DB (under a mutex to avoid races with other parallel goroutines).
 	if err := state.Update(func(st *state.State) error {
-		st.Set(state.InstalledApp{
+		st.Record(state.InstalledApp{
 			Name:        appName,
 			Version:     ver,
 			Kind:        kind,

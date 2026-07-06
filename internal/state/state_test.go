@@ -196,3 +196,58 @@ func TestMultipleVersionsCoexist(t *testing.T) {
 		t.Errorf("expected 0 packages after delete-all, got %d", len(s.Packages))
 	}
 }
+
+// TestRecordSupersedesSameDest verifies that installing a new version of a
+// dir/file app to the same (version-independent) destination replaces the
+// previous version's record instead of leaving a phantom duplicate.
+func TestRecordSupersedesSameDest(t *testing.T) {
+	s := &State{Packages: []InstalledApp{}}
+
+	s.Record(InstalledApp{Name: "maven", Version: "3.9.9", Kind: "dir", Dest: "C:/opt/maven"})
+	s.Record(InstalledApp{Name: "maven", Version: "3.9.16", Kind: "dir", Dest: "C:/opt/maven"})
+
+	if len(s.Packages) != 1 {
+		t.Fatalf("expected 1 package after re-install to same dest, got %d: %+v", len(s.Packages), s.Packages)
+	}
+	if rec := s.Packages[0]; rec.Version != "3.9.16" {
+		t.Errorf("kept version = %q, want 3.9.16 (the new install)", rec.Version)
+	}
+}
+
+// TestRecordKeepsVersionSpecificDests verifies that side-by-side versions
+// installed to different destinations both survive.
+func TestRecordKeepsVersionSpecificDests(t *testing.T) {
+	s := &State{Packages: []InstalledApp{}}
+
+	s.Record(InstalledApp{Name: "jdk", Version: "21", Kind: "dir", Dest: "/opt/jdk-21"})
+	s.Record(InstalledApp{Name: "jdk", Version: "26", Kind: "dir", Dest: "/opt/jdk-26"})
+
+	if len(s.Packages) != 2 {
+		t.Fatalf("expected 2 packages (distinct dests), got %d", len(s.Packages))
+	}
+}
+
+// TestRecordSupersedesSharedBinaries verifies that for a "binaries" install
+// (whose Dest is a shared bin dir) supersession is decided by the installed
+// files, so a new version replaces the old one but unrelated apps in the same
+// bin dir are untouched.
+func TestRecordSupersedesSharedBinaries(t *testing.T) {
+	s := &State{Packages: []InstalledApp{}}
+
+	s.Record(InstalledApp{Name: "bat", Version: "0.24.0", Kind: "binaries", Dest: "/bin", Files: []string{"/bin/bat"}})
+	s.Record(InstalledApp{Name: "rg", Version: "14.0.0", Kind: "binaries", Dest: "/bin", Files: []string{"/bin/rg"}})
+	s.Record(InstalledApp{Name: "rg", Version: "14.1.0", Kind: "binaries", Dest: "/bin", Files: []string{"/bin/rg"}})
+
+	if len(s.Packages) != 2 {
+		t.Fatalf("expected 2 packages (bat + newest rg), got %d: %+v", len(s.Packages), s.Packages)
+	}
+	if _, ok := s.Get("bat", "0.24.0"); !ok {
+		t.Error("bat should be untouched by rg re-install in the same bin dir")
+	}
+	if _, ok := s.Get("rg", "14.1.0"); !ok {
+		t.Error("newest rg should be present")
+	}
+	if _, ok := s.Get("rg", "14.0.0"); ok {
+		t.Error("old rg version should have been superseded")
+	}
+}
