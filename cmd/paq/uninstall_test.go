@@ -174,12 +174,57 @@ func TestRemoveRecordFilesRefusesHomeDir(t *testing.T) {
 	}
 
 	rec := state.InstalledApp{Name: "oops", Version: "1.0.0", Kind: "dir", Dest: home}
-	err := removeRecordFiles(rec)
+	err := removeRecordFiles(rec, nil)
 	if err == nil || !strings.Contains(err.Error(), "refusing to remove") {
 		t.Fatalf("expected 'refusing to remove' error, got %v", err)
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("home directory contents were removed: %v", err)
+	}
+}
+
+// TestRunUninstallKeepsSharedDest reproduces a legacy inconsistent state where
+// two dir records of the same app share one destination (as produced by older
+// paq installing 3.9.9 then 3.9.16 into the same folder). Uninstalling one
+// version must not delete the folder the surviving version still owns.
+func TestRunUninstallKeepsSharedDest(t *testing.T) {
+	prevIsTTY := uninstallIsTTY
+	uninstallIsTTY = func() bool { return false }
+	t.Cleanup(func() { uninstallIsTTY = prevIsTTY })
+	flagUninstallYes = true
+	t.Cleanup(func() { flagUninstallYes = false })
+
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	destDir := filepath.Join(t.TempDir(), "maven")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(destDir, "bin")
+	if err := os.WriteFile(marker, []byte("mvn"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, _ := state.Load()
+	st.Set(state.InstalledApp{Name: "maven", Version: "3.9.9", Kind: "dir", Dest: destDir})
+	st.Set(state.InstalledApp{Name: "maven", Version: "3.9.16", Kind: "dir", Dest: destDir})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runUninstall(uninstallCmd, []string{"maven@3.9.9"}); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("shared dest was deleted while 3.9.16 still owns it: %v", err)
+	}
+	st2, _ := state.Load()
+	if _, ok := st2.Get("maven", "3.9.16"); !ok {
+		t.Error("surviving version 3.9.16 should remain in state")
+	}
+	if _, ok := st2.Get("maven", "3.9.9"); ok {
+		t.Error("uninstalled version 3.9.9 should be gone from state")
 	}
 }
 

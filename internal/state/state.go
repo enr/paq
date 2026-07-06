@@ -141,7 +141,7 @@ func (s *State) Record(rec InstalledApp) {
 	kept := s.Packages[:0]
 	for _, existing := range s.Packages {
 		if existing.Name == rec.Name && existing.Version != rec.Version &&
-			pathsOverlap(existing.ownedPaths(), rec.ownedPaths()) {
+			pathsOverlap(existing.OwnedPaths(), rec.OwnedPaths()) {
 			continue // superseded on disk by rec
 		}
 		kept = append(kept, existing)
@@ -150,10 +150,10 @@ func (s *State) Record(rec InstalledApp) {
 	s.Set(rec)
 }
 
-// ownedPaths returns the on-disk locations a record occupies: the installed
+// OwnedPaths returns the on-disk locations a record occupies: the installed
 // files for a "binaries" install (whose Dest is a shared bin dir), otherwise
 // the single Dest path.
-func (a InstalledApp) ownedPaths() []string {
+func (a InstalledApp) OwnedPaths() []string {
 	if a.Kind == "binaries" {
 		return a.Files
 	}
