@@ -285,6 +285,16 @@ sha256_asset = "{{asset}}.sha256"
 #   paq install mytool
 ```
 
+`[specs.mytool.arch]` and `[specs.mytool.os]` remap the canonical `{{arch}}` /
+`{{os}}` values to the vocabulary the release uses. When a tool ships a
+different C environment per arch (e.g. musl on x86_64 but gnu on aarch64),
+`[specs.mytool.env_arch]` overrides `{{env}}` for a single arch:
+
+```toml
+[specs.mytool.env_arch]
+amd64 = "musl"   # x86_64 ships only musl; other arches keep the default gnu
+```
+
 A recipe for an archive containing **multiple executables** (each installed
 into a bin directory):
 

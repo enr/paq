@@ -194,6 +194,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		resolvedOS = platform.ApplyMap(app.OS, plat.OS, resolvedOS)
 	}
 	resolvedEnv := platform.ApplyMap(spec.Env, plat.Env, plat.Env)
+	// Per-arch env override (keyed by canonical arch); refines spec.Env.
+	resolvedEnv = platform.ApplyMap(spec.EnvArch, plat.Arch, resolvedEnv)
 	if app.Env != nil {
 		resolvedEnv = platform.ApplyMap(app.Env, plat.Env, resolvedEnv)
 	}

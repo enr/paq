@@ -51,6 +51,17 @@ type Spec struct {
 	OS              map[string]string            `toml:"os"`
 	Arch            map[string]string            `toml:"arch"`
 	Env             map[string]string            `toml:"env"`
+	// EnvArch overrides {{env}} per arch (keyed by canonical arch, e.g. amd64).
+	// Takes precedence over Env for the matching arch. Needed when a tool ships
+	// different C environments per arch (e.g. ripgrep: musl on x86_64, gnu on aarch64).
+	//
+	// Limitation: unlike Env (keyed on "gnu", empty outside linux, so naturally
+	// linux-scoped) this is keyed on arch alone and applies on every OS. It is
+	// harmless today only because {{env}} is consumed solely by the linux
+	// rust_target template. If a second joint (os,arch) dependency appears,
+	// prefer generalizing the per-OS override blocks to [x.<os>.<arch>] and
+	// dropping this field.
+	EnvArch         map[string]string            `toml:"env_arch"`
 	Templates       map[string]string            `toml:"templates"`
 	TemplatesOS     map[string]map[string]string `toml:"templates_os"`
 	Verify          VerifyConfig                 `toml:"verify"`

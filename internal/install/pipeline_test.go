@@ -314,6 +314,47 @@ func TestPipelineAppliesEnvMapping(t *testing.T) {
 	}
 }
 
+// TestPipelineAppliesEnvArchMapping verifies that [x.env_arch] overrides
+// {{env}} for the matching arch only, so a tool can ship different C
+// environments per arch (e.g. musl on x86_64, gnu on aarch64).
+func TestPipelineAppliesEnvArchMapping(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("env mapping keys off the linux-only \"gnu\" canonical value")
+	}
+	isolateState(t)
+	fileContent := []byte("payload")
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", fileContent)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}-{{env}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+				EnvArch:         map[string]string{runtime.GOARCH: "musl", "other": "wrong"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if !strings.Contains(gotPath, "musl") {
+		t.Errorf("request path = %q, want it to contain \"musl\"", gotPath)
+	}
+}
+
 // TestPipelineRefusesToReplaceUnownedDest verifies that installing a "dir"
 // kind spec over a pre-existing, non-empty directory that paq didn't create
 // fails instead of silently wiping it out, and that Force overrides the guard.

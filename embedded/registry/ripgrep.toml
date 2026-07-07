@@ -1,6 +1,7 @@
 [ripgrep]
 backend = "github"
 repo = "BurntSushi/ripgrep"
+tag = "{{version}}"  # ripgrep tags have no "v" prefix (e.g. 15.1.0, not v15.1.0)
 asset = "ripgrep-{{version}}-{{rust_target}}.tar.gz"
 archive = "tar.gz"
 extract = "rg{{ext}}"
@@ -9,6 +10,10 @@ chmod = "0755"
 [ripgrep.arch]
 amd64 = "x86_64"
 arm64 = "aarch64"
+
+# x86_64 builds ship only as musl; aarch64 ships only as gnu.
+[ripgrep.env_arch]
+amd64 = "musl"
 
 # Windows ships a .zip instead of a .tar.gz.
 [ripgrep.windows]
