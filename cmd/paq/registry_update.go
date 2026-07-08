@@ -214,9 +214,15 @@ func resolveRegistrySource(ctx context.Context, rs config.RegistrySettings) (reg
 	if err != nil {
 		return registrySource{}, fmt.Errorf("resolve checksums asset: %w", err)
 	}
-	sigURL, err := resolve(registrySignature)
-	if err != nil {
-		return registrySource{}, fmt.Errorf("resolve signature asset: %w", err)
+	// The signature asset is only published (and only needed) when this build
+	// carries a signing key. Without one the update is checksum-only, so don't
+	// require the .minisig to exist in the release.
+	var sigURL string
+	if registry.DefaultPublicKey != "" {
+		sigURL, err = resolve(registrySignature)
+		if err != nil {
+			return registrySource{}, fmt.Errorf("resolve signature asset: %w", err)
+		}
 	}
 	return registrySource{
 		tarURL:  tarURL,
