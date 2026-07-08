@@ -53,9 +53,26 @@ Once installed, run `paq doctor` to check that the install directory is on your
 `paq doctor --fix` adds the bin dir to your user `PATH` (no administrator
 rights needed); restart the terminal afterwards.
 
+## Quickstart
+
+For any tool in the registry, that's all you need — **no config file required**:
+
+```bash
+paq install ripgrep    # or the short alias: paq i ripgrep
+```
+
+paq downloads the tool, installs it into your default bin directory, and records
+a default entry in the manifest for you. Browse what's available with
+`paq search <query>`. To install without touching the manifest, add `--no-save`.
+
+Writing a `config.toml` (below) is only needed when you want to customise
+destinations or versions, keep several versions side by side, or add your own
+recipes.
+
 ## Configuration
 
-Create `~/.config/paq/config.toml`:
+Editing the config is optional. Create `~/.config/paq/config.toml` to customise
+how tools are installed:
 
 ```toml
 [apps.rg]
@@ -135,9 +152,12 @@ is the easy way to guarantee this.
 |---------|---------|-------------|
 | `paq install [app]` | `i` | Install a tool, or all tools from the manifest when no app is given |
 | `paq import <spec>` | | Generate a default manifest entry for a registry tool |
+| `paq init` | | Create a commented manifest skeleton at the default config path |
 | `paq upgrade [app]` | `up` | Upgrade tools pinned to `latest` to the newest release |
+| `paq outdated` | | List installed tools that have a newer upstream version (without installing) |
 | `paq uninstall <app[@version]>` | `rm`, `remove` | Uninstall a tool |
 | `paq ls` | `list` | List installed tools |
+| `paq which <app[@version]>` | | Print the installed path(s) of a tool |
 | `paq info <app>` | | Show definition and install state for a manifest app |
 | `paq search <query>` | `s` | Search the registry for tool definitions |
 | `paq registry list [query]` | `reg` | List tool definitions in the registry (with their source) |
@@ -196,6 +216,23 @@ paq install rg
 | `-w`, `--write` | Add the entry to the manifest instead of printing it |
 | `-f`, `--force` | Overwrite an existing entry (requires `--write`) |
 
+### init
+
+Writes a commented manifest skeleton to the default config path
+(`~/.config/paq/config.toml` or its platform equivalent), so a new install has
+something to edit instead of a blank file. Everything in the skeleton is
+commented out, so paq still falls back to its built-in defaults. Not required —
+`paq install <tool>` creates the manifest on the fly.
+
+```bash
+paq init
+paq init --force   # overwrite an existing manifest
+```
+
+| Flag | Description |
+|------|-------------|
+| `-f`, `--force` | Overwrite an existing manifest |
+
 ### upgrade
 
 Upgrades a tool — or every tool tracked in the manifest — pinned to `latest` to
@@ -205,6 +242,18 @@ untouched. Old versions are removed after a successful upgrade.
 ```bash
 paq upgrade        # upgrade all latest-pinned tools
 paq upgrade rg     # upgrade a single app
+```
+
+### outdated
+
+Checks, for every installed app pinned to `latest`, whether a newer upstream
+version is available — without installing anything. Apps pinned to a fixed
+version, not installed, or whose backend cannot resolve `latest` are skipped
+(shown with `--verbose`).
+
+```bash
+paq outdated
+paq outdated --verbose   # also report why apps were skipped
 ```
 
 ### uninstall
@@ -222,6 +271,17 @@ paq uninstall rg --dry-run   # show what would be removed
 | `--dry-run` | Show what would be removed without removing anything |
 | `-y`, `--yes` | Skip the confirmation prompt |
 
+### which
+
+Prints where a tool is installed: the destination file or directory, or one
+line per binary for a multi-binary install. If several versions are installed
+and no `@version` is given, all of them are printed.
+
+```bash
+paq which rg
+paq which rg@14.1.1
+```
+
 ### self-update
 
 ```bash
@@ -234,6 +294,33 @@ paq self-update --force    # reinstall even if already up to date
 |------|-------------|
 | `-c`, `--check` | Only check for an available update, don't install |
 | `-f`, `--force` | Reinstall even if already up to date |
+
+### config show
+
+Shows the configuration exactly as paq evaluates it: the path of the user
+manifest (and whether it exists), the effective default install directories,
+and the apps it declares. Useful to confirm which `bin`/`opt` roots are in
+effect before installing. Add `--json` for machine-readable output.
+
+```bash
+paq config show
+```
+
+### completion
+
+Prints a shell completion script to stdout. Load it in your shell to complete
+subcommands, flags, and tool names (registry specs, installed apps).
+
+```bash
+# bash (current session)
+source <(paq completion bash)
+
+# zsh (persist it)
+paq completion zsh > "${fpath[1]}/_paq"
+```
+
+Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
+`paq completion <shell> --help` for the per-shell install instructions.
 
 ## Global flags
 
