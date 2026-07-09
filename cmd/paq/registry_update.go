@@ -137,11 +137,16 @@ func runRegistryUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	dir, err := registry.Dir()
+	if err != nil {
+		return fmt.Errorf("resolve registry cache dir: %w", err)
+	}
+
 	// Best-effort downgrade / no-op protection against the cached snapshot.
 	if _, cur, _ := registry.Open(); cur != nil && !force {
 		cmp := version.Compare(version.Clean(newVersion), version.Clean(cur.Version))
 		if cmp == 0 {
-			ui.OK("registry already up to date (%s)", newVersion)
+			ui.OK("registry already up to date (%s) in %s", newVersion, dir)
 			return nil
 		}
 		if cmp < 0 {
@@ -160,7 +165,7 @@ func runRegistryUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("install registry snapshot: %w", err)
 	}
 
-	ui.OK("registry updated to %s (%d recipes)", newVersion, len(specs))
+	ui.OK("registry updated to %s (%d recipes) in %s", newVersion, len(specs), dir)
 	return nil
 }
 
