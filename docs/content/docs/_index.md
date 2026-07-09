@@ -164,7 +164,7 @@ is the easy way to guarantee this.
 | `paq registry show <name>` | `reg` | Show details of a single registry definition |
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
-| `paq config show` | | Show the config path, effective default directories, and apps |
+| `paq config show` | | Show the config path, effective default directories, registry cache, and apps |
 | `paq doctor` | | Check the paq environment, paths, and `PATH` |
 | `paq self-update` | | Update paq itself to the latest release |
 | `paq version` | | Print the paq version |
@@ -299,8 +299,9 @@ paq self-update --force    # reinstall even if already up to date
 
 Shows the configuration exactly as paq evaluates it: the path of the user
 manifest (and whether it exists), the effective default install directories,
-and the apps it declares. Useful to confirm which `bin`/`opt` roots are in
-effect before installing. Add `--json` for machine-readable output.
+the registry cache location (and whether a snapshot is installed there), and
+the apps it declares. Useful to confirm which `bin`/`opt` roots are in effect
+before installing. Add `--json` for machine-readable output.
 
 ```bash
 paq config show

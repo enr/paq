@@ -1,11 +1,11 @@
 [jdk]
 backend = "url"
-# Endpoint "latest": serve l'ultima build di un major (es. jdk-26), quindi
-# "version" è il numero di major (26, 21, ...).
+# Endpoint "latest": serves the newest build of a major (e.g. jdk-26), so
+# "version" is the major number (26, 21, ...).
 source = "https://download.oracle.com/java/{{version}}/latest/jdk-{{version}}_{{os}}-{{arch}}_bin.tar.gz"
 archive = "tar.gz"
 strip_components = 1
-# Versione installata di default (senza "version" nel manifest).
+# Version installed by default (when "version" is absent from the manifest).
 default_version = "26"
 
 [jdk.os]
@@ -20,7 +20,7 @@ strip_components = 0
 subdir = "*/Contents/Home"
 
 [jdk.verify]
-# Oracle pubblica il checksum come file separato (solo l'hash) accanto all'asset.
+# Oracle publishes the checksum as a separate file (hash only) next to the asset.
 sha256_asset = "{{asset}}.sha256"
 
 [maven]
@@ -28,10 +28,10 @@ backend = "url"
 source = "https://archive.apache.org/dist/maven/maven-{{version_major}}/{{version}}/binaries/apache-maven-{{version}}-bin.zip"
 archive = "zip"
 strip_components = 1
-# Versione installata di default (senza "version" nel manifest): canale stabile.
+# Version installed by default (when "version" is absent from the manifest): stable channel.
 default_version = "3.9.9"
-# Con version = "latest" la versione è risolta dai repo Arch ufficiali
-# (pacchetto "maven") e scaricata dall'archivio Apache.
+# With version = "latest" the version is resolved from the official Arch repos
+# (package "maven") and downloaded from the Apache archive.
 latest_strategy = "arch-linux"
 arch_pkg = "maven"
 
