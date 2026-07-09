@@ -4,8 +4,8 @@ repo = "enr/zipp"
 asset = "zipp-{{version}}_{{os}}_{{arch}}.zip"
 archive = "zip"
 chmod = "0755"
-# L'archivio contiene una dir di primo livello (zipp-<ver>_<os>_<arch>/) con i
-# tre binari: si installano come eseguibili singoli nella bin dir (dest).
+# The archive contains a top-level dir (zipp-<ver>_<os>_<arch>/) with the
+# three binaries: installed as standalone executables in the bin dir (dest).
 strip_components = 1
 binaries = [
   { from = "zipts{{ext}}" },
