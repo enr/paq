@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
 )
 
@@ -182,15 +183,28 @@ func PrintOutdatedTable(entries []OutdatedEntry) {
 }
 
 // PrintConfigShow prints the evaluated user configuration path and its data:
-// the effective defaults (configured or built-in) and the declared apps.
-func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry, registry config.RegistrySettings) {
+// the effective defaults (configured or built-in), the registry cache
+// location and installed snapshot (if any), and the declared apps.
+func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry, registryCfg config.RegistrySettings, registryDir string, registryMeta *registry.Meta, registryOpenErr error) {
 	if Global.JSON {
+		cache := map[string]any{"dir": registryDir}
+		switch {
+		case registryOpenErr != nil:
+			cache["error"] = registryOpenErr.Error()
+		case registryMeta != nil:
+			cache["installed"] = true
+			cache["version"] = registryMeta.Version
+			cache["fetched_at"] = registryMeta.FetchedAt
+		default:
+			cache["installed"] = false
+		}
 		out := map[string]any{
 			"path":               path,
 			"exists":             exists,
 			"defaults":           map[string]string{"bin": defaults.Bin, "opt": defaults.Opt},
 			"effective_defaults": map[string]string{"bin": effBin, "opt": effOpt},
-			"registry":           map[string]string{"url": registry.URL, "public_key": registry.PublicKey},
+			"registry":           map[string]string{"url": registryCfg.URL, "public_key": registryCfg.PublicKey},
+			"registry_cache":     cache,
 			"apps":               apps,
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")
@@ -246,11 +260,20 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 	render("bin", fmt.Sprintf("%s  %s", val(effBin), dim(source(defaults.Bin))))
 	render("opt", fmt.Sprintf("%s  %s", val(effOpt), dim(source(defaults.Opt))))
 
-	if registry.URL != "" || registry.PublicKey != "" {
-		fmt.Println()
-		section("Registry")
-		render("url", val(registry.URL))
-		render("public_key", val(registry.PublicKey))
+	fmt.Println()
+	section("Registry")
+	if registryCfg.URL != "" || registryCfg.PublicKey != "" {
+		render("url", val(registryCfg.URL))
+		render("public_key", val(registryCfg.PublicKey))
+	}
+	switch {
+	case registryOpenErr != nil:
+		render("cache", val(registryDir)+" "+dim("(unusable: "+registryOpenErr.Error()+")"))
+	case registryMeta != nil:
+		render("cache", val(registryDir))
+		render("installed", fmt.Sprintf("%s  %s", val(registryMeta.Version), dim(registryMeta.FetchedAt.Local().Format("2006-01-02 15:04"))))
+	default:
+		render("cache", val(registryDir)+" "+dim("(not installed — run `paq registry update`)"))
 	}
 
 	fmt.Println()

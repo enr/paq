@@ -134,7 +134,7 @@ paq registry status
 # Download the latest registry snapshot (see "External registry" below)
 paq registry update
 
-# Show the evaluated config path, effective default directories, and apps
+# Show the evaluated config path, effective default directories, registry cache, and apps
 paq config show
 
 # List installed tools

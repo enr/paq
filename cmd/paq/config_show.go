@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -11,7 +12,7 @@ import (
 var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show the evaluated configuration path and its data",
-	Long:  "Show the path of the user configuration file, the effective default install directories, and the apps it declares.",
+	Long:  "Show the path of the user configuration file, the effective default install directories, the registry cache location, and the apps it declares.",
 	Args:  cobra.NoArgs,
 	RunE:  runConfigShow,
 }
@@ -32,6 +33,13 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	}
 
 	effBin, effOpt := config.DefaultDestRoots(cfg.Defaults)
-	ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps, cfg.Registry)
+
+	registryDir, err := registry.Dir()
+	if err != nil {
+		return err
+	}
+	_, registryMeta, registryOpenErr := registry.Open()
+
+	ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps, cfg.Registry, registryDir, registryMeta, registryOpenErr)
 	return nil
 }
