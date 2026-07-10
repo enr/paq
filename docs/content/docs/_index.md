@@ -10,6 +10,11 @@ touching the rest of your environment. It drops binaries into plain directories
 you own — no daemon, no runtime, no shell hooks — so it stays out of your way
 and is never invasive.
 
+It's meant to run **alongside** your system's official package manager, not to
+replace it. Reach for paq when a tool isn't in the official repositories yet,
+when you want a bleeding-edge release ahead of what your distro ships, or when
+you need several versions of the same tool at once.
+
 It is not a version manager and won't switch "active" versions for you. What it
 *does* make effortless is keeping several versions of the same tool side by side
 (see [Installing multiple versions](#installing-multiple-versions-of-the-same-tool)),
@@ -328,10 +333,10 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 | Flag | Description |
 |------|-------------|
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (for `ls`, `registry list`/`show`/`status`, `info`, `config show`) |
+| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `which`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
-| `-d`, `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
+| `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
 
 The `NO_COLOR` environment variable also disables colors. The progress bar is
 written to stderr; data goes to stdout.

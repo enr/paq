@@ -7,6 +7,11 @@ touching the rest of your environment. It drops binaries into plain directories
 you own — no daemon, no runtime, no shell hooks — so it stays out of your way
 and is never invasive.
 
+It's meant to run **alongside** your system's official package manager, not to
+replace it. Reach for paq when a tool isn't in the official repositories yet,
+when you want a bleeding-edge release ahead of what your distro ships, or when
+you need several versions of the same tool at once.
+
 It is not a version manager and won't switch "active" versions for you. What it
 *does* make effortless is keeping several versions of the same tool side by side
 (see [Installing multiple versions](#installing-multiple-versions-of-the-same-tool)):
@@ -149,6 +154,10 @@ paq which rg
 # Check for available updates without installing them
 paq outdated
 
+# Upgrade "latest"-pinned tools to the newest release (all, or named ones)
+paq upgrade
+paq upgrade rg bat
+
 # Uninstall a tool (or several at once)
 paq uninstall rg
 paq uninstall rg bat
@@ -156,6 +165,13 @@ paq uninstall rg bat
 # Update paq itself to the latest release (see "Updating paq" below)
 paq self-update
 paq self-update --check   # only report whether an update is available
+
+# Print the paq version
+paq version
+
+# Check the environment: platform, config/state paths, and bin dir on PATH
+paq doctor
+paq doctor --fix   # add the bin dir to your user PATH (Windows)
 
 # Shell completion (app and tool names are completed dynamically)
 paq completion bash   # or zsh, fish, powershell

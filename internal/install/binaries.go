@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/enr/paq/internal/archive"
 )
@@ -60,6 +61,12 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 	for _, b := range bins {
 		if b.From == "" {
 			return nil, fmt.Errorf("binaries: 'from' is required when 'archive' is set")
+		}
+		// Extraction matches archive entries by basename, so a 'from' carrying a
+		// path can never match: reject it with a clear error instead of a
+		// misleading "not found in archive".
+		if strings.Contains(b.From, "/") {
+			return nil, fmt.Errorf("binaries: 'from' must be a file name, not a path: %q", b.From)
 		}
 		froms[b.From] = true
 	}

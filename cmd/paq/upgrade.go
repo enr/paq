@@ -197,36 +197,35 @@ func resolveLatestVersion(ctx context.Context, spec config.Spec) (string, error)
 }
 
 // cleanupOldVersions removes the state entries (and their files) for versions
-// other than keepVersion after an upgrade. Files are removed only if the
-// destination differs from the new version's: otherwise the pipeline has
-// already overwritten the install in-place.
+// other than keepVersion after an upgrade. Paths still owned by a surviving
+// record (including the freshly installed keepVersion, e.g. when both versions
+// share a version-independent destination the pipeline overwrote in-place) are
+// left in place so the cleanup never wipes files the new install still needs.
 func cleanupOldVersions(name, keepVersion string, old []state.InstalledApp, ok func(string, ...any)) error {
-	// Read the new record's dest to decide whether old files can be removed.
-	// (If both versions installed to the same path the pipeline already overwrote
-	// the files in-place; removing them would break the new install.)
-	var newDest string
-	if st, err := state.Load(); err == nil {
-		if rec, ok := st.Get(name, keepVersion); ok {
-			newDest = rec.Dest
+	var toRemove []state.InstalledApp
+	for _, rec := range old {
+		if rec.Version != keepVersion {
+			toRemove = append(toRemove, rec)
 		}
 	}
 
-	for _, rec := range old {
-		if rec.Version == keepVersion {
-			continue
-		}
-		if rec.Dest != newDest {
-			if err := removeRecordFiles(rec, nil); err != nil {
-				return err
-			}
+	// Compute the paths still owned by records that survive this cleanup from
+	// the current state (which already includes the new keepVersion record).
+	st, err := state.Load()
+	if err != nil {
+		return fmt.Errorf("load state: %w", err)
+	}
+	keep := survivingPaths(st, toRemove)
+
+	for _, rec := range toRemove {
+		if err := removeRecordFiles(rec, keep); err != nil {
+			return err
 		}
 	}
 
 	if err := state.Update(func(st *state.State) error {
-		for _, rec := range old {
-			if rec.Version != keepVersion {
-				st.Delete(rec.Name, rec.Version)
-			}
+		for _, rec := range toRemove {
+			st.Delete(rec.Name, rec.Version)
 		}
 		return nil
 	}); err != nil {

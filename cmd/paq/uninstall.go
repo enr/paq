@@ -76,28 +76,34 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 		printUninstallTargets("This will remove:", targets)
 		if !confirmYesNo(os.Stdin, "Continue?") {
-			ui.Info("aborted")
+			ui.Step("aborted")
 			return nil
 		}
 	}
 
+	// Perform the removal under the cross-process state lock (state.Update):
+	// the confirmation prompt above can block for an arbitrary time, so the
+	// state loaded at the top may be stale by now. Re-reading it inside the
+	// lock keeps a stale save from silently dropping records written by a
+	// concurrent paq process in the meantime.
+	//
 	// Paths still owned by records that survive this uninstall must not be
 	// deleted, even if a target record points at them too. This guards the
 	// case where two records share a destination (e.g. two versions of a dir
 	// app left pointing at the same folder): removing one must not wipe the
 	// files the other still owns.
-	keep := survivingPaths(st, targets)
-
-	for _, rec := range targets {
-		ui.Step("Uninstalling %s %s from %s...", rec.Name, rec.Version, rec.Dest)
-		if err := removeRecordFiles(rec, keep); err != nil {
-			return err
+	if err := state.Update(func(st *state.State) error {
+		keep := survivingPaths(st, targets)
+		for _, rec := range targets {
+			ui.Step("Uninstalling %s %s from %s...", rec.Name, rec.Version, rec.Dest)
+			if err := removeRecordFiles(rec, keep); err != nil {
+				return err
+			}
+			st.Delete(rec.Name, rec.Version)
 		}
-		st.Delete(rec.Name, rec.Version)
-	}
-
-	if err := st.Save(); err != nil {
-		return fmt.Errorf("save state: %w", err)
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	ui.OK("%s uninstalled", strings.Join(names, ", "))
@@ -197,7 +203,7 @@ func removeRecordFiles(rec state.InstalledApp, keep map[string]bool) error {
 	switch rec.Kind {
 	case "file":
 		if keep[filepath.Clean(rec.Dest)] {
-			ui.Info("keeping %s (still used by another installed version)", rec.Dest)
+			ui.Step("keeping %s (still used by another installed version)", rec.Dest)
 			return nil
 		}
 		if err := os.Remove(rec.Dest); err != nil && !os.IsNotExist(err) {
@@ -205,7 +211,7 @@ func removeRecordFiles(rec state.InstalledApp, keep map[string]bool) error {
 		}
 	case "dir":
 		if keep[filepath.Clean(rec.Dest)] {
-			ui.Info("keeping %s (still used by another installed version)", rec.Dest)
+			ui.Step("keeping %s (still used by another installed version)", rec.Dest)
 			return nil
 		}
 		info, statErr := os.Stat(rec.Dest)
@@ -233,7 +239,7 @@ func removeRecordFiles(rec state.InstalledApp, keep map[string]bool) error {
 		// Only remove the installed files, not the shared bin dir (e.g. ~/.local/bin).
 		for _, p := range rec.Files {
 			if keep[filepath.Clean(p)] {
-				ui.Info("keeping %s (still used by another installed version)", p)
+				ui.Step("keeping %s (still used by another installed version)", p)
 				continue
 			}
 			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
