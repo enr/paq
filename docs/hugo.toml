@@ -4,7 +4,7 @@ title = "paq"
 enableRobotsTXT = true
 
 [params]
-  currentAppVersion = "0.0.11"
+  currentAppVersion = "0.0.12-SNAPSHOT"
   description = "Install tools and applications fast — from GitHub releases and direct URLs, without touching your environment."
   repo = "https://github.com/enr/paq"
 
