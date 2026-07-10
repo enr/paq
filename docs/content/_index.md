@@ -5,6 +5,11 @@ title: "paq"
 Grab a tool from the embedded registry, or drive everything from a TOML
 manifest — no runtime, no daemon, one static binary.
 
+paq runs **alongside** your system's package manager: reach for it when a tool
+isn't in the official repos yet, when you want a bleeding-edge release, or to
+keep several versions of the same tool side by side — without touching your
+shell, profile, or system directories.
+
 ```bash
 # Install a tool from the registry
 paq install rg
