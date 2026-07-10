@@ -29,7 +29,7 @@ source = "https://archive.apache.org/dist/maven/maven-{{version_major}}/{{versio
 archive = "zip"
 strip_components = 1
 # Version installed by default (when "version" is absent from the manifest): stable channel.
-default_version = "3.9.9"
+default_version = "3.9.16"
 # With version = "latest" the version is resolved from the official Arch repos
 # (package "maven") and downloaded from the Apache archive.
 latest_strategy = "arch-linux"
