@@ -16,12 +16,16 @@ func NewProgressFn(label string) download.ProgressFn {
 	}
 
 	lastPct := -1
+	lastMB := int64(0)
 
 	return func(downloaded, total int64) {
 		if total <= 0 {
-			// Unknown size: print only the bytes downloaded every MB.
+			// Unknown size: print the bytes downloaded once per whole MB.
+			// (Read chunks rarely land exactly on a MB boundary, so track the
+			// last printed MB instead of testing for an exact multiple.)
 			mb := downloaded / (1024 * 1024)
-			if downloaded%(1024*1024) == 0 && mb > 0 {
+			if mb > lastMB {
+				lastMB = mb
 				fmt.Fprintf(os.Stderr, "\r%s: %d MB downloaded...", label, mb)
 			}
 			return
