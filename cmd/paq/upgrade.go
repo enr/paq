@@ -19,7 +19,7 @@ import (
 
 var upgradeCmd = &cobra.Command{
 	Use:     "upgrade [app...]",
-	Aliases: []string{"up"},
+	Aliases: []string{"up", "u"},
 	Short:   "Upgrade installed tools to a newer version",
 	Long: "Upgrade a tool (or all tools tracked in the manifest) pinned to \"latest\" " +
 		"to the most recent upstream release. Tools pinned to a fixed version are left untouched.",
