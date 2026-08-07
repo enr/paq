@@ -10,5 +10,10 @@ chmod = "0755"
 amd64 = "x86_64"
 arm64 = "aarch64"
 
+# Windows ships a .zip instead of a .tar.xz.
+[fresh.windows]
+asset = "fresh-editor-{{rust_target}}.zip"
+archive = "zip"
+
 [fresh.verify]
 sha256_asset = "{{asset}}.sha256"
