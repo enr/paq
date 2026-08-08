@@ -68,7 +68,10 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		ui.OKField("Opt dir", optDir)
 
 		// Check whether bin dir is in PATH.
-		resolvedBin := expandHome(binDir)
+		resolvedBin, err := expandHome(binDir)
+		if err != nil {
+			return fmt.Errorf("resolve bin dir: %w", err)
+		}
 		inPath := false
 		for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 			if dir == resolvedBin {
@@ -109,13 +112,17 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-// expandHome expands a leading ~/ to the user's home directory.
+// expandHome expands a leading ~/ to the user's home directory, failing rather
+// than returning the path unexpanded (a literal "~" would be reported as a
+// real directory, and written into the user PATH by --fix).
 // Duplicates the helper in internal/install to avoid a cross-package dependency.
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, path[2:])
-		}
+func expandHome(path string) (string, error) {
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
 	}
-	return path
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot expand ~: %w", err)
+	}
+	return filepath.Join(home, path[2:]), nil
 }

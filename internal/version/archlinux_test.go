@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/enr/paq/internal/httpretry"
 )
 
 func TestArchLinuxProviderResolve(t *testing.T) {
@@ -48,6 +51,12 @@ func TestArchLinuxProviderNotFound(t *testing.T) {
 }
 
 func TestArchLinuxProviderHTTPError(t *testing.T) {
+	// A 5xx is retried before failing: shrink the backoff so the test doesn't
+	// wait for it.
+	prevDelay := httpretry.BaseDelay
+	httpretry.BaseDelay = time.Millisecond
+	t.Cleanup(func() { httpretry.BaseDelay = prevDelay })
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))

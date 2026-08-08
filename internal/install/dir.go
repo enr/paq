@@ -25,16 +25,23 @@ func InstallDir(archivePath, archiveType, dest string, opts archive.ExtractOpts)
 	}
 
 	// Swap: dest → dest.bak, dest.tmp → dest.
+	backedUp := false
 	if _, err := os.Stat(dest); err == nil {
 		if err := os.Rename(dest, destBak); err != nil {
 			os.RemoveAll(destTmp)
 			return fmt.Errorf("backup dest: %w", err)
 		}
+		backedUp = true
 	}
 
 	if err := os.Rename(destTmp, dest); err != nil {
-		// Try to roll back the backup.
-		os.Rename(destBak, dest)
+		// Try to roll back the backup. If that fails too, the previous install
+		// is no longer where the user expects it: say where it was left.
+		if backedUp {
+			if rbErr := os.Rename(destBak, dest); rbErr != nil {
+				return fmt.Errorf("swap dir: %w (rollback failed: %v — the previous install is left in %s)", err, rbErr, destBak)
+			}
+		}
 		return fmt.Errorf("swap dir: %w", err)
 	}
 

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/enr/paq/internal/httpretry"
 )
 
 // GitHubReleaseProvider resolves the latest version from GitHub releases.
@@ -37,7 +39,7 @@ func (p GitHubReleaseProvider) Resolve(ctx context.Context) (string, string, err
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := httpretry.Do(client, req)
 	if err != nil {
 		return "", "", fmt.Errorf("GET %s: %w", url, err)
 	}

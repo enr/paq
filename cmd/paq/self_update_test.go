@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -107,6 +108,22 @@ func TestDownloadAndVerifyReleaseSignedSucceeds(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	defer os.Remove(zipPath)
+	assertIsServedZip(t, zipPath, zipData)
+}
+
+// assertIsServedZip verifies that the path returned by downloadAndVerifyRelease
+// holds the release archive and not one of the auxiliary assets downloaded
+// alongside it (SHA256SUMS, .minisig): checking only the error would let a
+// mixed-up return value install a text file as the new paq binary.
+func assertIsServedZip(t *testing.T, path string, want []byte) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("returned path is not readable: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("returned file = %q, want the release archive %q", got, want)
+	}
 }
 
 // TestDownloadAndVerifyReleaseTamperedChecksumsFails verifies that a
@@ -169,4 +186,5 @@ func TestDownloadAndVerifyReleaseNoKeyChecksumOnly(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	defer os.Remove(zipPath)
+	assertIsServedZip(t, zipPath, zipData)
 }

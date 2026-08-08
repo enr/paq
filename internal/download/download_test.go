@@ -5,23 +5,36 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/enr/paq/internal/httpretry"
 )
 
 func TestToTemp(t *testing.T) {
-	content := make([]byte, 1000)
+	// Larger than io.Copy's 32 KiB buffer on purpose, so the body arrives in
+	// several reads: with a single read a progress counter that overwrites
+	// instead of accumulating would be indistinguishable from a correct one.
+	content := make([]byte, 100_000)
 	for i := range content {
 		content[i] = byte(i % 256)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Declared explicitly: Go only infers Content-Length for small bodies,
+		// and the announced total is what the progress bar scales against.
+		w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 		w.Write(content)
 	}))
 	defer srv.Close()
 
 	var callbackCalled int
+	var lastDownloaded, lastTotal int64
 	progress := func(downloaded, total int64) {
 		callbackCalled++
+		lastDownloaded, lastTotal = downloaded, total
 	}
 
 	path, err := ToTemp(context.Background(), srv.Client(), srv.URL+"/file", progress)
@@ -45,6 +58,59 @@ func TestToTemp(t *testing.T) {
 	}
 	if callbackCalled == 0 {
 		t.Error("progress callback was never called")
+	}
+	// The reported figures matter, not just the fact that the callback ran: a
+	// counter that does not accumulate leaves the progress bar stuck at a few
+	// bytes for the whole download.
+	if lastDownloaded != int64(len(content)) {
+		t.Errorf("last reported progress = %d bytes, want %d", lastDownloaded, len(content))
+	}
+	if lastTotal != int64(len(content)) {
+		t.Errorf("reported total = %d, want %d (from Content-Length)", lastTotal, len(content))
+	}
+}
+
+// TestToTempRejectsNon200 verifies that an error response is not written out as
+// if it were the artifact. Without this, a stale asset URL makes paq save the
+// 404 page, fail the checksum, and tell the user the file may have been
+// tampered with — pointing at the wrong problem entirely.
+func TestToTempRejectsNon200(t *testing.T) {
+	// A 5xx is retried with a real backoff before failing: shrink it so the
+	// test doesn't wait seconds for a decision it already knows.
+	prevDelay := httpretry.BaseDelay
+	httpretry.BaseDelay = time.Millisecond
+	t.Cleanup(func() { httpretry.BaseDelay = prevDelay })
+
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			// A dedicated TMPDIR makes the leftover check exact and keeps the
+			// test independent of anything else writing to the shared temp dir.
+			tmp := t.TempDir()
+			t.Setenv("TMPDIR", tmp)
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				w.Write([]byte("<html>error page</html>"))
+			}))
+			defer srv.Close()
+
+			path, err := ToTemp(context.Background(), srv.Client(), srv.URL+"/asset.tar.gz", nil)
+			if err == nil {
+				os.Remove(path)
+				t.Fatalf("expected an error for HTTP %d, got file %s", status, path)
+			}
+			if !strings.Contains(err.Error(), strconv.Itoa(status)) {
+				t.Errorf("error = %v, want it to report status %d", err, status)
+			}
+
+			entries, rerr := os.ReadDir(tmp)
+			if rerr != nil {
+				t.Fatal(rerr)
+			}
+			if len(entries) != 0 {
+				t.Errorf("temp dir holds %d leftover file(s) after a failed download", len(entries))
+			}
+		})
 	}
 }
 

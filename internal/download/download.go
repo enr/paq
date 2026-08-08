@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/enr/paq/internal/httpretry"
 )
 
 // ProgressFn is a callback invoked during the download with the bytes downloaded and the total.
@@ -61,7 +63,7 @@ func toTemp(ctx context.Context, client *http.Client, url string, maxBytes int64
 		}
 	}
 
-	resp, err := client.Do(req)
+	resp, err := httpretry.Do(client, req)
 	if err != nil {
 		return "", fmt.Errorf("GET %s: %w", url, err)
 	}

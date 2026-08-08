@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/download"
@@ -72,30 +69,9 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var stdoutMu sync.Mutex
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(maxParallel)
-
-	for _, name := range names {
-		name := name // capture for the goroutine
-		g.Go(func() error {
-			prefix := fmt.Sprintf("[%-12s] ", name)
-			hooks := lockedAppHooks(prefix, &stdoutMu)
-			if err := upgradeApp(ctx, cfg, name, hooks, nil); err != nil {
-				// Pipeline errors are already shown via OnFail; here we only
-				// show errors specific to upgradeApp (e.g. reading state).
-				if !install.ErrAlreadyShown(err) {
-					stdoutMu.Lock()
-					ui.Fail("%s%v", prefix, err)
-					stdoutMu.Unlock()
-				}
-				return fmt.Errorf("%s: %w", name, err)
-			}
-			return nil
-		})
-	}
-
-	return g.Wait()
+	return runParallel(ctx, names, "upgraded", func(ctx context.Context, name string, hooks *install.Hooks) error {
+		return upgradeApp(ctx, cfg, name, hooks, nil)
+	})
 }
 
 // upgradeApp upgrades a single app: resolves the latest upstream version

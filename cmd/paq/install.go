@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -100,36 +101,62 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return installParallel(ctx, cfg, names)
 }
 
-// installParallel installs names concurrently (max maxParallel goroutines),
-// each with a [name]-prefixed, mutex-serialized set of hooks so output from
-// different goroutines doesn't interleave.
+// installParallel installs names concurrently (max maxParallel goroutines).
 func installParallel(ctx context.Context, cfg *config.Config, names []string) error {
-	var stdoutMu sync.Mutex
+	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks) error {
+		hooks.Force = flagInstallForce
+		return install.Run(ctx, cfg, name, nil, hooks)
+	})
+}
 
-	g, ctx := errgroup.WithContext(ctx)
+// runParallel runs action over names concurrently (max maxParallel
+// goroutines), each with a [name]-prefixed, mutex-serialized set of hooks so
+// output from different goroutines doesn't interleave.
+//
+// The apps are independent, so a failing one must not abort the others: every
+// action runs to completion (only Ctrl-C, via ctx, cancels the batch) and the
+// outcomes are collected into a final summary. verb names the successful
+// outcome in that summary ("installed", "upgraded").
+func runParallel(ctx context.Context, names []string, verb string, action func(context.Context, string, *install.Hooks) error) error {
+	var (
+		stdoutMu sync.Mutex
+		done     int
+		failed   []string
+	)
+
+	var g errgroup.Group
 	g.SetLimit(maxParallel)
 
 	for _, name := range names {
 		name := name // capture for the goroutine
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)
-			lockedHooks := lockedAppHooks(prefix, &stdoutMu)
-			lockedHooks.Force = flagInstallForce
-			if err := install.Run(ctx, cfg, name, nil, lockedHooks); err != nil {
+			hooks := lockedAppHooks(prefix, &stdoutMu)
+			err := action(ctx, name, hooks)
+
+			stdoutMu.Lock()
+			defer stdoutMu.Unlock()
+			if err != nil {
 				// The pipeline already shows the error via OnFail; we only
 				// reprint it if for some reason it wasn't shown.
 				if !install.ErrAlreadyShown(err) {
-					stdoutMu.Lock()
 					ui.Fail("%s%v", prefix, err)
-					stdoutMu.Unlock()
 				}
-				return fmt.Errorf("%s: %w", name, err)
+				failed = append(failed, fmt.Sprintf("%s (%v)", name, err))
+				return nil
 			}
+			done++
 			return nil
 		})
 	}
+	_ = g.Wait() // the goroutines never return an error: outcomes are collected above
 
-	return g.Wait()
+	if len(failed) > 0 {
+		sort.Strings(failed)
+		return fmt.Errorf("%d %s, %d failed: %s", done, verb, len(failed), strings.Join(failed, "; "))
+	}
+	ui.OK("%d %s", done, verb)
+	return nil
 }
 
 // ensureManifestEntry ensures that cfg.Apps[name] exists, so that install

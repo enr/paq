@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/install"
 )
 
 // newTestConfig builds a minimal Config with a "ripgrep" spec in the
@@ -18,6 +21,38 @@ func newTestConfig() *config.Config {
 			"ripgrep": {Extract: "rg{{ext}}"},
 		},
 		Apps: map[string]config.AppEntry{},
+	}
+}
+
+// TestRunParallelRunsEveryAppDespiteFailures verifies that one failing app
+// does not abort the healthy ones: every action runs, and the returned error
+// summarizes the batch instead of surfacing only the first failure.
+func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
+	var mu sync.Mutex
+	var ran []string
+
+	err := runParallel(context.Background(), []string{"ok-a", "broken", "ok-b"}, "installed",
+		func(ctx context.Context, name string, hooks *install.Hooks) error {
+			mu.Lock()
+			ran = append(ran, name)
+			mu.Unlock()
+			if name == "broken" {
+				return errors.New("HTTP 404")
+			}
+			return nil
+		})
+
+	if err == nil {
+		t.Fatal("expected an error reporting the failed app")
+	}
+	if !strings.Contains(err.Error(), "2 installed") || !strings.Contains(err.Error(), "broken (HTTP 404)") {
+		t.Errorf("error = %q, want a summary naming the successes and the failure", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ran) != 3 {
+		t.Errorf("%d apps ran (%v), want all 3: a failing app must not cancel the others", len(ran), ran)
 	}
 }
 

@@ -231,7 +231,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if err != nil {
 		return fmt.Errorf("resolve dest: %w", err)
 	}
-	dest = expandHome(dest)
+	dest, err = expandHome(dest)
+	if err != nil {
+		return fmt.Errorf("resolve dest: %w", err)
+	}
 
 	// 6. Resolve the artifact URL.
 	step(fmt.Sprintf("Resolving download URL for %s...", appName))
@@ -591,14 +594,18 @@ func destOwnedByPaq(st *state.State, dest string) bool {
 	return false
 }
 
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, path[2:])
-		}
+// expandHome expands a leading ~/ to the user's home directory. It fails
+// instead of returning the path unexpanded: a literal "~" reaching the
+// installer would create a directory named "~" in the current directory.
+func expandHome(path string) (string, error) {
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
 	}
-	return path
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot expand ~: %w", err)
+	}
+	return filepath.Join(home, path[2:]), nil
 }
 
 func filesha256(path string) (string, error) {

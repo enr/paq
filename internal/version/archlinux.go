@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/enr/paq/internal/httpretry"
 )
 
 // archPackagesAPI is the official Arch Linux JSON API endpoint that returns
@@ -54,7 +56,7 @@ func (p ArchLinuxProvider) Resolve(ctx context.Context) (string, string, error) 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "paq")
 
-	resp, err := client.Do(req)
+	resp, err := httpretry.Do(client, req)
 	if err != nil {
 		return "", "", fmt.Errorf("GET %s: %w", reqURL, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/template"
 )
 
@@ -31,6 +32,11 @@ type githubRelease struct {
 // assetsPerPage is the GitHub API's page size for both the release's
 // embedded "assets" array and the paginated /releases/{id}/assets endpoint.
 const assetsPerPage = 100
+
+// maxAssetPages bounds the pagination walk (50 pages = 5000 assets, far beyond
+// any real release), so an API that never returns a short page cannot keep the
+// loop issuing requests forever.
+const maxAssetPages = 50
 
 // Resolve expands the Asset template, looks up the asset with that name in the
 // GitHub release identified by tag, and returns the asset's API URL.
@@ -58,7 +64,7 @@ func (b GitHubBackend) Resolve(ctx context.Context, tag string, v template.Vars)
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := httpretry.Do(client, req)
 	if err != nil {
 		return "", fmt.Errorf("GET %s: %w", url, err)
 	}
@@ -106,9 +112,10 @@ func findAsset(assets []githubAsset, name string) (string, bool) {
 
 // findAssetInLaterPages walks /repos/{repo}/releases/{id}/assets starting at
 // page 2 (page 1 is the embedded array already scanned by the caller),
-// stopping at the first short page (fewer than assetsPerPage entries) or a match.
+// stopping at the first short page (fewer than assetsPerPage entries), a match,
+// or maxAssetPages.
 func (b GitHubBackend) findAssetInLaterPages(ctx context.Context, client *http.Client, releaseID int64, assetName string) (string, error) {
-	for page := 2; ; page++ {
+	for page := 2; page <= maxAssetPages; page++ {
 		url := fmt.Sprintf("https://api.github.com/repos/%s/releases/%d/assets?per_page=%d&page=%d", b.Repo, releaseID, assetsPerPage, page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
@@ -120,7 +127,7 @@ func (b GitHubBackend) findAssetInLaterPages(ctx context.Context, client *http.C
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 
-		resp, err := client.Do(req)
+		resp, err := httpretry.Do(client, req)
 		if err != nil {
 			return "", fmt.Errorf("GET %s: %w", url, err)
 		}
@@ -142,4 +149,5 @@ func (b GitHubBackend) findAssetInLaterPages(ctx context.Context, client *http.C
 			return "", nil
 		}
 	}
+	return "", fmt.Errorf("release %d of %s: no short page after %d pages of assets: giving up", releaseID, b.Repo, maxAssetPages)
 }

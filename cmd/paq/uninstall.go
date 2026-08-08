@@ -227,10 +227,8 @@ func removeRecordFiles(rec state.InstalledApp, keep map[string]bool) error {
 			}
 			return nil
 		}
-		if home, err := os.UserHomeDir(); err == nil {
-			if clean := filepath.Clean(rec.Dest); clean == filepath.Clean(home) || clean == filepath.Dir(clean) {
-				return fmt.Errorf("refusing to remove %s: not a paq-managed directory", rec.Dest)
-			}
+		if err := checkRemovableDir(rec.Dest); err != nil {
+			return err
 		}
 		if err := os.RemoveAll(rec.Dest); err != nil {
 			return fmt.Errorf("remove %s: %w", rec.Dest, err)
@@ -248,6 +246,26 @@ func removeRecordFiles(rec state.InstalledApp, keep map[string]bool) error {
 		}
 	default:
 		return fmt.Errorf("unknown kind %q for %s", rec.Kind, rec.Name)
+	}
+	return nil
+}
+
+// checkRemovableDir refuses to recursively remove a directory that cannot be a
+// paq destination: a filesystem root, or the user's home directory. The two
+// checks are independent — the root check must run even when the home
+// directory is unknown — and an unresolvable home is itself a refusal: on the
+// destructive path an unknown environment fails closed.
+func checkRemovableDir(dest string) error {
+	clean := filepath.Clean(dest)
+	if clean == filepath.Dir(clean) {
+		return fmt.Errorf("refusing to remove %s: not a paq-managed directory", dest)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("refusing to remove %s: cannot resolve the home directory to validate it: %w", dest, err)
+	}
+	if clean == filepath.Clean(home) {
+		return fmt.Errorf("refusing to remove %s: not a paq-managed directory", dest)
 	}
 	return nil
 }
