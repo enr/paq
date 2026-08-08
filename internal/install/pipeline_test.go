@@ -17,10 +17,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/version"
 )
 
@@ -939,6 +942,136 @@ func TestPipelineHalfConfiguredMinisignFails(t *testing.T) {
 		if !strings.Contains(err.Error(), "public_key and signed_asset") {
 			t.Errorf("%s: error = %q, want mention of public_key and signed_asset", name, err)
 		}
+	}
+}
+
+// TestPipelineRecordsInstalledState verifies the state record written by the
+// last step of the pipeline. These are the fields uninstall relies on to find
+// what was installed: nothing asserted them, so a wrong Kind or an empty Files
+// list produced an install that uninstall could no longer clean up.
+func TestPipelineRecordsInstalledState(t *testing.T) {
+	isolateState(t)
+	zipData := makeMultiBinZip("zipp-0.8.1_linux_amd64", map[string][]byte{
+		"zipts": []byte("ts"),
+		"zipls": []byte("ls"),
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	binDir := t.TempDir()
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"zipp": {
+				Backend:         "url",
+				Source:          srv.URL + "/zipp-{{version}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+				Binaries:        []config.Binary{{From: "zipts"}, {From: "zipls"}},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"zipp": {Use: "zipp", Version: "0.8.1", Dest: binDir},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "zipp", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	rec, ok := st.Get("zipp", "0.8.1")
+	if !ok {
+		t.Fatalf("no state record for zipp 0.8.1; state = %+v", st.Packages)
+	}
+	if rec.Kind != "binaries" {
+		t.Errorf("Kind = %q, want binaries", rec.Kind)
+	}
+	if rec.Dest != binDir {
+		t.Errorf("Dest = %q, want %q", rec.Dest, binDir)
+	}
+	wantFiles := []string{filepath.Join(binDir, "zipts"), filepath.Join(binDir, "zipls")}
+	if !slices.Equal(rec.Files, wantFiles) {
+		t.Errorf("Files = %v, want %v", rec.Files, wantFiles)
+	}
+	if want := srv.URL + "/zipp-0.8.1.zip"; rec.Source != want {
+		t.Errorf("Source = %q, want %q", rec.Source, want)
+	}
+	if want := sha256hex(zipData); rec.SHA256 != want {
+		t.Errorf("SHA256 = %q, want the hash of the downloaded artifact %q", rec.SHA256, want)
+	}
+	if rec.InstalledAt.IsZero() {
+		t.Error("InstalledAt was not set")
+	}
+
+	// The recorded paths must be the ones actually on disk: this is what makes
+	// the record usable by uninstall.
+	for _, p := range rec.Files {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("recorded file %s is not on disk: %v", p, err)
+		}
+	}
+}
+
+// TestPipelineSkipsWhenAlreadyInstalled verifies that a second install of the
+// same version does no work at all, and that Force overrides the skip. Without
+// this, a broken skip check makes every `paq install` re-download and
+// re-extract everything, which no other test would notice.
+func TestPipelineSkipsWhenAlreadyInstalled(t *testing.T) {
+	isolateState(t)
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+
+	var downloads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads.Add(1)
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/tool-{{version}}.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+	if got := downloads.Load(); got != 1 {
+		t.Fatalf("first install made %d downloads, want 1", got)
+	}
+
+	var messages []string
+	hooks := &Hooks{OnOK: func(msg string) { messages = append(messages, msg) }}
+	if err := Run(context.Background(), cfg, "tool", nil, hooks); err != nil {
+		t.Fatalf("second install failed: %v", err)
+	}
+	if got := downloads.Load(); got != 1 {
+		t.Errorf("second install made %d downloads in total, want 1: an already installed version must not be re-downloaded", got)
+	}
+	if len(messages) == 0 || !strings.Contains(messages[len(messages)-1], "already installed") {
+		t.Errorf("messages = %v, want the last one to report the app as already installed", messages)
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, &Hooks{Force: true}); err != nil {
+		t.Fatalf("forced reinstall failed: %v", err)
+	}
+	if got := downloads.Load(); got != 2 {
+		t.Errorf("forced reinstall made %d downloads in total, want 2: --force must bypass the skip", got)
 	}
 }
 
