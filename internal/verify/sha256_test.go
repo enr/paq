@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,8 +30,8 @@ func TestCheckFile(t *testing.T) {
 }
 
 func TestParseSHA256File(t *testing.T) {
-	content := "abc123def456  ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz\n" +
-		"111aaa222bbb *ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz.sig\n"
+	content := fakeSHA256 + "  ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz\n" +
+		otherFakeSHA256 + " *ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz.sig\n"
 
 	dir := t.TempDir()
 	f := filepath.Join(dir, "checksums.sha256")
@@ -40,8 +41,8 @@ func TestParseSHA256File(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != "abc123def456" {
-		t.Errorf("hash = %q, want abc123def456", hash)
+	if hash != fakeSHA256 {
+		t.Errorf("hash = %q, want %s", hash, fakeSHA256)
 	}
 
 	_, err = ParseSHA256File(f, "nonexistent.tar.gz")
@@ -50,8 +51,29 @@ func TestParseSHA256File(t *testing.T) {
 	}
 }
 
-// fakeSHA256 is a valid-length (64 hex chars) fake sha256 digest, for fixtures.
-const fakeSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+// TestParseSHA256FileMalformedLine checks that a checksum line whose hash is
+// not a sha256 digest is reported as a malformed checksum file, instead of
+// being passed on and surfacing later as an artifact mismatch.
+func TestParseSHA256FileMalformedLine(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "checksums.sha256")
+	os.WriteFile(f, []byte("abc123def456  tool.tar.gz\nnot-a-hash  other.tar.gz\n"), 0644)
+
+	_, err := ParseSHA256File(f, "tool.tar.gz")
+	if err == nil {
+		t.Fatal("expected an error for a malformed hash")
+	}
+	if !strings.Contains(err.Error(), "malformed checksum file") {
+		t.Errorf("err = %v, want it to mention a malformed checksum file", err)
+	}
+}
+
+// fakeSHA256 and otherFakeSHA256 are valid-length (64 hex chars) fake sha256
+// digests, for fixtures.
+const (
+	fakeSHA256      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	otherFakeSHA256 = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+)
 
 func TestParseSHA256FileBareHash(t *testing.T) {
 	dir := t.TempDir()

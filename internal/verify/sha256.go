@@ -50,7 +50,7 @@ func ParseSHA256File(checksumPath string, fileName string) (string, error) {
 
 	if len(lines) == 1 && len(strings.Fields(lines[0])) == 1 {
 		hash := strings.ToLower(strings.Fields(lines[0])[0])
-		if len(hash) != 64 || !isHex(hash) {
+		if !validSHA256(hash) {
 			return "", fmt.Errorf("malformed checksum file %s", checksumPath)
 		}
 		return hash, nil
@@ -64,7 +64,14 @@ func ParseSHA256File(checksumPath string, fileName string) (string, error) {
 		}
 		name := strings.TrimPrefix(parts[1], "*")
 		if filepath.Base(name) == wantBase {
-			return strings.ToLower(parts[0]), nil
+			hash := strings.ToLower(parts[0])
+			// Validated like the bare-hash case: without this a malformed
+			// line is reported as a checksum mismatch, pointing at the
+			// artifact instead of at the checksum file.
+			if !validSHA256(hash) {
+				return "", fmt.Errorf("malformed checksum file %s", checksumPath)
+			}
+			return hash, nil
 		}
 	}
 
@@ -92,6 +99,11 @@ func readChecksumLines(checksumPath string) ([]string, error) {
 		return nil, fmt.Errorf("read checksum file: %w", err)
 	}
 	return lines, nil
+}
+
+// validSHA256 reports whether s is a well-formed sha256 hex digest.
+func validSHA256(s string) bool {
+	return len(s) == 64 && isHex(s)
 }
 
 func isHex(s string) bool {
