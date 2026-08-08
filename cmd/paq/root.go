@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
@@ -62,7 +65,19 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	// Handle Ctrl-C (and SIGTERM) by cancelling the command's context instead
+	// of letting the runtime kill the process: the commands then unwind their
+	// defers, releasing the state lock and removing temp files and half-written
+	// destinations. A second signal restores the default behaviour, so an
+	// operation that does not observe the cancellation can still be killed.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		reportError(err)
 		os.Exit(exitCodeFor(err))
 	}
