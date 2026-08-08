@@ -9,6 +9,10 @@ prj_home="$( cd -P "$( dirname "$sdlc_dir" )" && pwd )"
 
 cd "${prj_home}"
 
+# -shuffle=on catches tests that depend on the execution order of their
+# siblings (typically a global left dirty); -race catches data races in the
+# parallel install/upgrade paths. The suite runs in well under a second, so
+# both are free.
 echo "==> test"
-go test ./... "$@"
+go test ./... -shuffle=on -race "$@"
 echo "    ok"
