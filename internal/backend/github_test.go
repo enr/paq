@@ -173,6 +173,47 @@ func TestGitHubBackendResolvePaginationNotFound(t *testing.T) {
 	}
 }
 
+// TestGitHubBackendPaginationIsBounded verifies that an API that never returns
+// a short page (e.g. one ignoring the page parameter) stops the walk with an
+// error instead of issuing requests forever.
+func TestGitHubBackendPaginationIsBounded(t *testing.T) {
+	dummyAssets := make([]map[string]string, 100)
+	for i := range dummyAssets {
+		dummyAssets[i] = map[string]string{
+			"name": fmt.Sprintf("dummy-%d.tar.gz", i),
+			"url":  fmt.Sprintf("https://api.github.com/repos/test/repo/releases/assets/%d", i),
+		}
+	}
+
+	var pages int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/test/repo/releases/tags/v1.0", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": 42, "assets": dummyAssets})
+	})
+	mux.HandleFunc("/repos/test/repo/releases/42/assets", func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		json.NewEncoder(w).Encode(dummyAssets) // always a full page
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	b := GitHubBackend{
+		Repo:       "test/repo",
+		Asset:      "tool-{{version}}-{{os}}-{{arch}}.tar.gz",
+		HTTPClient: &http.Client{Transport: &rewriteTransport{base: srv.URL}},
+	}
+
+	v := template.Vars{OS: "linux", Arch: "amd64", Version: "1.0"}
+	_, err := b.Resolve(context.Background(), "v1.0", v)
+	if err == nil {
+		t.Fatal("expected an error once the page cap is reached, got nil")
+	}
+	if want := maxAssetPages - 1; pages != want { // pages 2..maxAssetPages
+		t.Errorf("fetched %d pages, want %d", pages, want)
+	}
+}
+
 type rewriteTransport struct{ base string }
 
 func (rt *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
