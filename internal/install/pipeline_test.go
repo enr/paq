@@ -942,6 +942,23 @@ func TestPipelineHalfConfiguredMinisignFails(t *testing.T) {
 	}
 }
 
+// TestExpandHomeFailsWithoutHome verifies that a ~ which cannot be expanded is
+// an error rather than a path passed through unchanged: the unexpanded form
+// would make the installer create a directory literally named "~".
+func TestExpandHomeFailsWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	if got, err := expandHome("~/bin/rg"); err == nil {
+		t.Fatalf("expandHome = %q, want an error when the home directory is unknown", got)
+	}
+
+	const abs = "/opt/tools/rg"
+	if got, err := expandHome(abs); err != nil || got != abs {
+		t.Errorf("expandHome(%q) = (%q, %v), want it returned unchanged", abs, got, err)
+	}
+}
+
 func TestBuildAuxURL(t *testing.T) {
 	cases := []struct {
 		name        string
