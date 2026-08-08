@@ -183,6 +183,25 @@ func TestRemoveRecordFilesRefusesHomeDir(t *testing.T) {
 	}
 }
 
+// TestRemoveRecordFilesRefusesRootWithoutHome verifies that the guards on the
+// recursive removal do not depend on the home directory being resolvable: with
+// no HOME set (cron, systemd, `env -i`, a container without -e HOME) the root
+// check must still run, and an unknown home is itself a refusal.
+func TestRemoveRecordFilesRefusesRootWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	root := filepath.VolumeName(os.TempDir()) + string(os.PathSeparator)
+	rec := state.InstalledApp{Name: "oops", Version: "1.0.0", Kind: "dir", Dest: root}
+	if err := checkRemovableDir(rec.Dest); err == nil || !strings.Contains(err.Error(), "refusing to remove") {
+		t.Fatalf("expected the root directory to be refused, got %v", err)
+	}
+
+	if err := checkRemovableDir(filepath.Join(t.TempDir(), "app")); err == nil {
+		t.Error("expected a refusal when the home directory cannot be resolved")
+	}
+}
+
 // TestRunUninstallKeepsSharedDest reproduces a legacy inconsistent state where
 // two dir records of the same app share one destination (as produced by older
 // paq installing 3.9.9 then 3.9.16 into the same folder). Uninstalling one
