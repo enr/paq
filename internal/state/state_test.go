@@ -3,6 +3,7 @@ package state
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -107,9 +108,24 @@ func TestConcurrentUpdate(t *testing.T) {
 	}
 }
 
-// TestUpdateFailsWhenLockedByAnotherProcess verifies that a pre-existing
-// lock file (simulating another paq process holding it) makes Update fail
-// after the timeout with a message naming the lock file.
+// TestLoadFailsWhenStatePathIsUnknown verifies that Load reports the error
+// instead of returning an empty state: a silent empty state makes the install
+// run to completion and only fail at the final Save, leaving files on disk
+// that no record tracks.
+func TestLoadFailsWhenStatePathIsUnknown(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("LOCALAPPDATA", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an error when the state path cannot be resolved")
+	}
+}
+
+// TestUpdateFailsWhenLockedByAnotherProcess verifies that a pre-existing lock
+// file owned by a live process (simulating another paq process holding it)
+// makes Update fail after the timeout with a message naming the lock file.
 func TestUpdateFailsWhenLockedByAnotherProcess(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)
@@ -127,7 +143,8 @@ func TestUpdateFailsWhenLockedByAnotherProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	lockPath := path + ".lock"
-	if err := os.WriteFile(lockPath, []byte("99999\n"), 0644); err != nil {
+	// A PID that is certainly alive: this very test process.
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,6 +155,57 @@ func TestUpdateFailsWhenLockedByAnotherProcess(t *testing.T) {
 	if !strings.Contains(err.Error(), lockPath) {
 		t.Errorf("error = %q, want it to name the lock file %q", err, lockPath)
 	}
+}
+
+// TestUpdateReclaimsStaleLock verifies that a lock file left behind by a
+// process that no longer exists (killed before its cleanup could run) is
+// removed instead of blocking every later state-mutating command.
+func TestUpdateReclaimsStaleLock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	path, err := StatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := path + ".lock"
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("%d\n", exitedPID(t))), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(func(st *State) error {
+		st.Set(InstalledApp{Name: "rg", Version: "1.0.0", Kind: "file", Dest: "/bin/rg"})
+		return nil
+	}); err != nil {
+		t.Fatalf("Update should have reclaimed the stale lock, got %v", err)
+	}
+
+	st, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st.Get("rg", "1.0.0"); !ok {
+		t.Error("the record was not saved after reclaiming the stale lock")
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Errorf("lock file should have been removed, stat err = %v", err)
+	}
+}
+
+// exitedPID returns the PID of a process that has already exited (and been
+// reaped), so it is guaranteed not to belong to a live process.
+func exitedPID(t *testing.T) int {
+	t.Helper()
+	// Re-run the test binary with a filter that matches no test: it exits
+	// immediately, and Run waits for it, so the PID is free afterwards.
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run helper process: %v", err)
+	}
+	return cmd.Process.Pid
 }
 
 // TestUpdateLeavesNoLockFileOnSuccess verifies the happy path removes the

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -68,7 +70,7 @@ func StatePath() (string, error) {
 func Load() (*State, error) {
 	path, err := StatePath()
 	if err != nil {
-		return emptyState(), nil
+		return nil, err
 	}
 
 	data, err := os.ReadFile(path)
@@ -261,6 +263,11 @@ func lockedUpdate(fn func(*State) error) error {
 		if !os.IsExist(err) {
 			return fmt.Errorf("create lock file %s: %w", lockPath, err)
 		}
+		// The lock may have been left behind by a process killed before its
+		// cleanup could run: if its owner is gone, drop it and retry.
+		if removeStaleLock(lockPath) {
+			continue
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("state is locked by another paq process (remove %s if stale)", lockPath)
 		}
@@ -276,6 +283,25 @@ func lockedUpdate(fn func(*State) error) error {
 		return err
 	}
 	return st.Save()
+}
+
+// removeStaleLock removes lockPath when the PID it contains belongs to a
+// process that no longer exists, and reports whether it did. A lock file that
+// cannot be read, holds no usable PID, or names a live process is left alone:
+// an unreadable owner is assumed alive, so the wait/timeout path still applies.
+func removeStaleLock(lockPath string) bool {
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	if pid == os.Getpid() || processAlive(pid) {
+		return false
+	}
+	return os.Remove(lockPath) == nil
 }
 
 func emptyState() *State {
