@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -68,6 +69,44 @@ func TestStateLoadSaveRoundtrip(t *testing.T) {
 	s3, _ := Load()
 	if _, ok := s3.Get("rg", "14.1.1"); ok {
 		t.Error("rg should have been deleted")
+	}
+}
+
+// TestSaveOrdersRecordsDeterministically verifies that Save writes the records
+// sorted by name then version, whatever order they were added in: the state
+// file is diffed and inspected by hand, so a stable order is part of its
+// contract rather than an implementation detail.
+func TestSaveOrdersRecordsDeterministically(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	s := emptyState()
+	for _, rec := range []InstalledApp{
+		{Name: "rg", Version: "14.1.1", Kind: "file", Dest: "/bin/rg"},
+		{Name: "bat", Version: "0.24.0", Kind: "file", Dest: "/bin/bat"},
+		{Name: "jdk", Version: "21.0.2", Kind: "dir", Dest: "/opt/jdk-21"},
+		{Name: "jdk", Version: "8.0.1", Kind: "dir", Dest: "/opt/jdk-8"},
+	} {
+		s.Set(rec)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, rec := range got.Packages {
+		order = append(order, rec.Name+"@"+rec.Version)
+	}
+	want := []string{"bat@0.24.0", "jdk@21.0.2", "jdk@8.0.1", "rg@14.1.1"}
+	if !slices.Equal(order, want) {
+		t.Errorf("saved order = %v, want %v", order, want)
+	}
+
+	if got.Schema != schemaVersion {
+		t.Errorf("Schema = %d, want %d: Save must stamp the current schema version", got.Schema, schemaVersion)
 	}
 }
 

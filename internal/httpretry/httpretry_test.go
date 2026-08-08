@@ -95,8 +95,11 @@ func TestDoGivesUpAfterMaxAttempts(t *testing.T) {
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("status = %d, want 429", resp.StatusCode)
 	}
-	if got := calls.Load(); got != maxAttempts {
-		t.Errorf("server was called %d times, want %d", got, maxAttempts)
+	// Deliberately the literal 3, not maxAttempts: asserting against the
+	// constant would make the test follow any change to it, so lowering
+	// maxAttempts to 1 (removing retries entirely) would still pass.
+	if got := calls.Load(); got != 3 {
+		t.Errorf("server was called %d times, want 3 attempts (1 try + 2 retries)", got)
 	}
 }
 

@@ -183,19 +183,32 @@ func TestRemoveRecordFilesRefusesHomeDir(t *testing.T) {
 	}
 }
 
-// TestRemoveRecordFilesRefusesRootWithoutHome verifies that the guards on the
-// recursive removal do not depend on the home directory being resolvable: with
-// no HOME set (cron, systemd, `env -i`, a container without -e HOME) the root
-// check must still run, and an unknown home is itself a refusal.
-func TestRemoveRecordFilesRefusesRootWithoutHome(t *testing.T) {
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
+// TestCheckRemovableDirRefusesRoot verifies the root-directory guard on its
+// own, with a resolvable home: the two guards are independent, and folding
+// them into a single case would let the root check pass by accident because
+// the home lookup failed first.
+func TestCheckRemovableDirRefusesRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 
 	root := filepath.VolumeName(os.TempDir()) + string(os.PathSeparator)
-	rec := state.InstalledApp{Name: "oops", Version: "1.0.0", Kind: "dir", Dest: root}
-	if err := checkRemovableDir(rec.Dest); err == nil || !strings.Contains(err.Error(), "refusing to remove") {
-		t.Fatalf("expected the root directory to be refused, got %v", err)
+	if err := checkRemovableDir(root); err == nil || !strings.Contains(err.Error(), "refusing to remove") {
+		t.Fatalf("expected the root directory %q to be refused, got %v", root, err)
 	}
+
+	// A normal paq destination under the same resolvable home is accepted, so
+	// the test above proves the root check and not a blanket refusal.
+	if err := checkRemovableDir(filepath.Join(t.TempDir(), "opt", "jdk")); err != nil {
+		t.Errorf("a regular destination should be removable, got %v", err)
+	}
+}
+
+// TestCheckRemovableDirRefusesWithoutHome verifies that an unresolvable home
+// directory is itself a refusal: with no HOME set (cron, systemd, `env -i`, a
+// container without -e HOME) the destructive path must fail closed rather than
+// skip its validation.
+func TestCheckRemovableDirRefusesWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
 
 	if err := checkRemovableDir(filepath.Join(t.TempDir(), "app")); err == nil {
 		t.Error("expected a refusal when the home directory cannot be resolved")
