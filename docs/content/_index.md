@@ -12,9 +12,9 @@ shell, profile, or system directories.
 
 ```bash
 # Install a tool from the registry
-paq install rg
+paq install ripgrep
 
-# List tool definitions available in the embedded registry
+# List tool definitions available in the registry
 paq registry list
 
 # Show details of a single definition
