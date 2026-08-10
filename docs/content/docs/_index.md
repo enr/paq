@@ -33,7 +33,7 @@ verify the download.
 
 ```bash
 # Download and extract the binary for your platform (linux/amd64 shown)
-VERSION=v0.0.6
+VERSION=v0.0.12
 curl -LO "https://github.com/enr/paq/releases/download/${VERSION}/paq-${VERSION}-linux-amd64.zip"
 unzip "paq-${VERSION}-linux-amd64.zip"
 install -m 0755 paq ~/.local/bin/paq
@@ -155,17 +155,17 @@ is the easy way to guarantee this.
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
-| `paq install [app]` | `i` | Install a tool, or all tools from the manifest when no app is given |
+| `paq install [app...]` | `i` | Install one or more tools, or all tools from the manifest when no app is given |
 | `paq import <spec>` | | Generate a default manifest entry for a registry tool |
 | `paq init` | | Create a commented manifest skeleton at the default config path |
-| `paq upgrade [app]` | `up` | Upgrade tools pinned to `latest` to the newest release |
+| `paq upgrade [app...]` | `up`, `u` | Upgrade tools pinned to `latest` to the newest release |
 | `paq outdated` | | List installed tools that have a newer upstream version (without installing) |
-| `paq uninstall <app[@version]>` | `rm`, `remove` | Uninstall a tool |
+| `paq uninstall <app[@version]>...` | `rm`, `remove` | Uninstall one or more tools |
 | `paq ls` | `list` | List installed tools |
 | `paq which <app[@version]>` | | Print the installed path(s) of a tool |
 | `paq info <app>` | | Show definition and install state for a manifest app |
 | `paq search <query>` | `s` | Search the registry for tool definitions |
-| `paq registry list [query]` | `reg` | List tool definitions in the registry (with their source) |
+| `paq registry list [query]` | `reg` | List tool definitions in the registry, with their source (`paq reg ls` also works) |
 | `paq registry show <name>` | `reg` | Show details of a single registry definition |
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
@@ -187,9 +187,15 @@ paq install ripgrep --no-save
 # Reinstall even if already installed
 paq install ripgrep --force
 
+# Install several tools at once (up to 3 in parallel)
+paq install ripgrep bat delta
+
 # Install all tools from the manifest
 paq install
 ```
+
+When several tools are installed in one run, a failing one does not abort the
+others: every app is attempted and the command reports the failures at the end.
 
 | Flag | Description |
 |------|-------------|
@@ -217,7 +223,7 @@ paq install rg
 |------|-------------|
 | `-a`, `--as <name>` | Name for the manifest entry (default: spec name) |
 | `--dest <path>` | Install destination (default: derived from the spec) |
-| `--version <ver>` | Version to pin (default: `latest`) |
+| `--version <ver>` | Version to pin (default: the recipe's `default_version`, or `latest` when it has none) |
 | `-w`, `--write` | Add the entry to the manifest instead of printing it |
 | `-f`, `--force` | Overwrite an existing entry (requires `--write`) |
 
@@ -245,9 +251,12 @@ the most recent upstream release. Tools pinned to a fixed version are left
 untouched. Old versions are removed after a successful upgrade.
 
 ```bash
-paq upgrade        # upgrade all latest-pinned tools
-paq upgrade rg     # upgrade a single app
+paq upgrade         # upgrade all latest-pinned tools
+paq upgrade rg      # upgrade a single app
+paq upgrade rg bat  # upgrade several apps
 ```
+
+As with `install`, one failing app does not abort the rest of the batch.
 
 ### outdated
 
@@ -267,14 +276,15 @@ Use `app@version` to disambiguate when multiple versions are installed.
 
 ```bash
 paq uninstall rg
+paq uninstall rg bat          # remove several tools at once
 paq uninstall node@18.20.0
-paq uninstall rg --dry-run   # show what would be removed
+paq uninstall rg --dry-run    # show what would be removed
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Show what would be removed without removing anything |
-| `-y`, `--yes` | Skip the confirmation prompt |
+| `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions) |
 
 ### which
 
@@ -299,6 +309,32 @@ paq self-update --force    # reinstall even if already up to date
 |------|-------------|
 | `-c`, `--check` | Only check for an available update, don't install |
 | `-f`, `--force` | Reinstall even if already up to date |
+
+#### Daily update notice
+
+Independently of `self-update`, paq checks for a newer release **at most once a
+day** and prints a one-line hint after a command when one is available. The
+check runs in a detached background process, so it never delays the command you
+ran: the network lookup happens for the *next* invocation to display. It is
+skipped in non-interactive contexts (output redirected or piped, `--json`,
+`--quiet`) and for source builds.
+
+Disable it with either:
+
+```bash
+export PAQ_NO_UPDATE_CHECK=1
+```
+
+or in the manifest:
+
+```toml
+[defaults]
+check_updates = false
+```
+
+The last check timestamp and the latest known version are cached in
+`~/.cache/paq/update-check.json` (Linux/macOS) or
+`%LOCALAPPDATA%\paq\cache\update-check.json` (Windows).
 
 ### config show
 
@@ -343,6 +379,15 @@ written to stderr; data goes to stdout.
 
 Set `GITHUB_TOKEN` to avoid rate-limiting when installing GitHub-backed tools.
 
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Generic failure (network, missing config, app/spec not found, ...) |
+| `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
+| `4` | Checksum or signature verification failed |
+
 ## Adding a custom recipe
 
 You are not limited to the embedded registry. Add your own recipes to
@@ -352,9 +397,10 @@ tool — `paq install <name>` auto-imports it into the manifest. If a user recip
 shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
-The embedded registry includes `ripgrep`, `bat`, `delta`, `hugo`, `fresh`,
-`zipp`, `jdk`, `maven`, and `temurin-11`/`temurin-17`/`temurin-21` as reference
-implementations.
+The embedded registry currently ships `bat`, `bun`, `delta`, `deno`, `fresh`,
+`gip`, `hugo`, `inner`, `jdk`, `maven`, `node`, `nub`, `ripgrep`, `runp`,
+`zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
+`paq registry list` for the definitive list of what your binary knows about.
 
 A recipe for a GitHub-hosted tool:
 
@@ -487,8 +533,9 @@ also be overlaid with an **external snapshot** updated independently of the
 binary, to pick up new or fixed recipes without a paq release:
 
 ```bash
-paq registry update    # download, verify and install the latest snapshot
-paq registry status    # embedded vs external versions and overrides
+paq registry update           # download, verify and install the latest snapshot
+paq registry update --force   # reinstall even if already up to date or older
+paq registry status           # embedded vs external versions and overrides
 ```
 
 The snapshot is cached under `${XDG_CACHE_HOME:-~/.cache}/paq/registry`
@@ -497,11 +544,16 @@ uses the network; every other command reads the cache, and a missing or corrupt
 cache silently falls back to the embedded registry. Precedence is
 **embedded < external snapshot < your `[specs.*]`**.
 
-The archive is verified with a SHA-256 checksum signed with
-[minisign](https://jedisct1.github.io/minisign/); the public key is embedded in
-the binary as the trust anchor, and a failed verification aborts with exit code
-`4`. To use a custom source, set a `[registry]` table (the URL must be `https`
-and supply its own public key, which replaces the default trust anchor):
+The archive is always verified against a SHA-256 checksum, and the checksum
+itself can be signed with [minisign](https://jedisct1.github.io/minisign/). A
+failed verification aborts with exit code `4`.
+
+Signature verification of the **default** source is still being rolled out:
+official releases do not publish a `.minisig` yet, so the binaries ship without
+an embedded trust anchor and `paq registry update` falls back to checksum-only
+verification, printing a warning. A **custom** source is different — it must
+supply its own public key, and its signature is always verified. Set a
+`[registry]` table (the URL must be `https`):
 
 ```toml
 [registry]
@@ -524,6 +576,7 @@ public_key = "RWQ...your-minisign-public-key..."
 | `{{version_major}}` | e.g. `14` |
 | `{{version_minor}}` | e.g. `1` |
 | `{{version_patch}}` | e.g. `1` |
+| `{{version_build}}` | Build number after `+` in the release tag, e.g. `10` for `21.0.11+10` (empty when absent) |
 | `{{rust_target}}` | e.g. `x86_64-unknown-linux-gnu` |
 | `{{asset}}` | Resolved asset filename |
 
