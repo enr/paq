@@ -15,6 +15,12 @@
   --accent:     #d8401f;
   --accent-ink: #fbf6ec;
 
+  --code-comment: #9c8a72;
+  --code-keyword: #e8735a;
+  --code-string:  #d9a05b;
+  --code-number:  #8fae6a;
+  --code-name:    #e4b8a0;
+
   --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
@@ -454,6 +460,33 @@ body {
 .content .highlight:hover .pre-copy { opacity: 0.85; }
 .pre-copy:hover,
 .pre-copy.copied { background: var(--accent); color: var(--accent-ink); opacity: 1; }
+
+/* syntax highlighting (chroma) */
+.chroma .c, .chroma .c1, .chroma .cm,
+.chroma .ch, .chroma .cs, .chroma .cp, .chroma .cpf {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.chroma .k, .chroma .kc, .chroma .kd, .chroma .kn,
+.chroma .kp, .chroma .kr, .chroma .kt, .chroma .ow, .chroma .or {
+  color: var(--code-keyword);
+}
+.chroma .s, .chroma .sa, .chroma .sb, .chroma .sc, .chroma .dl,
+.chroma .sd, .chroma .s1, .chroma .s2, .chroma .se, .chroma .sh,
+.chroma .si, .chroma .sx, .chroma .sr, .chroma .ss {
+  color: var(--code-string);
+}
+.chroma .m, .chroma .mb, .chroma .mf, .chroma .mh,
+.chroma .mi, .chroma .il, .chroma .mo {
+  color: var(--code-number);
+}
+.chroma .na, .chroma .nb, .chroma .bp, .chroma .nc, .chroma .nd,
+.chroma .nf, .chroma .fm, .chroma .nl, .chroma .ni, .chroma .nn,
+.chroma .no, .chroma .nt, .chroma .nv, .chroma .vc, .chroma .vg,
+.chroma .vi, .chroma .vm {
+  color: var(--code-name);
+}
+.chroma .err { color: var(--accent-ink); background: var(--accent); }
 
 /* tables — datasheet style */
 .content table {
