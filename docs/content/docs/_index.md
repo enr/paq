@@ -398,7 +398,7 @@ shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
 The embedded registry currently ships `bat`, `bun`, `delta`, `deno`, `fresh`,
-`gip`, `hugo`, `inner`, `jdk`, `maven`, `node`, `nub`, `ripgrep`, `runp`,
+`gip`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`, `nub`, `ripgrep`, `runp`,
 `zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
 
@@ -432,6 +432,20 @@ different C environment per arch (e.g. musl on x86_64 but gnu on aarch64),
 ```toml
 [specs.mytool.env_arch]
 amd64 = "musl"   # x86_64 ships only musl; other arches keep the default gnu
+```
+
+When a platform needs a different `asset`/`source`, `archive`, `extract`,
+`chmod`, `strip_components` or `subdir`, put it in a per-OS section
+`[specs.mytool.<os>]`, optionally refined per arch with
+`[specs.mytool.<os>.<arch>]` (the arch section is applied after the OS one):
+
+```toml
+[specs.mytool.windows]
+asset = "mytool-{{version}}-{{os}}{{arch}}.zip"   # Windows ships a zip
+archive = "zip"
+
+[specs.mytool.darwin.amd64]
+asset = "mytool-{{version}}-osx.tar.gz"           # legacy name, Intel macOS only
 ```
 
 A recipe for an archive containing **multiple executables** (each installed

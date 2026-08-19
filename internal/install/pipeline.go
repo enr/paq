@@ -175,8 +175,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	versionMajor, versionMinor, versionPatch := version.Parse(ver)
 	versionBuild := version.Build(tag)
 
-	// Apply the spec's per-OS override (e.g. jdk has [jdk.darwin]).
-	spec = spec.ApplyOSOverride(plat.OS)
+	// Apply the spec's per-OS / per-OS-arch override (e.g. jdk has [jdk.darwin],
+	// micro has [micro.darwin.amd64]).
+	spec = spec.ApplyPlatformOverride(plat.OS, plat.Arch)
 
 	if spec.Extract != "" && len(spec.Binaries) > 0 {
 		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)

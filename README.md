@@ -206,8 +206,8 @@ the same fields as the embedded ones and is installable like any registry tool â
 `paq install <name>` auto-imports it into the manifest. If a user recipe shares
 its name with an embedded one, the user recipe wins, so you can also patch a
 stale embedded recipe without waiting for a release. The embedded registry
-includes `ripgrep`, `bat`, `delta`, `hugo`, `fresh`, `zipp`, `jdk`, `maven`, and
-`temurin-11`/`temurin-17`/`temurin-21` as reference implementations.
+includes `ripgrep`, `bat`, `delta`, `hugo`, `fresh`, `micro`, `zipp`, `jdk`,
+`maven`, and `temurin-11`/`temurin-17`/`temurin-21` as reference implementations.
 
 A recipe for a GitHub-hosted tool:
 

@@ -135,7 +135,8 @@ func OverlayRegistry(specs map[string]Spec, global map[string]string, globalOS m
 }
 
 // parseSpecFile parses a recipe TOML file.
-// Handles per-OS sections (e.g. [jdk.darwin]) by extracting them as OSOverrides.
+// Handles per-OS sections (e.g. [jdk.darwin], [micro.darwin.amd64]) by extracting
+// them as OSOverrides.
 func parseSpecFile(data []byte) (map[string]Spec, error) {
 	// First pass: decode into a generic map to handle per-OS sections.
 	var raw map[string]any
@@ -146,9 +147,10 @@ func parseSpecFile(data []byte) (map[string]Spec, error) {
 }
 
 // parseSpecsFromRaw converts a name→spec-table map (already decoded from TOML
-// in generic form) into Spec, extracting per-OS sections (e.g. [x.darwin]) as
-// OSOverrides. Shared by parsing of the embedded registry and of user-defined
-// specs in the manifest ([specs.*] section).
+// in generic form) into Spec, extracting per-OS sections (e.g. [x.darwin], with
+// their optional [x.darwin.<arch>] sub-sections) as OSOverrides. Shared by
+// parsing of the embedded registry and of user-defined specs in the manifest
+// ([specs.*] section).
 func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 	result := make(map[string]Spec)
 
@@ -165,27 +167,9 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 		for k, v := range specMap {
 			if knownOSNames[k] {
 				// Per-OS section: decode into PlatformOverride.
-				overrideData, err := json.Marshal(v)
+				ov, err := decodePlatformOverride(v)
 				if err != nil {
-					return nil, fmt.Errorf("marshal os override %q: %w", k, err)
-				}
-				var ov PlatformOverride
-				if err := json.Unmarshal(overrideData, &ov); err != nil {
-					return nil, fmt.Errorf("unmarshal os override %q: %w", k, err)
-				}
-				// strip_components as *int needs a workaround:
-				// read the raw field from the map.
-				if ovMap, ok := v.(map[string]any); ok {
-					if sc, ok := ovMap["strip_components"]; ok {
-						switch scv := sc.(type) {
-						case int64:
-							n := int(scv)
-							ov.StripComponents = &n
-						case float64:
-							n := int(scv)
-							ov.StripComponents = &n
-						}
-					}
+					return nil, fmt.Errorf("os override %q: %w", k, err)
 				}
 				osOverrides[k] = ov
 			} else {
@@ -210,6 +194,57 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 	}
 
 	return result, nil
+}
+
+// decodePlatformOverride decodes a per-OS section ([x.<os>]) into a
+// PlatformOverride. Nested tables are the per-arch sub-sections
+// ([x.<os>.<arch>]): no override field is itself a table, so a nested table is
+// unambiguously an arch section.
+func decodePlatformOverride(v any) (PlatformOverride, error) {
+	var ov PlatformOverride
+
+	ovMap, ok := v.(map[string]any)
+	if !ok {
+		return ov, fmt.Errorf("expected a table")
+	}
+
+	fields := make(map[string]any, len(ovMap))
+	for k, val := range ovMap {
+		sub, isTable := val.(map[string]any)
+		if !isTable {
+			fields[k] = val
+			continue
+		}
+		archOv, err := decodePlatformOverride(sub)
+		if err != nil {
+			return ov, fmt.Errorf("arch override %q: %w", k, err)
+		}
+		if ov.ArchOverrides == nil {
+			ov.ArchOverrides = make(map[string]PlatformOverride)
+		}
+		ov.ArchOverrides[k] = archOv
+	}
+
+	overrideData, err := json.Marshal(fields)
+	if err != nil {
+		return ov, fmt.Errorf("marshal: %w", err)
+	}
+	if err := json.Unmarshal(overrideData, &ov); err != nil {
+		return ov, fmt.Errorf("unmarshal: %w", err)
+	}
+	// strip_components as *int needs a workaround: read the raw field from the map.
+	if sc, ok := fields["strip_components"]; ok {
+		switch scv := sc.(type) {
+		case int64:
+			n := int(scv)
+			ov.StripComponents = &n
+		case float64:
+			n := int(scv)
+			ov.StripComponents = &n
+		}
+	}
+
+	return ov, nil
 }
 
 // userConfigPath returns the path of the user configuration file.
