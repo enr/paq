@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/enr/paq/embedded"
+	"github.com/enr/paq/internal/platform"
+	"github.com/enr/paq/internal/template"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -132,7 +134,7 @@ func TestWindowsArchiveOverride(t *testing.T) {
 		if r.Archive != "tar.gz" {
 			t.Errorf("%s default Archive = %q, want tar.gz", name, r.Archive)
 		}
-		win := r.ApplyOSOverride("windows")
+		win := r.ApplyPlatformOverride("windows", "amd64")
 		if win.Archive != "zip" {
 			t.Errorf("%s windows Archive = %q, want zip", name, win.Archive)
 		}
@@ -141,7 +143,59 @@ func TestWindowsArchiveOverride(t *testing.T) {
 		}
 		// The override must not mutate the original spec.
 		if r.Archive != "tar.gz" {
-			t.Errorf("%s Archive mutated to %q after ApplyOSOverride", name, r.Archive)
+			t.Errorf("%s Archive mutated to %q after ApplyPlatformOverride", name, r.Archive)
+		}
+	}
+}
+
+// TestMicroSpec verifies the micro recipe: the asset name depends on the
+// (os, arch) pair, so darwin/amd64 (which keeps the legacy "osx" name) is
+// covered by the [micro.darwin.amd64] sub-section.
+func TestMicroSpec(t *testing.T) {
+	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	micro, ok := specs["micro"]
+	if !ok {
+		t.Fatal("micro spec not found")
+	}
+	if micro.Verify.SHA256Asset != "{{asset}}.sha" {
+		t.Errorf("micro.Verify.SHA256Asset = %q, want {{asset}}.sha", micro.Verify.SHA256Asset)
+	}
+
+	cases := []struct {
+		os, arch    string
+		wantAsset   string
+		wantArchive string
+	}{
+		{"linux", "amd64", "micro-2.0.15-linux64.tar.gz", "tar.gz"},
+		{"linux", "arm64", "micro-2.0.15-linux-arm64.tar.gz", "tar.gz"},
+		{"darwin", "amd64", "micro-2.0.15-osx.tar.gz", "tar.gz"},
+		{"darwin", "arm64", "micro-2.0.15-macos-arm64.tar.gz", "tar.gz"},
+		{"windows", "amd64", "micro-2.0.15-win64.zip", "zip"},
+		{"windows", "arm64", "micro-2.0.15-win-arm64.zip", "zip"},
+	}
+
+	for _, tc := range cases {
+		if !micro.SupportsPlatform(tc.os, tc.arch) {
+			t.Errorf("micro should support %s/%s", tc.os, tc.arch)
+		}
+		s := micro.ApplyPlatformOverride(tc.os, tc.arch)
+		vars := template.Vars{
+			OS:      platform.ApplyMap(s.OS, tc.os, tc.os),
+			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
+			Version: "2.0.15",
+		}
+		asset, err := template.Resolve(s.Asset, vars)
+		if err != nil {
+			t.Fatalf("%s/%s: resolve asset: %v", tc.os, tc.arch, err)
+		}
+		if asset != tc.wantAsset {
+			t.Errorf("%s/%s asset = %q, want %q", tc.os, tc.arch, asset, tc.wantAsset)
+		}
+		if s.Archive != tc.wantArchive {
+			t.Errorf("%s/%s archive = %q, want %q", tc.os, tc.arch, s.Archive, tc.wantArchive)
 		}
 	}
 }
@@ -200,6 +254,9 @@ sha256_asset = "{{asset}}.sha256"
 
 [specs.mytool.darwin]
 strip_components = 1
+
+[specs.mytool.darwin.amd64]
+asset = "mytool-{{version}}-osx.tar.gz"
 `)
 	var raw userConfigRaw
 	if err := toml.Unmarshal(data, &raw); err != nil {
@@ -232,6 +289,14 @@ strip_components = 1
 	}
 	if darwin.StripComponents == nil || *darwin.StripComponents != 1 {
 		t.Errorf("darwin StripComponents = %v, want 1", darwin.StripComponents)
+	}
+	// The nested per-arch sub-section must not swallow the OS-level fields.
+	amd64, ok := darwin.ArchOverrides["amd64"]
+	if !ok {
+		t.Fatal("darwin/amd64 override not found")
+	}
+	if amd64.Asset != "mytool-{{version}}-osx.tar.gz" {
+		t.Errorf("darwin/amd64 Asset = %q, want mytool-{{version}}-osx.tar.gz", amd64.Asset)
 	}
 }
 

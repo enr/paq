@@ -1,0 +1,39 @@
+# micro names the asset "<os><arch>" with no separator on amd64 (linux64,
+# win64) and a dash on arm64 (linux-arm64, macos-arm64): the arch map carries
+# that suffix, dash included.
+
+[micro]
+backend = "github"
+repo = "micro-editor/micro"
+asset = "micro-{{version}}-{{os}}{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "micro{{ext}}"
+chmod = "0755"
+platforms = [
+  "linux/amd64",
+  "linux/arm64",
+  "darwin/amd64",
+  "darwin/arm64",
+  "windows/amd64",
+  "windows/arm64",
+]
+
+[micro.os]
+darwin = "macos"
+windows = "win"
+
+[micro.arch]
+amd64 = "64"
+arm64 = "-arm64"
+
+# The Intel macOS build keeps the legacy "osx" name.
+[micro.darwin.amd64]
+asset = "micro-{{version}}-osx.tar.gz"
+
+# Windows ships a .zip instead of a .tar.gz.
+[micro.windows]
+asset = "micro-{{version}}-{{os}}{{arch}}.zip"
+archive = "zip"
+
+[micro.verify]
+sha256_asset = "{{asset}}.sha"

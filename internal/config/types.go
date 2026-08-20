@@ -2,7 +2,8 @@ package config
 
 import "strings"
 
-// PlatformOverride contains the fields of a spec that can be overridden per-OS.
+// PlatformOverride contains the fields of a spec that can be overridden
+// per-OS ([x.<os>]) or per OS/arch pair ([x.<os>.<arch>]).
 type PlatformOverride struct {
 	StripComponents *int   `toml:"strip_components"`
 	Subdir          string `toml:"subdir"`
@@ -11,6 +12,10 @@ type PlatformOverride struct {
 	Source          string `toml:"source"`
 	Asset           string `toml:"asset"`
 	Archive         string `toml:"archive"`
+	// ArchOverrides contains the per-arch sections nested in a per-OS one
+	// (e.g. [micro.darwin.amd64]), keyed by canonical arch. Applied after the
+	// OS-level fields. Set at load time, not part of the TOML decoding.
+	ArchOverrides map[string]PlatformOverride `toml:"-"`
 }
 
 // Binary is an executable to extract from a multi-binary archive.
@@ -58,9 +63,9 @@ type Spec struct {
 	// Limitation: unlike Env (keyed on "gnu", empty outside linux, so naturally
 	// linux-scoped) this is keyed on arch alone and applies on every OS. It is
 	// harmless today only because {{env}} is consumed solely by the linux
-	// rust_target template. If a second joint (os,arch) dependency appears,
-	// prefer generalizing the per-OS override blocks to [x.<os>.<arch>] and
-	// dropping this field.
+	// rust_target template. A joint (os,arch) dependency belongs in the
+	// [x.<os>.<arch>] override blocks (see PlatformOverride.ArchOverrides),
+	// not in this field.
 	EnvArch         map[string]string            `toml:"env_arch"`
 	Templates       map[string]string            `toml:"templates"`
 	TemplatesOS     map[string]map[string]string `toml:"templates_os"`
@@ -102,12 +107,23 @@ func (r Spec) SupportsPlatform(os, arch string) bool {
 	return false
 }
 
-// ApplyOSOverride applies the per-OS override if present, returning a modified copy.
-func (r Spec) ApplyOSOverride(os string) Spec {
+// ApplyPlatformOverride applies the per-OS override ([x.<os>]) and then the
+// per-OS/arch one ([x.<os>.<arch>]) if present, returning a modified copy.
+// os and arch are the canonical values, before any [x.os] / [x.arch] remapping.
+func (r Spec) ApplyPlatformOverride(os, arch string) Spec {
 	ov, ok := r.OSOverrides[os]
 	if !ok {
 		return r
 	}
+	r = r.applyOverride(ov)
+	if archOv, ok := ov.ArchOverrides[arch]; ok {
+		r = r.applyOverride(archOv)
+	}
+	return r
+}
+
+// applyOverride applies a single override block, returning a modified copy.
+func (r Spec) applyOverride(ov PlatformOverride) Spec {
 	if ov.StripComponents != nil {
 		r.StripComponents = *ov.StripComponents
 	}
