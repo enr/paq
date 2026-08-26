@@ -421,3 +421,67 @@ func TestExtractTarGzSymlinkEscapingTargetRejected(t *testing.T) {
 		t.Error("symlink entry should not have been extracted")
 	}
 }
+
+// makeTarGzWithHardlink builds an archive containing one regular file plus a
+// hardlink entry pointing at it (as found in rootfs tarballs, e.g. terminfo).
+func makeTarGzWithHardlink(t *testing.T, files map[string]string, name, target string) string {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for n, content := range files {
+		tw.WriteHeader(&tar.Header{Name: n, Mode: 0644, Size: int64(len(content))})
+		tw.Write([]byte(content))
+	}
+	tw.WriteHeader(&tar.Header{
+		Name:     name,
+		Typeflag: tar.TypeLink,
+		Linkname: target,
+		Mode:     0644,
+	})
+	tw.Close()
+	gz.Close()
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-hardlink-*.tar.gz")
+	tmp.Write(buf.Bytes())
+	tmp.Close()
+	return tmp.Name()
+}
+
+// TestExtractTarGzHardlinkOutsideExtractScopeIgnored verifies that a hardlink
+// entry the extraction would never materialize does not fail the install.
+func TestExtractTarGzHardlinkOutsideExtractScopeIgnored(t *testing.T) {
+	a := makeTarGzWithHardlink(t, map[string]string{
+		"app-1.0/tool":                  "binary-content",
+		"app-1.0/rootfs/terminfo/v/vt1": "terminfo",
+	}, "app-1.0/rootfs/terminfo/v/vt200", "app-1.0/rootfs/terminfo/v/vt1")
+
+	dest := t.TempDir()
+	if err := Extract(a, "tar.gz", ExtractOpts{Extract: "tool", Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "tool"))
+	if err != nil {
+		t.Fatalf("tool not extracted: %v", err)
+	}
+	if string(data) != "binary-content" {
+		t.Errorf("tool content = %q, want %q", data, "binary-content")
+	}
+}
+
+// TestExtractTarGzHardlinkInScopeRejected verifies that a hardlink that is
+// actually part of what gets extracted is still reported as unsupported.
+func TestExtractTarGzHardlinkInScopeRejected(t *testing.T) {
+	a := makeTarGzWithHardlink(t, map[string]string{
+		"app-1.0/tool-orig": "binary-content",
+	}, "app-1.0/tool", "app-1.0/tool-orig")
+
+	err := Extract(a, "tar.gz", ExtractOpts{Extract: "tool", Dest: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "hardlink") {
+		t.Errorf("error = %v, want hardlink not supported", err)
+	}
+
+	err = Extract(a, "tar.gz", ExtractOpts{StripComponents: 1, Dest: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "hardlink") {
+		t.Errorf("standard mode: error = %v, want hardlink not supported", err)
+	}
+}

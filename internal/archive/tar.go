@@ -42,10 +42,6 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			continue
 		}
 
-		if hdr.Typeflag == tar.TypeLink {
-			return fmt.Errorf("entry %q is a hardlink: not supported", hdr.Name)
-		}
-
 		switch hdr.Typeflag {
 		case tar.TypeXGlobalHeader, tar.TypeXHeader, tar.TypeGNULongName, tar.TypeGNULongLink:
 			continue // metadata entries, never materialized
@@ -57,7 +53,13 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 		case wanted != nil:
 			// Extracts mode: look up each wanted file by basename.
 			base := filepath.Base(stripped)
-			if hdr.Typeflag != tar.TypeSymlink && hdr.Typeflag != tar.TypeDir && wanted[base] {
+			if !wanted[base] {
+				continue
+			}
+			if hdr.Typeflag == tar.TypeLink {
+				return hardlinkError(hdr.Name)
+			}
+			if hdr.Typeflag != tar.TypeSymlink && hdr.Typeflag != tar.TypeDir {
 				if found[base] {
 					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", base)
 				}
@@ -92,6 +94,8 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
+			case tar.TypeLink:
+				return hardlinkError(hdr.Name)
 			default:
 				continue
 			}
@@ -113,6 +117,8 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
+			case tar.TypeLink:
+				return hardlinkError(hdr.Name)
 			default:
 				continue
 			}
@@ -129,6 +135,12 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 		return err
 	}
 	return nil
+}
+
+// hardlinkError reports an in-scope hardlink entry, which extraction cannot
+// materialize. Entries outside the extraction scope are skipped, not reported.
+func hardlinkError(name string) error {
+	return fmt.Errorf("entry %q is a hardlink: not supported", name)
 }
 
 // writeSymlink creates a symlink at dest pointing to linkname, after verifying
