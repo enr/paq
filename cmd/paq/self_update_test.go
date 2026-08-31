@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/enr/paq/internal/registry"
@@ -187,4 +188,50 @@ func TestDownloadAndVerifyReleaseNoKeyChecksumOnly(t *testing.T) {
 	}
 	defer os.Remove(zipPath)
 	assertIsServedZip(t, zipPath, zipData)
+}
+
+// installSnapshot puts a minimal registry snapshot at the given version into
+// the cache, without going through the network.
+func installSnapshot(t *testing.T, version string) {
+	t.Helper()
+	staging, err := registry.StagingDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(staging, "registry")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"tool.toml": "[t]\nbackend = \"github\"\nrepo = \"owner/t\"\n",
+		"VERSION":   version + "\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := registry.Install(staging, registry.Meta{Tag: "custom", Version: version, SpecCount: 1}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRefreshRegistrySnapshotSkipsCustomSource verifies that a snapshot coming
+// from a user-configured registry, which has its own version line, is left
+// alone by the self-update.
+func TestRefreshRegistrySnapshotSkipsCustomSource(t *testing.T) {
+	s := newSigner(t)
+	url := serve(t, validFixture(t, s, "1.0.0", "[t]\nbackend = \"github\"\nrepo = \"owner/t\"\n"))
+	setupEnv(t, url, s.pubB64)
+	installSnapshot(t, "0.9.0")
+
+	refreshRegistrySnapshot(context.Background())
+
+	_, meta, err := registry.Open()
+	if err != nil || meta == nil {
+		t.Fatalf("snapshot lost: meta=%+v err=%v", meta, err)
+	}
+	if meta.Version != "0.9.0" {
+		t.Errorf("registry version = %q, want the custom snapshot left at 0.9.0", meta.Version)
+	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/enr/paq/internal/archive"
 	"github.com/enr/paq/internal/backend"
+	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/download"
 	"github.com/enr/paq/internal/platform"
 	"github.com/enr/paq/internal/registry"
@@ -137,7 +138,38 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.OK("paq updated to %s (%s)", latest, exePath)
+
+	refreshRegistrySnapshot(ctx)
 	return nil
+}
+
+// refreshRegistrySnapshot brings the external registry snapshot in line with
+// the binary just installed: the snapshot is versioned and published together
+// with paq, so right after a self-update the cached one is older than the
+// embedded registry and keeps overlaying its recipes with stale definitions.
+// Best effort — the new binary is already in place, so a failed refresh only
+// warns. A snapshot from a custom source has its own version line and is left
+// to the user.
+func refreshRegistrySnapshot(ctx context.Context) {
+	_, meta, err := registry.Open()
+	if err != nil {
+		ui.Warn("external registry cache is unusable (%v)", err)
+		ui.Hint("run `paq registry update` to refresh the external registry")
+		return
+	}
+	if meta == nil {
+		return // embedded registry only: nothing to refresh
+	}
+	if userCfg, err := config.LoadUserConfig(); err == nil && userCfg.Registry.URL != "" {
+		ui.Hint("the external registry comes from a custom source: run `paq registry update` to refresh it")
+		return
+	}
+
+	ui.Step("Refreshing the registry snapshot...")
+	if err := updateRegistry(ctx, false); err != nil {
+		ui.Warn("could not refresh the registry snapshot: %v", err)
+		ui.Hint("run `paq registry update` to retry")
+	}
 }
 
 // downloadAndVerifyRelease resolves the release asset and checksums URLs,
