@@ -55,9 +55,13 @@ func init() {
 }
 
 func runRegistryUpdate(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
 	force, _ := cmd.Flags().GetBool("force")
+	return updateRegistry(cmd.Context(), force)
+}
 
+// updateRegistry downloads, verifies and installs the registry snapshot.
+// Shared by "paq registry update" and the refresh at the end of a self-update.
+func updateRegistry(ctx context.Context, force bool) error {
 	userCfg, err := config.LoadUserConfig()
 	if err != nil {
 		return fmt.Errorf("load user config: %w", err)

@@ -310,6 +310,14 @@ paq self-update --force    # reinstall even if already up to date
 | `-c`, `--check` | Only check for an available update, don't install |
 | `-f`, `--force` | Reinstall even if already up to date |
 
+The registry is versioned and published together with paq, so once the new
+binary is in place `self-update` also refreshes the [external registry
+snapshot](#external-registry), when one is installed: otherwise the older
+cached recipes would keep overlaying the ones embedded in the new binary, and
+`paq version` would keep reporting a registry older than the binary. A snapshot
+from a custom source has its own version line and is left untouched. A failed
+refresh only warns — the new binary is already installed.
+
 #### Daily update notice
 
 Independently of `self-update`, paq checks for a newer release **at most once a
@@ -554,9 +562,9 @@ paq registry status           # embedded vs external versions and overrides
 
 The snapshot is cached under `${XDG_CACHE_HOME:-~/.cache}/paq/registry`
 (`%LOCALAPPDATA%\paq\cache\registry` on Windows). Only `paq registry update`
-uses the network; every other command reads the cache, and a missing or corrupt
-cache silently falls back to the embedded registry. Precedence is
-**embedded < external snapshot < your `[specs.*]`**.
+and `paq self-update` use the network; every other command reads the cache, and
+a missing or corrupt cache silently falls back to the embedded registry.
+Precedence is **embedded < external snapshot < your `[specs.*]`**.
 
 The archive is always verified against a SHA-256 checksum, and the checksum
 itself can be signed with [minisign](https://jedisct1.github.io/minisign/). A

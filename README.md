@@ -291,7 +291,8 @@ paq registry status    # show embedded vs external versions and overrides
 `paq registry update` downloads the registry published with the latest paq
 release, verifies it (see below) and installs it into a cache directory
 (`${XDG_CACHE_HOME:-~/.cache}/paq/registry`, `%LOCALAPPDATA%\paq\cache\registry`
-on Windows). Nothing else ever touches the network: all other commands read the
+on Windows). `paq self-update` refreshes it the same way after replacing the
+binary. Nothing else ever touches the network: all other commands read the
 snapshot from the cache, and a missing or corrupt cache silently falls back to
 the embedded registry. Precedence is **embedded < external snapshot < your
 `[specs.*]`**, so a recipe you define always wins.
@@ -368,6 +369,8 @@ explicit opt-in to the newest release.
 ## Updating paq
 
 `paq self-update` downloads the latest release from GitHub, verifies its checksum, and replaces the running binary. Use `--check` to only report whether a newer version exists.
+
+The registry is versioned and published together with paq, so once the new binary is in place `self-update` also refreshes the external registry snapshot, when one is installed: otherwise the older cached recipes would keep overlaying the ones embedded in the new binary. A snapshot from a custom source has its own version line and is left untouched. A failed refresh only warns — the new binary is already installed.
 
 Additionally, paq checks for a newer release **at most once a day** and prints a one-line hint after a command when one is available. The check runs in a detached background process, so it never delays the command you ran; the network lookup happens for the *next* invocation to display. It is skipped in non-interactive contexts (output redirected/piped, or `--json`/`--quiet`) and for source builds.
 
