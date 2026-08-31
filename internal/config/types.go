@@ -49,13 +49,13 @@ type Spec struct {
 	Extract        string `toml:"extract"`
 	// Binaries lists multiple executables to extract from the archive and
 	// install into dest (interpreted as a bin directory). Mutually exclusive with Extract.
-	Binaries        []Binary                     `toml:"binaries"`
-	Subdir          string                       `toml:"subdir"`
-	StripComponents int                          `toml:"strip_components"`
-	Chmod           string                       `toml:"chmod"`
-	OS              map[string]string            `toml:"os"`
-	Arch            map[string]string            `toml:"arch"`
-	Env             map[string]string            `toml:"env"`
+	Binaries        []Binary          `toml:"binaries"`
+	Subdir          string            `toml:"subdir"`
+	StripComponents int               `toml:"strip_components"`
+	Chmod           string            `toml:"chmod"`
+	OS              map[string]string `toml:"os"`
+	Arch            map[string]string `toml:"arch"`
+	Env             map[string]string `toml:"env"`
 	// EnvArch overrides {{env}} per arch (keyed by canonical arch, e.g. amd64).
 	// Takes precedence over Env for the matching arch. Needed when a tool ships
 	// different C environments per arch (e.g. ripgrep: musl on x86_64, gnu on aarch64).
@@ -66,10 +66,10 @@ type Spec struct {
 	// rust_target template. A joint (os,arch) dependency belongs in the
 	// [x.<os>.<arch>] override blocks (see PlatformOverride.ArchOverrides),
 	// not in this field.
-	EnvArch         map[string]string            `toml:"env_arch"`
-	Templates       map[string]string            `toml:"templates"`
-	TemplatesOS     map[string]map[string]string `toml:"templates_os"`
-	Verify          VerifyConfig                 `toml:"verify"`
+	EnvArch     map[string]string            `toml:"env_arch"`
+	Templates   map[string]string            `toml:"templates"`
+	TemplatesOS map[string]map[string]string `toml:"templates_os"`
+	Verify      VerifyConfig                 `toml:"verify"`
 	// Platforms lists the supported platforms in paq's canonical vocabulary
 	// (e.g. "linux/amd64" or "linux"). Empty = no restriction (all allowed).
 	// The arch is optional: "linux" matches all arches.
