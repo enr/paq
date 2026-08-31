@@ -56,7 +56,13 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		ui.WarnField("Registry", "external cache unusable", "("+rerr.Error()+")")
 		ui.Hint("run `paq registry update` to refresh the external registry")
 	} else if meta != nil {
-		ui.OKField("Registry", fmt.Sprintf("external %s, %d recipes, fetched %s", meta.Version, meta.SpecCount, humanAge(meta.FetchedAt)))
+		value := fmt.Sprintf("external %s, %d recipes, fetched %s", meta.Version, meta.SpecCount, humanAge(meta.FetchedAt))
+		if registryIsStale(meta) {
+			ui.WarnField("Registry", value, fmt.Sprintf("(stale: older than paq %s)", Version))
+			ui.Hint("run `paq registry update` to refresh the external registry")
+		} else {
+			ui.OKField("Registry", value)
+		}
 	} else {
 		ui.OKField("Registry", "embedded only")
 	}

@@ -32,6 +32,8 @@ type externalStatus struct {
 	SourceURL string    `json:"source_url"`
 	FetchedAt time.Time `json:"fetched_at"`
 	SpecCount int       `json:"spec_count"`
+	// Stale marks a snapshot older than the running binary.
+	Stale bool `json:"stale"`
 }
 
 type registryStatus struct {
@@ -88,6 +90,7 @@ func runRegistryStatus(cmd *cobra.Command, args []string) error {
 			SourceURL: meta.SourceURL,
 			FetchedAt: meta.FetchedAt,
 			SpecCount: meta.SpecCount,
+			Stale:     registryIsStale(meta),
 		}
 	}
 
@@ -106,13 +109,22 @@ func runRegistryStatus(cmd *cobra.Command, args []string) error {
 		ui.OKField("External registry", "not installed")
 		ui.Hint("run `paq registry update` to download the latest registry")
 	default:
-		ui.OKField("External registry", fmt.Sprintf("%s (%d recipes)", meta.Version, meta.SpecCount))
+		value := fmt.Sprintf("%s (%d recipes)", meta.Version, meta.SpecCount)
+		stale := registryIsStale(meta)
+		if stale {
+			ui.WarnField("External registry", value, fmt.Sprintf("(stale: older than paq %s)", Version))
+		} else {
+			ui.OKField("External registry", value)
+		}
 		if src := metaSource(meta); src != "" {
 			ui.OKField("  source", src)
 		}
 		ui.OKField("  fetched", fmt.Sprintf("%s (%s)", meta.FetchedAt.Local().Format("2006-01-02 15:04"), humanAge(meta.FetchedAt)))
 		if len(byExt) > 0 {
 			ui.OKField("  overrides embedded", strings.Join(byExt, ", "))
+		}
+		if stale {
+			ui.Hint("run `paq registry update` to refresh the external registry")
 		}
 	}
 	ui.OKField("Active recipes", fmt.Sprintf("%d", len(cfg.Specs)))

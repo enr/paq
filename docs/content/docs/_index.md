@@ -566,6 +566,13 @@ and `paq self-update` use the network; every other command reads the cache, and
 a missing or corrupt cache silently falls back to the embedded registry.
 Precedence is **embedded < external snapshot < your `[specs.*]`**.
 
+`paq version`, `paq registry status` and `paq doctor` mark the snapshot as
+**stale** when its version is older than the running binary: its recipes are
+then overlaying newer ones embedded in the binary, and `paq registry update`
+brings it back in line (`registry status --json` exposes it as `stale`). A
+snapshot from a custom source has its own version line and is never marked
+stale.
+
 The archive is always verified against a SHA-256 checksum, and the checksum
 itself can be signed with [minisign](https://jedisct1.github.io/minisign/). A
 failed verification aborts with exit code `4`.

@@ -297,6 +297,12 @@ snapshot from the cache, and a missing or corrupt cache silently falls back to
 the embedded registry. Precedence is **embedded < external snapshot < your
 `[specs.*]`**, so a recipe you define always wins.
 
+`paq version`, `paq registry status` and `paq doctor` mark the snapshot as
+**stale** when its version is older than the running binary: its recipes are
+then overlaying newer ones embedded in the binary, and `paq registry update`
+brings it back in line. A snapshot from a custom source has its own version
+line and is never marked stale.
+
 ### Verification and trust
 
 The archive is protected by a SHA-256 checksum that is itself signed with
