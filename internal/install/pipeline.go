@@ -175,52 +175,19 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	versionMajor, versionMinor, versionPatch := version.Parse(ver)
 	versionBuild := version.Build(tag)
 
-	// Apply the spec's per-OS / per-OS-arch override (e.g. jdk has [jdk.darwin],
-	// micro has [micro.darwin.amd64]).
-	spec = spec.ApplyPlatformOverride(plat.OS, plat.Arch)
-
 	if spec.Extract != "" && len(spec.Binaries) > 0 {
 		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
 	}
 
-	// Apply the spec's arch/os override (maps [ripgrep.arch]).
-	resolvedArch := platform.ApplyMap(spec.Arch, plat.Arch, plat.Arch)
-	resolvedOS := platform.ApplyMap(spec.OS, plat.OS, plat.OS)
-
-	// Apply the app manifest override (takes precedence over the spec).
-	if app.Arch != nil {
-		resolvedArch = platform.ApplyMap(app.Arch, plat.Arch, resolvedArch)
-	}
-	if app.OS != nil {
-		resolvedOS = platform.ApplyMap(app.OS, plat.OS, resolvedOS)
-	}
-	resolvedEnv := platform.ApplyMap(spec.Env, plat.Env, plat.Env)
-	// Per-arch env override (keyed by canonical arch); refines spec.Env.
-	resolvedEnv = platform.ApplyMap(spec.EnvArch, plat.Arch, resolvedEnv)
-	if app.Env != nil {
-		resolvedEnv = platform.ApplyMap(app.Env, plat.Env, resolvedEnv)
-	}
-
-	vars := template.Vars{
-		OS:           resolvedOS,
-		Arch:         resolvedArch,
-		Vendor:       plat.Vendor,
-		Env:          resolvedEnv,
-		Ext:          plat.Ext,
-		Version:      ver,
-		VersionMajor: versionMajor,
-		VersionMinor: versionMinor,
-		VersionPatch: versionPatch,
-		VersionBuild: versionBuild,
-	}
-
-	// 4. Expand the meta-templates.
-	// Load the embedded templates.toml.
-	globalMT, osMT := loadTemplates(cfg, spec)
-	vars, err = template.Expand(globalMT, osMT, plat.OS, vars)
+	spec, vars, err := ResolveVars(cfg, plat, spec, app)
 	if err != nil {
-		return fmt.Errorf("expand meta-templates: %w", err)
+		return err
 	}
+	vars.Version = ver
+	vars.VersionMajor = versionMajor
+	vars.VersionMinor = versionMinor
+	vars.VersionPatch = versionPatch
+	vars.VersionBuild = versionBuild
 
 	// 5. Resolve dest. If the app doesn't specify one, derive the default from
 	// the spec and the user-configured base directories ([defaults]).
@@ -254,7 +221,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("resolve download URL: %w", err)
 	}
 	ok(fmt.Sprintf("URL: %s", downloadURL))
-	dbg("resolved: os=%q arch=%q env=%q dest=%q", resolvedOS, resolvedArch, resolvedEnv, dest)
+	dbg("resolved: os=%q arch=%q env=%q dest=%q", vars.OS, vars.Arch, vars.Env, dest)
 
 	// Variables for asset names.
 	assetName := filepath.Base(downloadURL)
@@ -509,6 +476,50 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	dbg("state record saved: name=%q version=%q kind=%q", appName, ver, kind)
 
 	return nil
+}
+
+// ResolveVars applies the spec's/app's platform overrides (arch/os/env) and
+// expands the meta-templates (e.g. rust_target) for the detected platform
+// plat. It returns the platform-overridden spec (per-OS/per-OS-arch override
+// applied) and the resulting template.Vars, with the Version* fields left
+// zero-valued: callers that have a resolved version must set them afterward.
+func ResolveVars(cfg *config.Config, plat platform.Defaults, spec config.Spec, app config.AppEntry) (config.Spec, template.Vars, error) {
+	// Apply the spec's per-OS / per-OS-arch override (e.g. jdk has [jdk.darwin],
+	// micro has [micro.darwin.amd64]).
+	spec = spec.ApplyPlatformOverride(plat.OS, plat.Arch)
+
+	// Apply the spec's arch/os override (maps [ripgrep.arch]).
+	resolvedArch := platform.ApplyMap(spec.Arch, plat.Arch, plat.Arch)
+	resolvedOS := platform.ApplyMap(spec.OS, plat.OS, plat.OS)
+
+	// Apply the app manifest override (takes precedence over the spec).
+	if app.Arch != nil {
+		resolvedArch = platform.ApplyMap(app.Arch, plat.Arch, resolvedArch)
+	}
+	if app.OS != nil {
+		resolvedOS = platform.ApplyMap(app.OS, plat.OS, resolvedOS)
+	}
+	resolvedEnv := platform.ApplyMap(spec.Env, plat.Env, plat.Env)
+	// Per-arch env override (keyed by canonical arch); refines spec.Env.
+	resolvedEnv = platform.ApplyMap(spec.EnvArch, plat.Arch, resolvedEnv)
+	if app.Env != nil {
+		resolvedEnv = platform.ApplyMap(app.Env, plat.Env, resolvedEnv)
+	}
+
+	vars := template.Vars{
+		OS:     resolvedOS,
+		Arch:   resolvedArch,
+		Vendor: plat.Vendor,
+		Env:    resolvedEnv,
+		Ext:    plat.Ext,
+	}
+
+	globalMT, osMT := loadTemplates(cfg, spec)
+	vars, err := template.Expand(globalMT, osMT, plat.OS, vars)
+	if err != nil {
+		return spec, vars, fmt.Errorf("expand meta-templates: %w", err)
+	}
+	return spec, vars, nil
 }
 
 // loadTemplates extracts the global and per-OS meta-templates from the config

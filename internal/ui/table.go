@@ -7,11 +7,20 @@ import (
 	"sort"
 	"strings"
 
+	"regexp"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
+	"github.com/enr/paq/internal/template"
 )
+
+// unresolvedVersionPlaceholder matches {{version}} and its variants
+// (version_major, version_minor, version_patch, version_build). Fields that
+// still contain one of these after an offline-only resolution (no pinned
+// version available) are shown raw rather than substituting an empty string.
+var unresolvedVersionPlaceholder = regexp.MustCompile(`\{\{\s*version(_major|_minor|_patch|_build)?\s*\}\}`)
 
 var (
 	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
@@ -343,8 +352,12 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 }
 
 // PrintInfoDetail prints an app's details (recipe + installed versions).
-// installed contains all the app's versions present in the state (can be empty).
-func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp) {
+// installed contains all the app's versions present in the state (can be
+// empty). vars carries the offline-resolved template placeholders (platform,
+// arch/os/env overrides, meta-templates, and the version when pinned); fields
+// that still contain an unresolved {{version}}-family placeholder are shown
+// raw instead of resolved.
+func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp, vars template.Vars) {
 	if Global.JSON {
 		out := map[string]any{
 			"name":      name,
@@ -378,16 +391,25 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 	render("Backend", spec.Backend)
 	render("Repo", spec.Repo)
 	render("Source", spec.Source)
-	render("Asset", spec.Asset)
-	render("Archive", spec.Archive)
-	render("Extract", spec.Extract)
+	resolvedAsset := resolveOrRaw(spec.Asset, vars)
+	render("Asset", resolvedAsset)
+	// Make the resolved asset name available as {{asset}}, mirroring the
+	// install pipeline, so sha256_asset (e.g. "{{asset}}.sha256sum") resolves too.
+	if resolvedAsset != "" {
+		if vars.Extra == nil {
+			vars.Extra = make(map[string]string)
+		}
+		vars.Extra["asset"] = resolvedAsset
+	}
+	render("Archive", resolveOrRaw(spec.Archive, vars))
+	render("Extract", resolveOrRaw(spec.Extract, vars))
 	render("Binaries", strings.Join(formatBinaries(spec.Binaries), ", "))
 	if spec.StripComponents > 0 {
 		render("Strip", fmt.Sprintf("%d", spec.StripComponents))
 	}
 	render("Subdir", spec.Subdir)
 	render("SHA256", spec.Verify.SHA256)
-	render("SHA256Asset", spec.Verify.SHA256Asset)
+	render("SHA256Asset", resolveOrRaw(spec.Verify.SHA256Asset, vars))
 
 	if len(installed) == 0 {
 		fmt.Println()
@@ -404,6 +426,23 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 		render("Source URL", rec.Source)
 		render("SHA256", rec.SHA256)
 	}
+}
+
+// resolveOrRaw resolves raw's {{placeholder}}s against vars, falling back to
+// raw unchanged if it still contains an unpinned {{version}}-family
+// placeholder or if resolution fails (e.g. an unknown placeholder).
+func resolveOrRaw(raw string, vars template.Vars) string {
+	if raw == "" {
+		return ""
+	}
+	if vars.Version == "" && unresolvedVersionPlaceholder.MatchString(raw) {
+		return raw
+	}
+	resolved, err := template.Resolve(raw, vars)
+	if err != nil {
+		return raw
+	}
+	return resolved
 }
 
 // PrintSpecDetail prints the details of a single registry spec.

@@ -2,9 +2,13 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/enr/paq/internal/install"
+	"github.com/enr/paq/internal/platform"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
+	"github.com/enr/paq/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +55,23 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		installed = st.ByName(appName)
 	}
 
-	ui.PrintInfoDetail(appName, spec, app, installed)
+	// Resolve the placeholders (e.g. {{rust_target}}) purely offline: platform
+	// detection, arch/os/env overrides and meta-templates don't need network
+	// access. The version is only filled in when it's pinned (explicitly or via
+	// default_version); "latest" would require a network call, which `info`
+	// doesn't make, so {{version}}-derived placeholders are left unresolved.
+	plat := platform.Detect()
+	resolvedSpec, vars, _ := install.ResolveVars(cfg, plat, spec, app)
+	spec = resolvedSpec
+	if app.Version != "" && !strings.EqualFold(app.Version, "latest") {
+		vars.Version = app.Version
+	} else if spec.DefaultVersion != "" {
+		vars.Version = spec.DefaultVersion
+	}
+	if vars.Version != "" {
+		vars.VersionMajor, vars.VersionMinor, vars.VersionPatch = version.Parse(vars.Version)
+	}
+
+	ui.PrintInfoDetail(appName, spec, app, installed, vars)
 	return nil
 }
