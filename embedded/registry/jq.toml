@@ -1,0 +1,18 @@
+# jq publishes bare executables, not archives: the downloaded asset IS the
+# binary, so the recipe uses "binaries" (with no "from") and no "archive".
+
+[jq]
+backend = "github"
+repo = "jqlang/jq"
+tag = "jq-{{version}}"  # jq tags are "jq-1.8.2", not "v1.8.2"
+asset = "jq-{{os}}-{{arch}}{{ext}}"
+chmod = "0755"
+binaries = [
+  { to = "jq{{ext}}" },
+]
+
+[jq.os]
+darwin = "macos"
+
+[jq.verify]
+sha256_asset = "sha256sum.txt"
