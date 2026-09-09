@@ -1,0 +1,50 @@
+# Visual Studio Code, portable archive.
+#
+# The download URLs on code.visualstudio.com are not usable from a recipe: they
+# carry no version, so a pinned version cannot be requested. The update service
+# exposes the same builds with the version in the path
+# (https://update.code.visualstudio.com/{version}/{platform}/stable) and
+# redirects to the CDN asset, so it is the endpoint this recipe uses.
+#
+# No integrity check is configured: the sha256 of each build is published only
+# by the JSON update API (api/update/{platform}/stable/latest, field
+# "sha256hash"), and there is no checksum file next to the asset. paq's
+# sha256_asset expects a checksum file, so it cannot consume it.
+#
+# darwin is deliberately left out of "platforms": macOS ships a .zip containing
+# "Visual Studio Code.app", and that bundle holds 14 symlinks (the Electron and
+# ReactiveObjC framework bundles). paq's zip extractor rejects symlink entries,
+# so a darwin install would fail during extraction. The .dmg variant
+# (os=darwin-arm64-dmg) is not an archive paq can extract either.
+
+[vscode]
+backend = "url"
+source = "https://update.code.visualstudio.com/{{version}}/{{os}}-{{arch}}/stable"
+archive = "tar.gz"
+strip_components = 1
+# Version installed by default (when "version" is absent from the manifest).
+default_version = "1.136.2"
+# With version = "latest" the version is resolved from the official Arch repos
+# (package "code", built from the same upstream tags) and downloaded from the
+# update service. Arch can lag upstream stable by a few days.
+latest_strategy = "arch-linux"
+arch_pkg = "code"
+platforms = [
+  "linux/amd64",
+  "linux/arm64",
+  "windows/amd64",
+  "windows/arm64",
+]
+
+[vscode.arch]
+amd64 = "x64"
+
+[vscode.os]
+windows = "win32"
+
+# Windows needs the "-archive" suffix to get the portable .zip instead of the
+# installer, and the archive has no top-level directory.
+[vscode.windows]
+source = "https://update.code.visualstudio.com/{{version}}/{{os}}-{{arch}}-archive/stable"
+archive = "zip"
+strip_components = 0

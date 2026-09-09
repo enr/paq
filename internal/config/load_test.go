@@ -200,6 +200,71 @@ func TestMicroSpec(t *testing.T) {
 	}
 }
 
+// TestVSCodeSpec verifies the vscode recipe: the update service encodes the
+// platform in the URL path, and Windows needs both the "-archive" suffix (to
+// get the portable zip instead of the installer) and strip_components = 0.
+func TestVSCodeSpec(t *testing.T) {
+	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vscode, ok := specs["vscode"]
+	if !ok {
+		t.Fatal("vscode spec not found")
+	}
+	if vscode.Backend != "url" {
+		t.Errorf("vscode.Backend = %q, want url", vscode.Backend)
+	}
+	if vscode.DefaultVersion == "" {
+		t.Error("vscode.DefaultVersion is empty: backend url cannot resolve a version without it")
+	}
+	if vscode.LatestStrategy != "arch-linux" || vscode.ArchPkg != "code" {
+		t.Errorf("vscode latest = %q/%q, want arch-linux/code", vscode.LatestStrategy, vscode.ArchPkg)
+	}
+
+	cases := []struct {
+		os, arch    string
+		wantSource  string
+		wantArchive string
+		wantStrip   int
+	}{
+		{"linux", "amd64", "https://update.code.visualstudio.com/1.99.0/linux-x64/stable", "tar.gz", 1},
+		{"linux", "arm64", "https://update.code.visualstudio.com/1.99.0/linux-arm64/stable", "tar.gz", 1},
+		{"windows", "amd64", "https://update.code.visualstudio.com/1.99.0/win32-x64-archive/stable", "zip", 0},
+		{"windows", "arm64", "https://update.code.visualstudio.com/1.99.0/win32-arm64-archive/stable", "zip", 0},
+	}
+
+	for _, tc := range cases {
+		if !vscode.SupportsPlatform(tc.os, tc.arch) {
+			t.Errorf("vscode should support %s/%s", tc.os, tc.arch)
+		}
+		s := vscode.ApplyPlatformOverride(tc.os, tc.arch)
+		vars := template.Vars{
+			OS:      platform.ApplyMap(s.OS, tc.os, tc.os),
+			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
+			Version: "1.99.0",
+		}
+		source, err := template.Resolve(s.Source, vars)
+		if err != nil {
+			t.Fatalf("%s/%s: resolve source: %v", tc.os, tc.arch, err)
+		}
+		if source != tc.wantSource {
+			t.Errorf("%s/%s source = %q, want %q", tc.os, tc.arch, source, tc.wantSource)
+		}
+		if s.Archive != tc.wantArchive {
+			t.Errorf("%s/%s archive = %q, want %q", tc.os, tc.arch, s.Archive, tc.wantArchive)
+		}
+		if s.StripComponents != tc.wantStrip {
+			t.Errorf("%s/%s strip_components = %d, want %d", tc.os, tc.arch, s.StripComponents, tc.wantStrip)
+		}
+	}
+
+	// macOS ships a .app bundle with symlinks, which the zip extractor rejects.
+	if vscode.SupportsPlatform("darwin", "arm64") {
+		t.Error("vscode should not support darwin/arm64")
+	}
+}
+
 // TestParseSpecBinariesRename verifies the parsing round-trip of a spec
 // with binaries that uses the optional "to" field.
 func TestParseSpecBinariesRename(t *testing.T) {
