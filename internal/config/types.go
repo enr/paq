@@ -150,8 +150,17 @@ func (r Spec) applyOverride(ov PlatformOverride) Spec {
 
 // VerifyConfig configures integrity and signature verification.
 type VerifyConfig struct {
-	SHA256      string         `toml:"sha256"`
-	SHA256Asset string         `toml:"sha256_asset"`
+	SHA256      string `toml:"sha256"`
+	SHA256Asset string `toml:"sha256_asset"`
+	// SHA256URL is the absolute (templated) URL of the checksum document, for
+	// projects that do not publish it next to the artifact. Mutually exclusive
+	// with SHA256Asset, which is instead resolved as a sibling of the asset.
+	SHA256URL string `toml:"sha256_url"`
+	// SHA256JSON selects the hash inside a JSON checksum document, as a
+	// dot-separated path (e.g. "sha256hash", "assets.0.digest"). When set, the
+	// document is parsed as JSON instead of as a checksum file; it applies to
+	// both SHA256Asset and SHA256URL.
+	SHA256JSON  string         `toml:"sha256_json"`
 	SHA512      string         `toml:"sha512"`
 	SHA512Asset string         `toml:"sha512_asset"`
 	Minisign    MinisignConfig `toml:"minisign"`
@@ -166,7 +175,7 @@ type MinisignConfig struct {
 // Enabled indicates whether the spec configures at least one integrity or
 // signature check. Used to warn the user when a tool is installed with no verification.
 func (v VerifyConfig) Enabled() bool {
-	return v.SHA256 != "" || v.SHA256Asset != "" ||
+	return v.SHA256 != "" || v.SHA256Asset != "" || v.SHA256URL != "" ||
 		v.SHA512 != "" || v.SHA512Asset != "" ||
 		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "")
 }

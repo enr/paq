@@ -276,6 +276,22 @@ archive = "tar.gz"
 strip_components = 1
 ```
 
+Some projects publish checksums only through an API, with no checksum file next
+to the artifact. `sha256_url` takes an absolute (templated) URL instead of a
+name resolved as a sibling of the asset, and `sha256_json` reads the hash out of
+a JSON document, following a dot-separated path through objects and arrays:
+
+```toml
+[specs.mytool.verify]
+sha256_url  = "https://api.example.com/releases/{{version}}/{{os}}-{{arch}}"
+sha256_json = "build.digest"    # or "assets.0.digest" to index an array
+```
+
+`sha256_url` and `sha256_asset` are mutually exclusive: they are two ways of
+locating the same document. `sha256_json` only says how to read it, so it works
+with either. An algorithm prefix (`sha256:`, `sha256-`) is stripped from the
+selected value.
+
 ## External registry
 
 The registry is compiled into the binary, so out of the box paq works fully

@@ -108,8 +108,17 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if (spec.Verify.Minisign.PublicKey != "") != (spec.Verify.Minisign.SignedAsset != "") {
 		return fmt.Errorf("spec %q: verify.minisign requires both public_key and signed_asset", specName)
 	}
-	if spec.Verify.Minisign.PublicKey != "" && spec.Verify.SHA256Asset == "" {
-		return fmt.Errorf("spec %q: verify.minisign requires sha256_asset (the signature is verified against the checksum file)", specName)
+	if spec.Verify.Minisign.PublicKey != "" && spec.Verify.SHA256Asset == "" && spec.Verify.SHA256URL == "" {
+		return fmt.Errorf("spec %q: verify.minisign requires sha256_asset or sha256_url (the signature is verified against the checksum file)", specName)
+	}
+	// The checksum document has exactly one source: a sibling of the asset
+	// (sha256_asset) or an absolute URL (sha256_url). sha256_json only says how
+	// to read that document, so it needs one of the two to point at.
+	if spec.Verify.SHA256Asset != "" && spec.Verify.SHA256URL != "" {
+		return fmt.Errorf("spec %q: verify.sha256_asset and verify.sha256_url are mutually exclusive", specName)
+	}
+	if spec.Verify.SHA256JSON != "" && spec.Verify.SHA256Asset == "" && spec.Verify.SHA256URL == "" {
+		return fmt.Errorf("spec %q: verify.sha256_json requires sha256_asset or sha256_url (the document to read the hash from)", specName)
 	}
 
 	// Reject unsupported platforms immediately, before any network access.
@@ -273,14 +282,24 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 	}()
 
-	if spec.Verify.SHA256Asset != "" {
-		sha256AssetName, err2 := template.Resolve(spec.Verify.SHA256Asset, vars)
-		if err2 != nil {
-			return fmt.Errorf("resolve sha256_asset: %w", err2)
-		}
-		checksumURL, err2 := resolveAuxURL(sha256AssetName)
-		if err2 != nil {
-			return fmt.Errorf("resolve sha256_asset URL: %w", err2)
+	if spec.Verify.SHA256Asset != "" || spec.Verify.SHA256URL != "" {
+		var checksumURL string
+		if spec.Verify.SHA256URL != "" {
+			// Absolute URL: the checksum lives somewhere else entirely (another
+			// host, an API endpoint), so it is not derived from the asset URL.
+			checksumURL, err = template.Resolve(spec.Verify.SHA256URL, vars)
+			if err != nil {
+				return fmt.Errorf("resolve sha256_url: %w", err)
+			}
+		} else {
+			sha256AssetName, err2 := template.Resolve(spec.Verify.SHA256Asset, vars)
+			if err2 != nil {
+				return fmt.Errorf("resolve sha256_asset: %w", err2)
+			}
+			checksumURL, err2 = resolveAuxURL(sha256AssetName)
+			if err2 != nil {
+				return fmt.Errorf("resolve sha256_asset URL: %w", err2)
+			}
 		}
 		step("Downloading checksum file...")
 		dbg("sha256 checksum URL: %s", checksumURL)
@@ -356,6 +375,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		ArtifactName:    assetName,
 		SHA256Literal:   spec.Verify.SHA256,
 		SHA256AssetPath: checksumPath,
+		SHA256Selector:  spec.Verify.SHA256JSON,
 		SHA512Literal:   spec.Verify.SHA512,
 		SHA512AssetPath: checksum512Path,
 		MinisignPubKey:  spec.Verify.Minisign.PublicKey,
