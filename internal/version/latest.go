@@ -21,6 +21,8 @@ type LatestRequest struct {
 	Repo     string // coordinates for the "github" backend (e.g. "BurntSushi/ripgrep")
 	Source   string // coordinates for URL-based backends (e.g. Maven base URL)
 	ArchPkg  string // package name in the official Arch repos (strategy "arch-linux")
+	URL      string // document URL for strategy "json"
+	Selector string // dot-separated path to the version inside that document
 }
 
 // Resolvable indicates whether "latest" is resolvable by a real strategy/backend.
@@ -28,7 +30,7 @@ type LatestRequest struct {
 // upfront whether "latest" will produce a version or an error (e.g. import).
 func (req LatestRequest) Resolvable() bool {
 	if req.Strategy != "" {
-		return req.Strategy == "arch-linux"
+		return req.Strategy == "arch-linux" || req.Strategy == "json"
 	}
 	return req.Backend == "github"
 }
@@ -40,6 +42,7 @@ func (req LatestRequest) Resolvable() bool {
 // spec can resolve "latest" from a source independent of the download channel
 // (e.g. backend "url" + strategy "arch-linux"). Supported strategies:
 //   - "arch-linux": latest version from the official Arch repos (ArchLinuxProvider).
+//   - "json": version selected out of a JSON document fetched over HTTP (JSONProvider).
 //
 // With no explicit strategy the backend is used. Supported backends:
 //   - "github": resolves from the GitHub releases API (GitHubReleaseProvider).
@@ -53,6 +56,8 @@ func LatestProvider(req LatestRequest) Provider {
 		switch req.Strategy {
 		case "arch-linux":
 			return ArchLinuxProvider{Pkg: req.ArchPkg}
+		case "json":
+			return JSONProvider{URL: req.URL, Selector: req.Selector}
 		default:
 			return notImplementedProvider{backend: req.Strategy}
 		}

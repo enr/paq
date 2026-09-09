@@ -215,11 +215,22 @@ func TestVSCodeSpec(t *testing.T) {
 	if vscode.Backend != "url" {
 		t.Errorf("vscode.Backend = %q, want url", vscode.Backend)
 	}
-	if vscode.DefaultVersion == "" {
-		t.Error("vscode.DefaultVersion is empty: backend url cannot resolve a version without it")
+	// The recipe tracks the current stable release: version and checksum both
+	// come from the update API, the only build whose sha256 is published.
+	if vscode.LatestStrategy != "json" {
+		t.Errorf("vscode.LatestStrategy = %q, want json", vscode.LatestStrategy)
 	}
-	if vscode.LatestStrategy != "arch-linux" || vscode.ArchPkg != "code" {
-		t.Errorf("vscode latest = %q/%q, want arch-linux/code", vscode.LatestStrategy, vscode.ArchPkg)
+	if vscode.LatestURL == "" || vscode.LatestJSON != "productVersion" {
+		t.Errorf("vscode latest document = %q/%q, want a URL and productVersion", vscode.LatestURL, vscode.LatestJSON)
+	}
+	if vscode.DefaultVersion != "" {
+		t.Errorf("vscode.DefaultVersion = %q, want empty: a pinned version cannot be verified", vscode.DefaultVersion)
+	}
+	if vscode.Verify.SHA256JSON != "sha256hash" {
+		t.Errorf("vscode.Verify.SHA256JSON = %q, want sha256hash", vscode.Verify.SHA256JSON)
+	}
+	if !vscode.Verify.Enabled() {
+		t.Error("vscode must configure verification")
 	}
 
 	cases := []struct {
@@ -244,12 +255,28 @@ func TestVSCodeSpec(t *testing.T) {
 			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
 			Version: "1.99.0",
 		}
+		osMT := map[string]template.MetaTemplates{}
+		for osName, mt := range s.TemplatesOS {
+			osMT[osName] = mt
+		}
+		vars, err := template.Expand(s.Templates, osMT, tc.os, vars)
+		if err != nil {
+			t.Fatalf("%s/%s: expand meta-templates: %v", tc.os, tc.arch, err)
+		}
 		source, err := template.Resolve(s.Source, vars)
 		if err != nil {
 			t.Fatalf("%s/%s: resolve source: %v", tc.os, tc.arch, err)
 		}
 		if source != tc.wantSource {
 			t.Errorf("%s/%s source = %q, want %q", tc.os, tc.arch, source, tc.wantSource)
+		}
+		// The checksum URL must name the same platform as the download.
+		checksumURL, err := template.Resolve(s.Verify.SHA256URL, vars)
+		if err != nil {
+			t.Fatalf("%s/%s: resolve sha256_url: %v", tc.os, tc.arch, err)
+		}
+		if want := "/api/update/" + vars.Extra["vscode_platform"] + "/stable/latest"; !strings.HasSuffix(checksumURL, want) {
+			t.Errorf("%s/%s checksum URL = %q, want suffix %q", tc.os, tc.arch, checksumURL, want)
 		}
 		if s.Archive != tc.wantArchive {
 			t.Errorf("%s/%s archive = %q, want %q", tc.os, tc.arch, s.Archive, tc.wantArchive)

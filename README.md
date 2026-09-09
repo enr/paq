@@ -366,6 +366,27 @@ arch_pkg = "mytool"            # package name in the official Arch repos
 when the recipe has no strategy (and no built-in one) fails with a clear "not
 implemented" error — pin a version or omit it to use `default_version`.
 
+The `json` strategy reads the version out of a JSON document fetched over HTTP,
+with the same dot-separated path syntax as `sha256_json`:
+
+```toml
+[specs.mytool]
+backend = "url"
+source = "https://example.com/releases/{{version}}/mytool-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+latest_strategy = "json"
+latest_url = "https://api.example.com/releases/latest"
+latest_json = "productVersion"
+```
+
+`latest_url` is fetched before the platform is known, so unlike every other
+field it is **not** templated: point it at a document that describes the release
+as a whole. Pointing it at the same document as `verify.sha256_url` is what
+makes a recipe self-consistent when a project only ever publishes metadata for
+its newest build: version and checksum then come from one source instead of
+racing each other. Such a recipe tracks the newest release and cannot be pinned,
+since an older version's checksum is no longer published.
+
 `default_version` and `latest_strategy` are independent and can coexist:
 `default_version` is the stable release installed when the app sets no version,
 while `latest_strategy` is only consulted for `version = "latest"`. This lets a

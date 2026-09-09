@@ -155,6 +155,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			Repo:     spec.Repo,
 			Source:   spec.Source,
 			ArchPkg:  spec.ArchPkg,
+			URL:      spec.LatestURL,
+			Selector: spec.LatestJSON,
 		})
 	default:
 		versionProvider = version.PinProvider{Version: app.Version, TagTemplate: spec.Tag}

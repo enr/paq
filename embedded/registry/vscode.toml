@@ -6,29 +6,30 @@
 # (https://update.code.visualstudio.com/{version}/{platform}/stable) and
 # redirects to the CDN asset, so it is the endpoint this recipe uses.
 #
-# No integrity check is configured: the sha256 of each build is published only
-# by the JSON update API (api/update/{platform}/stable/latest, field
-# "sha256hash"), and there is no checksum file next to the asset. paq's
-# sha256_asset expects a checksum file, so it cannot consume it.
+# This recipe tracks the current stable release and cannot be pinned: the
+# update API only ever describes the newest build, so it is the only version
+# whose sha256 is published. Version and checksum are therefore both read from
+# that API, which keeps them consistent by construction. Pinning an older
+# version would download a build the API no longer describes, and verification
+# would fail against the newest build's hash.
 #
 # darwin is deliberately left out of "platforms": macOS ships a .zip containing
 # "Visual Studio Code.app", and that bundle holds 14 symlinks (the Electron and
-# ReactiveObjC framework bundles). paq's zip extractor rejects symlink entries,
-# so a darwin install would fail during extraction. The .dmg variant
+# ReactiveObjC framework bundles). paq's zip extractor does not materialize
+# symlinks, so a darwin install would fail during extraction. The .dmg variant
 # (os=darwin-arm64-dmg) is not an archive paq can extract either.
 
 [vscode]
 backend = "url"
-source = "https://update.code.visualstudio.com/{{version}}/{{os}}-{{arch}}/stable"
+source = "https://update.code.visualstudio.com/{{version}}/{{vscode_platform}}/stable"
 archive = "tar.gz"
 strip_components = 1
-# Version installed by default (when "version" is absent from the manifest).
-default_version = "1.136.2"
-# With version = "latest" the version is resolved from the official Arch repos
-# (package "code", built from the same upstream tags) and downloaded from the
-# update service. Arch can lag upstream stable by a few days.
-latest_strategy = "arch-linux"
-arch_pkg = "code"
+# The version is the same on every platform (one build, one commit), so the
+# document naming linux-x64 describes the whole release. latest_url is fetched
+# before the platform variables exist and is not templated.
+latest_strategy = "json"
+latest_url = "https://update.code.visualstudio.com/api/update/linux-x64/stable/latest"
+latest_json = "productVersion"
 platforms = [
   "linux/amd64",
   "linux/arm64",
@@ -36,15 +37,29 @@ platforms = [
   "windows/arm64",
 ]
 
+# The platform segment of the update service's paths, shared by the download
+# URL and the checksum one so it stays defined in a single place.
+[vscode.templates]
+vscode_platform = "{{os}}-{{arch}}"
+
+# Windows needs the "-archive" suffix to get the portable .zip instead of the
+# installer.
+[vscode.templates_os.windows]
+vscode_platform = "{{os}}-{{arch}}-archive"
+
 [vscode.arch]
 amd64 = "x64"
 
 [vscode.os]
 windows = "win32"
 
-# Windows needs the "-archive" suffix to get the portable .zip instead of the
-# installer, and the archive has no top-level directory.
+# The Windows archive has no top-level directory.
 [vscode.windows]
-source = "https://update.code.visualstudio.com/{{version}}/{{os}}-{{arch}}-archive/stable"
 archive = "zip"
 strip_components = 0
+
+# The sha256 is published only by the update API, per platform, for the current
+# build alone; there is no checksum file next to the asset.
+[vscode.verify]
+sha256_url = "https://update.code.visualstudio.com/api/update/{{vscode_platform}}/stable/latest"
+sha256_json = "sha256hash"

@@ -41,6 +41,12 @@ type Spec struct {
 	LatestStrategy string `toml:"latest_strategy"`
 	// ArchPkg is the package name in the official Arch repos (strategy "arch-linux").
 	ArchPkg string `toml:"arch_pkg"`
+	// LatestURL is the JSON document holding the version (strategy "json"). It
+	// is fetched before the platform variables exist, so it is not templated.
+	LatestURL string `toml:"latest_url"`
+	// LatestJSON selects the version inside that document, as a dot-separated
+	// path (e.g. "productVersion", "channels.stable.version").
+	LatestJSON string `toml:"latest_json"`
 	// DefaultVersion is the version used as "latest" when the backend/strategy
 	// cannot resolve "latest" (e.g. backend "url"). Ignored if "latest" is
 	// resolvable or if the app pins an explicit version.

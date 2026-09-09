@@ -159,6 +159,8 @@ func latestRequestFor(spec config.Spec) version.LatestRequest {
 		Repo:     spec.Repo,
 		Source:   spec.Source,
 		ArchPkg:  spec.ArchPkg,
+		URL:      spec.LatestURL,
+		Selector: spec.LatestJSON,
 	}
 }
 
