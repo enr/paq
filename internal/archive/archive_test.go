@@ -485,3 +485,140 @@ func TestExtractTarGzHardlinkInScopeRejected(t *testing.T) {
 		t.Errorf("standard mode: error = %v, want hardlink not supported", err)
 	}
 }
+
+// makeZipWithSymlink creates a zip containing the given regular files plus a
+// symlink entry, stored the way Unix zippers do (mode in the external attrs,
+// target as the entry's content).
+func makeZipWithSymlink(t *testing.T, files map[string]string, name, target string) string {
+	t.Helper()
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-symlink-*.zip")
+	zw := zip.NewWriter(tmp)
+	for fname, content := range files {
+		h := &zip.FileHeader{Name: fname}
+		h.SetMode(0755)
+		f, _ := zw.CreateHeader(h)
+		f.Write([]byte(content))
+	}
+	h := &zip.FileHeader{Name: name}
+	h.SetMode(os.ModeSymlink | 0777)
+	f, _ := zw.CreateHeader(h)
+	f.Write([]byte(target))
+	zw.Close()
+	tmp.Close()
+	return tmp.Name()
+}
+
+// TestExtractZipSymlinkOutsideScopeIgnored: a symlink the extraction never
+// touches must not fail it. The check used to run before the scope filter, so
+// an unrelated link anywhere in the archive broke extracting a single file.
+func TestExtractZipSymlinkOutsideScopeIgnored(t *testing.T) {
+	z := makeZipWithSymlink(t, map[string]string{
+		"tool": "binary",
+	}, "docs/latest", "v1.2.3")
+
+	dest := t.TempDir()
+	if err := Extract(z, "zip", ExtractOpts{Extract: "tool", Dest: dest}); err != nil {
+		t.Fatalf("out-of-scope symlink must not fail the extraction: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "binary" {
+		t.Errorf("extracted content = %q, want binary", string(data))
+	}
+}
+
+// TestExtractZipSymlinkInScopeRejected: the zip extractor does not materialize
+// symlinks, so one it is actually asked to extract stays an error.
+func TestExtractZipSymlinkInScopeRejected(t *testing.T) {
+	z := makeZipWithSymlink(t, map[string]string{"tool": "binary"}, "link", "tool")
+
+	err := Extract(z, "zip", ExtractOpts{Dest: t.TempDir()})
+	if err == nil {
+		t.Fatal("expected an error for an in-scope symlink, got nil")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("error = %q, want mention of a symlink", err)
+	}
+}
+
+// TestExtractTarGzExtractNamedSymlinkReported: asking for a file that turns
+// out to be a symlink must say so. It used to be skipped, and then reported as
+// "not found in archive" — pointing at the wrong problem.
+func TestExtractTarGzExtractNamedSymlinkReported(t *testing.T) {
+	tgz := makeTarGzWithSymlink(t, map[string]string{
+		"tool-1.2.3": "binary",
+	}, "tool", "tool-1.2.3")
+
+	err := Extract(tgz, "tar.gz", ExtractOpts{Extract: "tool", Dest: t.TempDir()})
+	if err == nil {
+		t.Fatal("expected an error for a wanted entry that is a symlink, got nil")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("error = %q, want mention of a symlink", err)
+	}
+	if strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, must not claim the entry is missing", err)
+	}
+}
+
+// TestExtractTarGzSymlinkChainEscapeRejected: "sub/up -> .." lands exactly on
+// the destination, and "x -> sub/up/../.." is lexically inside it too, because
+// cleaning cancels "up/.." as if up were a directory. It is not: following the
+// links, x resolves two levels above the destination. Only resolving the path
+// per component catches this.
+func TestExtractTarGzSymlinkChainEscapeRejected(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.WriteHeader(&tar.Header{Name: "sub/", Typeflag: tar.TypeDir, Mode: 0755})
+	for _, l := range []struct{ name, target string }{
+		{"sub/up", ".."},
+		{"x", "sub/up/../.."},
+	} {
+		tw.WriteHeader(&tar.Header{
+			Name:     l.name,
+			Typeflag: tar.TypeSymlink,
+			Linkname: l.target,
+			Mode:     0777,
+		})
+	}
+	tw.Close()
+	gz.Close()
+	tgz := filepath.Join(t.TempDir(), "chain.tar.gz")
+	if err := os.WriteFile(tgz, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest})
+	if err == nil {
+		t.Fatal("expected an error for a symlink chain escaping the destination, got nil")
+	}
+	if !strings.Contains(err.Error(), "resolve") {
+		t.Errorf("error = %q, want mention of the link not resolving inside", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(dest, "x")); !os.IsNotExist(statErr) {
+		t.Error("the escaping link should not have been left behind")
+	}
+}
+
+// TestExtractTarGzDanglingSymlinkAllowed: a link whose target is missing is
+// contained, just broken. Archives ship those, so it must not be an error.
+func TestExtractTarGzDanglingSymlinkAllowed(t *testing.T) {
+	tgz := makeTarGzWithSymlink(t, nil, "bin/link", "../lib/not-shipped.so")
+
+	dest := t.TempDir()
+	if err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest}); err != nil {
+		t.Fatalf("dangling but contained symlink must be allowed: %v", err)
+	}
+	target, err := os.Readlink(filepath.Join(dest, "bin", "link"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != filepath.FromSlash("../lib/not-shipped.so") {
+		t.Errorf("link target = %q", target)
+	}
+}

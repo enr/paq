@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func extractZip(archivePath string, opts ExtractOpts) error {
+func extractZip(archivePath string, root *os.Root, opts ExtractOpts) error {
 	zr, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return fmt.Errorf("open zip %s: %w", archivePath, err)
@@ -27,9 +27,7 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 			continue
 		}
 
-		if f.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("entry %q is a symlink: not supported", f.Name)
-		}
+		isSymlink := f.Mode()&os.ModeSymlink != 0
 
 		switch {
 		case wanted != nil:
@@ -37,32 +35,39 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 				continue
 			}
 			base := filepath.Base(stripped)
-			if wanted[base] {
-				if found[base] {
-					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", base)
-				}
-				dest, err := securePath(opts.Dest, base)
-				if err != nil {
-					return err
-				}
-				rc, err := f.Open()
-				if err != nil {
-					return err
-				}
-				werr := writeFile(rc, dest, f.Mode())
-				rc.Close()
-				if werr != nil {
-					return werr
-				}
-				found[base] = true
+			if !wanted[base] {
+				continue
 			}
+			if isSymlink {
+				return symlinkExtractError(f.Name)
+			}
+			if found[base] {
+				return fmt.Errorf("multiple files named %q in archive: ambiguous extract", base)
+			}
+			dest, err := securePath(base)
+			if err != nil {
+				return err
+			}
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			werr := writeFile(root, dest, rc, f.Mode())
+			rc.Close()
+			if werr != nil {
+				return werr
+			}
+			found[base] = true
 
 		case opts.Subdir != "":
 			rel, match := matchSubdir(stripped, opts.Subdir)
 			if !match || rel == "" {
 				continue
 			}
-			dest, err := securePath(opts.Dest, rel)
+			if isSymlink {
+				return zipSymlinkError(f.Name)
+			}
+			dest, err := securePath(rel)
 			if err != nil {
 				return err
 			}
@@ -73,14 +78,17 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 			if err != nil {
 				return err
 			}
-			werr := writeFile(rc, dest, f.Mode())
+			werr := writeFile(root, dest, rc, f.Mode())
 			rc.Close()
 			if werr != nil {
 				return werr
 			}
 
 		default:
-			dest, err := securePath(opts.Dest, stripped)
+			if isSymlink {
+				return zipSymlinkError(f.Name)
+			}
+			dest, err := securePath(stripped)
 			if err != nil {
 				return err
 			}
@@ -91,7 +99,7 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 			if err != nil {
 				return err
 			}
-			werr := writeFile(rc, dest, f.Mode())
+			werr := writeFile(root, dest, rc, f.Mode())
 			rc.Close()
 			if werr != nil {
 				return werr
@@ -103,4 +111,12 @@ func extractZip(archivePath string, opts ExtractOpts) error {
 		return err
 	}
 	return nil
+}
+
+// zipSymlinkError reports an in-scope symlink entry, which this extractor does
+// not materialize (unlike the tar one). Entries outside the extraction scope
+// are skipped, not reported: an unrelated link elsewhere in the archive must
+// not fail an extraction that never touches it.
+func zipSymlinkError(name string) error {
+	return fmt.Errorf("entry %q is a symlink: not supported", name)
 }

@@ -2,8 +2,10 @@ package archive
 
 import (
 	"archive/tar"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,13 +14,13 @@ import (
 // symlinkEntry is a symlink found in the archive, created after all regular
 // files so that no file write can pass through an archive-provided symlink.
 type symlinkEntry struct {
-	dest     string // absolute path where the symlink is created
+	name     string // path, relative to the extraction root, of the symlink
 	linkname string // link target as stored in the archive
 }
 
 // extractTar extracts a tar archive from reader with the given options.
 // This function is shared by tar.gz and tar.xz.
-func extractTar(r io.Reader, opts ExtractOpts) error {
+func extractTar(r io.Reader, root *os.Root, opts ExtractOpts) error {
 	tr := tar.NewReader(r)
 
 	wanted := extractSet(opts.Extracts)
@@ -59,15 +61,18 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			if hdr.Typeflag == tar.TypeLink {
 				return hardlinkError(hdr.Name)
 			}
-			if hdr.Typeflag != tar.TypeSymlink && hdr.Typeflag != tar.TypeDir {
+			if hdr.Typeflag == tar.TypeSymlink {
+				return symlinkExtractError(hdr.Name)
+			}
+			if hdr.Typeflag != tar.TypeDir {
 				if found[base] {
 					return fmt.Errorf("multiple files named %q in archive: ambiguous extract", base)
 				}
-				dest, err := securePath(opts.Dest, base)
+				name, err := securePath(base)
 				if err != nil {
 					return err
 				}
-				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
+				if err := writeFile(root, name, tr, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
 				found[base] = true
@@ -79,19 +84,19 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 			if !match || rel == "" {
 				continue
 			}
-			dest, err := securePath(opts.Dest, rel)
+			name, err := securePath(rel)
 			if err != nil {
 				return err
 			}
 			switch hdr.Typeflag {
 			case tar.TypeDir:
-				if err := os.MkdirAll(dest, 0755); err != nil {
+				if err := root.MkdirAll(name, 0755); err != nil {
 					return err
 				}
 			case tar.TypeSymlink:
-				symlinks = append(symlinks, symlinkEntry{dest: dest, linkname: hdr.Linkname})
+				symlinks = append(symlinks, symlinkEntry{name: name, linkname: hdr.Linkname})
 			case tar.TypeReg:
-				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
+				if err := writeFile(root, name, tr, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
 			case tar.TypeLink:
@@ -102,19 +107,19 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 
 		default:
 			// Standard mode: extract everything.
-			dest, err := securePath(opts.Dest, stripped)
+			name, err := securePath(stripped)
 			if err != nil {
 				return err
 			}
 			switch hdr.Typeflag {
 			case tar.TypeDir:
-				if err := os.MkdirAll(dest, 0755); err != nil {
+				if err := root.MkdirAll(name, 0755); err != nil {
 					return err
 				}
 			case tar.TypeSymlink:
-				symlinks = append(symlinks, symlinkEntry{dest: dest, linkname: hdr.Linkname})
+				symlinks = append(symlinks, symlinkEntry{name: name, linkname: hdr.Linkname})
 			case tar.TypeReg:
-				if err := writeFile(tr, dest, hdr.FileInfo().Mode()); err != nil {
+				if err := writeFile(root, name, tr, hdr.FileInfo().Mode()); err != nil {
 					return err
 				}
 			case tar.TypeLink:
@@ -126,7 +131,14 @@ func extractTar(r io.Reader, opts ExtractOpts) error {
 	}
 
 	for _, l := range symlinks {
-		if err := writeSymlink(opts.Dest, l.dest, l.linkname); err != nil {
+		if err := writeSymlink(root, l.name, l.linkname); err != nil {
+			return err
+		}
+	}
+	// Containment is checked only once every link exists: a chain escapes the
+	// root as a whole (a -> ".", b -> "a/../..") while each hop looks contained.
+	for _, l := range symlinks {
+		if err := checkSymlinkResolves(root, l.name); err != nil {
 			return err
 		}
 	}
@@ -143,29 +155,45 @@ func hardlinkError(name string) error {
 	return fmt.Errorf("entry %q is a hardlink: not supported", name)
 }
 
-// writeSymlink creates a symlink at dest pointing to linkname, after verifying
-// that the target stays inside destRoot. Absolute targets and relative targets
-// that resolve outside destRoot are rejected: archives are untrusted input.
-func writeSymlink(destRoot, dest, linkname string) error {
+// writeSymlink creates the symlink name (relative to root) pointing at
+// linkname, after verifying that the target stays inside root. Absolute
+// targets and relative targets that resolve outside root are rejected without
+// touching the filesystem: archives are untrusted input.
+func writeSymlink(root *os.Root, name, linkname string) error {
 	if filepath.IsAbs(linkname) {
-		return fmt.Errorf("symlink %q has absolute target %q: not supported", dest, linkname)
+		return fmt.Errorf("symlink %q has absolute target %q: not supported", name, linkname)
 	}
-	target := filepath.Join(filepath.Dir(dest), filepath.FromSlash(linkname))
-	cleanRoot := filepath.Clean(destRoot)
-	if target != cleanRoot && !strings.HasPrefix(target, cleanRoot+string(os.PathSeparator)) {
+	if _, err := securePath(filepath.Join(filepath.Dir(name), filepath.FromSlash(linkname))); err != nil {
 		return fmt.Errorf("symlink target %q escapes destination directory", linkname)
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
+	if dir := filepath.Dir(name); dir != "." {
+		if err := root.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
+		}
 	}
 	// Remove any existing file so re-installs over an old tree don't fail.
-	if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove %s: %w", dest, err)
+	if err := root.Remove(name); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", name, err)
 	}
-	if err := os.Symlink(filepath.FromSlash(linkname), dest); err != nil {
-		return fmt.Errorf("symlink %s: %w", dest, err)
+	if err := root.Symlink(filepath.FromSlash(linkname), name); err != nil {
+		return fmt.Errorf("symlink %s: %w", name, err)
 	}
 	return nil
+}
+
+// checkSymlinkResolves verifies that name, followed through every symlink on
+// its path, still lands inside root. os.Root resolves each component in the
+// kernel, so this sees what the lexical check in writeSymlink cannot: a link
+// that only escapes once another link on its path exists. A target that simply
+// does not exist is fine, since archives may legitimately ship dangling links.
+func checkSymlinkResolves(root *os.Root, name string) error {
+	_, err := root.Stat(name)
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	// Do not leave a rejected link behind for the caller to clean up.
+	root.Remove(name)
+	return fmt.Errorf("symlink %q does not resolve inside the destination directory: %w", name, err)
 }
 
 // stripComponents removes the first n components of the path.
@@ -203,21 +231,4 @@ func matchSubdir(path, subdir string) (rel string, ok bool) {
 
 	rel = strings.Join(pathParts[len(subdirParts):], "/")
 	return rel, true
-}
-
-// writeFile writes the reader's content to file dest, creating the necessary directories.
-func writeFile(r io.Reader, dest string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
-	}
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode&0777|0200)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", dest, err)
-	}
-	defer f.Close()
-	if _, err := io.Copy(f, r); err != nil {
-		return fmt.Errorf("write %s: %w", dest, err)
-	}
-	// Apply the correct permissions after writing.
-	return os.Chmod(dest, mode&0777|0200)
 }
