@@ -638,12 +638,13 @@ func TestPipelineInstallFile(t *testing.T) {
 	cfg := &config.Config{
 		Specs: map[string]config.Spec{
 			"ripgrep": {
-				Backend: "github",
-				Repo:    "test/ripgrep",
-				Asset:   "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
-				Archive: "tar.gz",
-				Extract: "rg",
-				Chmod:   "0755",
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				Asset:             "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
+				Archive:           "tar.gz",
+				Extract:           "rg",
+				Chmod:             "0755",
+				MinimumReleaseAge: "0h", // not what this test exercises
 				Verify: config.VerifyConfig{
 					SHA256Asset: "{{asset}}.sha256",
 				},
@@ -723,11 +724,12 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 	cfg := &config.Config{
 		Specs: map[string]config.Spec{
 			"ripgrep": {
-				Backend: "github",
-				Repo:    "test/ripgrep",
-				Asset:   "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
-				Archive: "tar.gz",
-				Extract: "rg",
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				Asset:             "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
+				Archive:           "tar.gz",
+				Extract:           "rg",
+				MinimumReleaseAge: "0h", // not what this test exercises
 				Verify: config.VerifyConfig{
 					SHA256Asset: "{{asset}}.sha256",
 				},

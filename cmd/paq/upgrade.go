@@ -122,8 +122,14 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 		return nil
 	}
 
+	warn := func(format string, a ...any) {
+		if hooks != nil && hooks.OnWarn != nil {
+			hooks.OnWarn(fmt.Sprintf(format, a...))
+		}
+	}
+
 	step("Resolving latest version...")
-	latest, err := resolveLatestVersion(ctx, spec)
+	latest, err := resolveLatestVersion(ctx, cfg, spec, warn)
 	if errors.Is(err, version.ErrLatestNotImplemented) {
 		step("backend %q has no upstream version to resolve, skipping", spec.Backend)
 		return nil
@@ -163,11 +169,25 @@ func latestRequestFor(spec config.Spec) version.LatestRequest {
 }
 
 // resolveLatestVersion resolves the latest upstream version for a spec,
-// selecting the provider from its backend/latest_strategy. Returns
-// version.ErrLatestNotImplemented if neither can resolve "latest". Shared by
-// upgradeApp and the "outdated" command.
-func resolveLatestVersion(ctx context.Context, spec config.Spec) (string, error) {
-	provider := version.LatestProvider(latestRequestFor(spec))
+// selecting the provider from its backend/latest_strategy and enforcing
+// minimum_release_age (spec override > global [defaults] > built-in default)
+// when the backend/strategy supports it (currently only "github", with no
+// explicit latest_strategy). warn (may be nil) is called if the spec/defaults
+// explicitly configure minimum_release_age for a backend that can't honor it.
+// Returns version.ErrLatestNotImplemented if neither can resolve "latest".
+// Shared by upgradeApp and the "outdated" command.
+func resolveLatestVersion(ctx context.Context, cfg *config.Config, spec config.Spec, warn func(string, ...any)) (string, error) {
+	req := latestRequestFor(spec)
+	minAge, explicit, err := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
+	if err != nil {
+		return "", fmt.Errorf("invalid minimum_release_age: %w", err)
+	}
+	if spec.LatestStrategy == "" && spec.Backend == "github" {
+		req.MinimumAge = minAge
+	} else if explicit && warn != nil {
+		warn("minimum_release_age is not supported for backend %q, ignoring", spec.Backend)
+	}
+	provider := version.LatestProvider(req)
 	latest, _, err := provider.Resolve(ctx)
 	return latest, err
 }
