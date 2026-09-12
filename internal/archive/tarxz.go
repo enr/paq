@@ -7,7 +7,7 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-func extractTarXz(archivePath string, opts ExtractOpts) error {
+func extractTarXz(archivePath string, root *os.Root, opts ExtractOpts) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", archivePath, err)
@@ -19,5 +19,5 @@ func extractTarXz(archivePath string, opts ExtractOpts) error {
 		return fmt.Errorf("xz reader: %w", err)
 	}
 
-	return extractTar(xzr, opts)
+	return extractTar(xzr, root, opts)
 }

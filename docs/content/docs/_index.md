@@ -407,7 +407,7 @@ patch a stale embedded recipe without waiting for a release.
 
 The embedded registry currently ships `bat`, `bun`, `delta`, `deno`, `fresh`,
 `gip`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`, `nub`, `ripgrep`, `runp`,
-`zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
+`vscode`, `zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
 
 A recipe for a GitHub-hosted tool:
@@ -501,6 +501,22 @@ archive = "tar.gz"
 strip_components = 1
 ```
 
+Some projects publish checksums only through an API, with no checksum file next
+to the artifact. `sha256_url` takes an absolute (templated) URL instead of a
+name resolved as a sibling of the asset, and `sha256_json` reads the hash out of
+a JSON document, following a dot-separated path through objects and arrays:
+
+```toml
+[specs.mytool.verify]
+sha256_url  = "https://api.example.com/releases/{{version}}/{{os}}-{{arch}}"
+sha256_json = "build.digest"    # or "assets.0.digest" to index an array
+```
+
+`sha256_url` and `sha256_asset` are mutually exclusive: they are two ways of
+locating the same document. `sha256_json` only says how to read it, so it works
+with either. An algorithm prefix (`sha256:`, `sha256-`) is stripped from the
+selected value.
+
 ### Resolving `latest`
 
 When an app is pinned to `version = "latest"`, paq resolves the newest version
@@ -525,6 +541,27 @@ arch_pkg = "mytool"            # package name in the official Arch repos
 (`url`) and the version source (Arch) are independent. Requesting `"latest"`
 when the recipe has no strategy (and no built-in one) fails with a clear "not
 implemented" error — pin a version or omit it to use `default_version`.
+
+The `json` strategy reads the version out of a JSON document fetched over HTTP,
+with the same dot-separated path syntax as `sha256_json`:
+
+```toml
+[specs.mytool]
+backend = "url"
+source = "https://example.com/releases/{{version}}/mytool-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+latest_strategy = "json"
+latest_url = "https://api.example.com/releases/latest"
+latest_json = "productVersion"
+```
+
+`latest_url` is fetched before the platform is known, so unlike every other
+field it is **not** templated: point it at a document that describes the release
+as a whole. Pointing it at the same document as `verify.sha256_url` is what
+makes a recipe self-consistent when a project only ever publishes metadata for
+its newest build: version and checksum then come from one source instead of
+racing each other. Such a recipe tracks the newest release and cannot be pinned,
+since an older version's checksum is no longer published.
 
 `default_version` and `latest_strategy` are independent and can coexist:
 `default_version` is the stable release installed when the app sets no version,

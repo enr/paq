@@ -6,8 +6,12 @@ import "fmt"
 type Plan struct {
 	// SHA256Literal is the sha256 hash hardcoded in the spec (verify.sha256 field).
 	SHA256Literal string
-	// SHA256AssetPath is the path of the downloaded checksum file (verify.sha256_asset field).
+	// SHA256AssetPath is the path of the downloaded checksum document
+	// (verify.sha256_asset or verify.sha256_url field).
 	SHA256AssetPath string
+	// SHA256Selector, when set, parses the checksum document as JSON and
+	// selects the hash with this dot-separated path (verify.sha256_json field).
+	SHA256Selector string
 	// SHA512Literal is the sha512 hash hardcoded in the spec (verify.sha512 field).
 	SHA512Literal string
 	// SHA512AssetPath is the path of the downloaded sha512 checksum file (verify.sha512_asset field).
@@ -45,7 +49,12 @@ func Run(plan Plan) error {
 		}
 
 	case plan.SHA256AssetPath != "":
-		hash, err := ParseSHA256File(plan.SHA256AssetPath, plan.ArtifactName)
+		parse := ParseSHA256File
+		arg := plan.ArtifactName
+		if plan.SHA256Selector != "" {
+			parse, arg = ParseSHA256JSON, plan.SHA256Selector
+		}
+		hash, err := parse(plan.SHA256AssetPath, arg)
 		if err != nil {
 			return fmt.Errorf("read checksum: %w", err)
 		}

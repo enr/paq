@@ -1307,3 +1307,145 @@ func TestFilesha256(t *testing.T) {
 		t.Errorf("filesha256() = %q, want %q", got, want)
 	}
 }
+
+// TestPipelineSHA256URLAndJSON verifies a checksum published only by an API:
+// sha256_url points at a document that is not a sibling of the asset, and
+// sha256_json selects the hash inside it.
+func TestPipelineSHA256URLAndJSON(t *testing.T) {
+	isolateState(t)
+	fileContent := []byte("fake-tool-binary")
+	tgzData := makeFakeTarGz(fileContent)
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/checksums/linux":
+			// The hash lives in a JSON API, under a path of its own: nothing
+			// about this URL can be derived from the asset's.
+			w.Write([]byte(`{"build":{"digest":"sha256:` + sha256hex(tgzData) + `"}}`))
+		case "/dl/tool-1.0.0.tar.gz":
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:         "url",
+				Source:          srv.URL + "/dl/tool-{{version}}.tar.gz",
+				Archive:         "tar.gz",
+				StripComponents: 1,
+				Verify: config.VerifyConfig{
+					SHA256URL:  srv.URL + "/api/checksums/{{os}}",
+					SHA256JSON: "build.digest",
+				},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "rg"))
+	if err != nil {
+		t.Fatalf("installed file not found: %v", err)
+	}
+	if !bytes.Equal(data, fileContent) {
+		t.Errorf("installed content = %q, want %q", data, fileContent)
+	}
+}
+
+// TestPipelineSHA256JSONMismatch verifies that a hash read from JSON is
+// actually enforced: a wrong one must fail the install, not be ignored.
+func TestPipelineSHA256JSONMismatch(t *testing.T) {
+	isolateState(t)
+	tgzData := makeFakeTarGz([]byte("fake-tool-binary"))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".json") {
+			w.Write([]byte(`{"digest":"` + strings.Repeat("0", 64) + `"}`))
+			return
+		}
+		w.Write(tgzData)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend: "url",
+				Source:  srv.URL + "/tool-{{version}}.tar.gz",
+				Archive: "tar.gz",
+				Verify: config.VerifyConfig{
+					SHA256URL:  srv.URL + "/checksums.json",
+					SHA256JSON: "digest",
+				},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil {
+		t.Fatal("expected a checksum mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Errorf("error = %q, want a sha256 mismatch", err)
+	}
+}
+
+// TestPipelineRejectsIncoherentSHA256Config verifies the two configurations
+// that cannot mean anything are rejected before any network access.
+func TestPipelineRejectsIncoherentSHA256Config(t *testing.T) {
+	isolateState(t)
+	cases := map[string]struct {
+		verify config.VerifyConfig
+		want   string
+	}{
+		"both sources": {
+			verify: config.VerifyConfig{
+				SHA256Asset: "{{asset}}.sha256",
+				SHA256URL:   "https://unreachable.invalid/checksums.json",
+			},
+			want: "mutually exclusive",
+		},
+		"selector without a document": {
+			verify: config.VerifyConfig{SHA256JSON: "digest"},
+			want:   "sha256_json requires",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := &config.Config{
+				Specs: map[string]config.Spec{
+					"tool": {
+						Backend: "url",
+						Source:  "https://unreachable.invalid/tool-{{version}}.tar.gz",
+						Archive: "tar.gz",
+						Verify:  tc.verify,
+					},
+				},
+				Apps: map[string]config.AppEntry{
+					"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+				},
+			}
+			err := Run(context.Background(), cfg, "tool", nil, nil)
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want mention of %q", err, tc.want)
+			}
+		})
+	}
+}

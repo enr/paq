@@ -1,0 +1,65 @@
+# Visual Studio Code, portable archive.
+#
+# The download URLs on code.visualstudio.com are not usable from a recipe: they
+# carry no version, so a pinned version cannot be requested. The update service
+# exposes the same builds with the version in the path
+# (https://update.code.visualstudio.com/{version}/{platform}/stable) and
+# redirects to the CDN asset, so it is the endpoint this recipe uses.
+#
+# This recipe tracks the current stable release and cannot be pinned: the
+# update API only ever describes the newest build, so it is the only version
+# whose sha256 is published. Version and checksum are therefore both read from
+# that API, which keeps them consistent by construction. Pinning an older
+# version would download a build the API no longer describes, and verification
+# would fail against the newest build's hash.
+#
+# darwin is deliberately left out of "platforms": macOS ships a .zip containing
+# "Visual Studio Code.app", and that bundle holds 14 symlinks (the Electron and
+# ReactiveObjC framework bundles). paq's zip extractor does not materialize
+# symlinks, so a darwin install would fail during extraction. The .dmg variant
+# (os=darwin-arm64-dmg) is not an archive paq can extract either.
+
+[vscode]
+backend = "url"
+source = "https://update.code.visualstudio.com/{{version}}/{{vscode_platform}}/stable"
+archive = "tar.gz"
+strip_components = 1
+# The version is the same on every platform (one build, one commit), so the
+# document naming linux-x64 describes the whole release. latest_url is fetched
+# before the platform variables exist and is not templated.
+latest_strategy = "json"
+latest_url = "https://update.code.visualstudio.com/api/update/linux-x64/stable/latest"
+latest_json = "productVersion"
+platforms = [
+  "linux/amd64",
+  "linux/arm64",
+  "windows/amd64",
+  "windows/arm64",
+]
+
+# The platform segment of the update service's paths, shared by the download
+# URL and the checksum one so it stays defined in a single place.
+[vscode.templates]
+vscode_platform = "{{os}}-{{arch}}"
+
+# Windows needs the "-archive" suffix to get the portable .zip instead of the
+# installer.
+[vscode.templates_os.windows]
+vscode_platform = "{{os}}-{{arch}}-archive"
+
+[vscode.arch]
+amd64 = "x64"
+
+[vscode.os]
+windows = "win32"
+
+# The Windows archive has no top-level directory.
+[vscode.windows]
+archive = "zip"
+strip_components = 0
+
+# The sha256 is published only by the update API, per platform, for the current
+# build alone; there is no checksum file next to the asset.
+[vscode.verify]
+sha256_url = "https://update.code.visualstudio.com/api/update/{{vscode_platform}}/stable/latest"
+sha256_json = "sha256hash"

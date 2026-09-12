@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-func extractTarGz(archivePath string, opts ExtractOpts) error {
+func extractTarGz(archivePath string, root *os.Root, opts ExtractOpts) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", archivePath, err)
@@ -19,5 +19,5 @@ func extractTarGz(archivePath string, opts ExtractOpts) error {
 	}
 	defer gz.Close()
 
-	return extractTar(gz, opts)
+	return extractTar(gz, root, opts)
 }
