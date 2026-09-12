@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrLatestNotImplemented is returned when a backend does not (yet) support
@@ -23,6 +24,10 @@ type LatestRequest struct {
 	ArchPkg  string // package name in the official Arch repos (strategy "arch-linux")
 	URL      string // document URL for strategy "json"
 	Selector string // dot-separated path to the version inside that document
+	// MinimumAge restricts "latest" to a release at least this old. Only
+	// honored by the "github" backend (with no explicit strategy), the only
+	// one that exposes per-release publish dates; ignored otherwise.
+	MinimumAge time.Duration
 }
 
 // Resolvable indicates whether "latest" is resolvable by a real strategy/backend.
@@ -65,7 +70,7 @@ func LatestProvider(req LatestRequest) Provider {
 
 	switch req.Backend {
 	case "github":
-		return GitHubReleaseProvider{Repo: req.Repo}
+		return GitHubReleaseProvider{Repo: req.Repo, MinimumAge: req.MinimumAge}
 	default:
 		return notImplementedProvider{backend: req.Backend}
 	}

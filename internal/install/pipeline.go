@@ -149,7 +149,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	case app.Version == "" && spec.DefaultVersion != "":
 		versionProvider = version.PinProvider{Version: spec.DefaultVersion, TagTemplate: spec.Tag}
 	case app.Version == "" || strings.EqualFold(app.Version, "latest"):
-		versionProvider = version.LatestProvider(version.LatestRequest{
+		req := version.LatestRequest{
 			Strategy: spec.LatestStrategy,
 			Backend:  spec.Backend,
 			Repo:     spec.Repo,
@@ -157,7 +157,17 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			ArchPkg:  spec.ArchPkg,
 			URL:      spec.LatestURL,
 			Selector: spec.LatestJSON,
-		})
+		}
+		minAge, explicitAge, aerr := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
+		if aerr != nil {
+			return fmt.Errorf("spec %q: invalid minimum_release_age: %w", specName, aerr)
+		}
+		if spec.LatestStrategy == "" && spec.Backend == "github" {
+			req.MinimumAge = minAge
+		} else if explicitAge {
+			warn(fmt.Sprintf("%q: minimum_release_age is not supported for backend %q, ignoring", specName, spec.Backend))
+		}
+		versionProvider = version.LatestProvider(req)
 	default:
 		versionProvider = version.PinProvider{Version: app.Version, TagTemplate: spec.Tag}
 	}

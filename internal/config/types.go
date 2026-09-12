@@ -51,8 +51,14 @@ type Spec struct {
 	// cannot resolve "latest" (e.g. backend "url"). Ignored if "latest" is
 	// resolvable or if the app pins an explicit version.
 	DefaultVersion string `toml:"default_version"`
-	Archive        string `toml:"archive"`
-	Extract        string `toml:"extract"`
+	// MinimumReleaseAge overrides, for this spec, the minimum age a release
+	// must have before "latest" resolves to it (e.g. "7d", "6mo", "1y").
+	// Empty = use the user's global default ([defaults] minimum_release_age),
+	// or the built-in default (see version.DefaultMinimumReleaseAge) if that's
+	// unset too. Only enforced when "latest" resolves via the "github" backend.
+	MinimumReleaseAge string `toml:"minimum_release_age"`
+	Archive           string `toml:"archive"`
+	Extract           string `toml:"extract"`
 	// Binaries lists multiple executables to extract from the archive and
 	// install into dest (interpreted as a bin directory). Mutually exclusive with Extract.
 	Binaries        []Binary          `toml:"binaries"`
@@ -219,6 +225,11 @@ type Defaults struct {
 	// Nil (unset) means enabled; only an explicit `check_updates = false`
 	// disables it.
 	CheckUpdates *bool `toml:"check_updates"`
+	// MinimumReleaseAge is the global default minimum release age for
+	// "latest" resolution (e.g. "7d", "6mo", "1y"), overridable per spec via
+	// Spec.MinimumReleaseAge. Empty = use the built-in default (see
+	// version.DefaultMinimumReleaseAge).
+	MinimumReleaseAge string `toml:"minimum_release_age"`
 }
 
 // RegistrySettings configures a custom source for "paq registry update"

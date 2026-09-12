@@ -392,6 +392,39 @@ asset = "mytool-{{version}}-osx.tar.gz"
 	}
 }
 
+// TestUserConfigMinimumReleaseAge verifies that minimum_release_age round-trips
+// from TOML at both the global ([defaults]) and per-spec level.
+func TestUserConfigMinimumReleaseAge(t *testing.T) {
+	data := []byte(`
+[defaults]
+minimum_release_age = "7d"
+
+[specs.mytool]
+backend = "github"
+repo = "owner/mytool"
+minimum_release_age = "0h"
+`)
+	var raw userConfigRaw
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw.Defaults.MinimumReleaseAge != "7d" {
+		t.Errorf("Defaults.MinimumReleaseAge = %q, want 7d", raw.Defaults.MinimumReleaseAge)
+	}
+
+	specs, err := parseSpecsFromRaw(raw.Specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := specs["mytool"]
+	if !ok {
+		t.Fatal("mytool spec not found")
+	}
+	if s.MinimumReleaseAge != "0h" {
+		t.Errorf("Spec.MinimumReleaseAge = %q, want 0h", s.MinimumReleaseAge)
+	}
+}
+
 // TestMergeUserSpecsOverride verifies that user recipes are added to the
 // embedded ones and, when names collide, override them (last-write-wins).
 func TestMergeUserSpecsOverride(t *testing.T) {

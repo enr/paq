@@ -585,6 +585,36 @@ tag = "bun-v{{version}}"       # release tags are bun-v1.3.14, not v1.3.14
 `tag` only affects pinned versions (including `default_version`); `"latest"`
 always reads the real tag from the releases API.
 
+### Minimum release age
+
+To avoid installing or upgrading to a release the moment it's published
+(before wider testing has caught a regression or a compromised release),
+`version = "latest"` only resolves to a release at least `minimum_release_age`
+old. Drafts, prereleases and anything younger are skipped in favor of the
+newest release that qualifies. Only the `github` backend supports it (it's
+the only one that exposes per-release publish dates); it's ignored for other
+backends/strategies.
+
+The built-in default is **24 hours**, applied even if you configure nothing.
+Set a global default in `[defaults]`, and override it per tool in the spec:
+
+```toml
+[defaults]
+minimum_release_age = "7d"   # global default: 7 days
+
+[specs.mytool]
+backend = "github"
+repo = "example/mytool"
+minimum_release_age = "0h"   # this tool always tracks the true latest release
+```
+
+Accepted units: `h` (hours), `d` (days), `mo` (months, 30 days) and `y`
+(years, 365 days) - e.g. `"24h"`, `"7d"`, `"6mo"`, `"1y"`. `"0"` in any unit
+(e.g. `"0h"`) disables the restriction. A spec's `minimum_release_age` takes
+precedence over `[defaults]`, which takes precedence over the built-in
+default. It only applies to `version = "latest"`; pinned versions (including
+`default_version`) are never affected.
+
 ## External registry
 
 The registry is compiled into the binary, so paq works fully offline. It can

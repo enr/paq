@@ -120,7 +120,7 @@ func checkOutdated(ctx context.Context, cfg *config.Config, st *state.State, nam
 		return entry, false, nil
 	}
 
-	latest, resolveErr := resolveLatestVersion(ctx, spec)
+	latest, resolveErr := resolveLatestVersion(ctx, cfg, spec, skip)
 	if errors.Is(resolveErr, version.ErrLatestNotImplemented) {
 		skip("%s: backend %q has no upstream version to resolve, skipping", name, spec.Backend)
 		return entry, false, nil
