@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
@@ -638,12 +639,13 @@ func TestPipelineInstallFile(t *testing.T) {
 	cfg := &config.Config{
 		Specs: map[string]config.Spec{
 			"ripgrep": {
-				Backend: "github",
-				Repo:    "test/ripgrep",
-				Asset:   "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
-				Archive: "tar.gz",
-				Extract: "rg",
-				Chmod:   "0755",
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				Asset:             "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
+				Archive:           "tar.gz",
+				Extract:           "rg",
+				Chmod:             "0755",
+				MinimumReleaseAge: "0h", // not what this test exercises
 				Verify: config.VerifyConfig{
 					SHA256Asset: "{{asset}}.sha256",
 				},
@@ -679,6 +681,149 @@ func TestPipelineInstallFile(t *testing.T) {
 	}
 	if !bytes.Equal(data, binaryContent) {
 		t.Errorf("dest content = %q, want %q", data, binaryContent)
+	}
+}
+
+// TestPipelineMinimumReleaseAgeDefaultAppliesToGitHub verifies the built-in
+// default (24h, applied even with no configuration at all): a "latest"
+// install against a github-backed spec skips a release published within the
+// last 24h and installs the newest one that is old enough instead, going
+// through the paginated /releases listing (not /releases/latest).
+func TestPipelineMinimumReleaseAgeDefaultAppliesToGitHub(t *testing.T) {
+	isolateState(t)
+	binaryContent := []byte("fake-rg-binary-0.1.0")
+	tgzData := makeFakeTarGz(binaryContent)
+	assetName := "ripgrep-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+	checksum := sha256hex(tgzData)
+	checksumFile := fmt.Sprintf("%s  %s\n", checksum, assetName)
+	now := time.Now()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases") && r.URL.Query().Get("page") == "1":
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"tag_name": "v0.2.0", "published_at": now.Add(-1 * time.Hour), "draft": false, "prerelease": false},  // too new: <24h
+				{"tag_name": "v0.1.0", "published_at": now.Add(-48 * time.Hour), "draft": false, "prerelease": false}, // eligible
+			})
+		case strings.HasSuffix(r.URL.Path, "/releases"):
+			json.NewEncoder(w).Encode([]map[string]any{}) // no further pages
+		case strings.Contains(r.URL.Path, "releases/latest"):
+			t.Error("must not call /releases/latest when the default minimum age is in effect")
+			http.NotFound(w, r)
+		case strings.Contains(r.URL.Path, "releases/tags"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"assets": []map[string]string{
+					{"name": assetName, "url": "http://" + r.Host + "/download/" + assetName},
+					{"name": assetName + ".sha256", "url": "http://" + r.Host + "/download/" + assetName + ".sha256"},
+				},
+			})
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(checksumFile))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "rg")
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			// No MinimumReleaseAge set: must fall back to the built-in 24h default.
+			"ripgrep": {
+				Backend: "github",
+				Repo:    "test/ripgrep",
+				Asset:   "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
+				Archive: "tar.gz",
+				Extract: "rg",
+				Verify:  config.VerifyConfig{SHA256Asset: "{{asset}}.sha256"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"rg": {Use: "ripgrep", Version: "latest", Dest: dest},
+		},
+	}
+
+	origTransport := http.DefaultTransport
+	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
+	defer func() { http.DefaultTransport = origTransport }()
+
+	if err := Run(context.Background(), cfg, "rg", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("dest not found: %v", err)
+	}
+	if !bytes.Equal(data, binaryContent) {
+		t.Errorf("dest content = %q, want %q (the older, eligible release)", data, binaryContent)
+	}
+}
+
+// TestPipelineMinimumReleaseAgeInvalidFailsFast verifies that a malformed
+// minimum_release_age on the spec fails the install before any network call,
+// with an error naming the field.
+func TestPipelineMinimumReleaseAgeInvalidFailsFast(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"ripgrep": {
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				MinimumReleaseAge: "not-a-duration",
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"rg": {Use: "ripgrep", Version: "latest", Dest: filepath.Join(t.TempDir(), "rg")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "rg", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid minimum_release_age") {
+		t.Fatalf("expected an invalid minimum_release_age error, got %v", err)
+	}
+}
+
+// TestPipelineMinimumReleaseAgeWarnsOnUnsupportedBackend verifies that an
+// explicit minimum_release_age on a backend that can't honor it (here,
+// "url", which has no per-release publish dates) warns via the OnWarn hook.
+// Backend "url" with no latest_strategy also has no way at all to resolve
+// "latest", so the install fails for that unrelated reason (no network
+// involved either way) - what this test checks is that the warning still
+// fires before that failure.
+func TestPipelineMinimumReleaseAgeWarnsOnUnsupportedBackend(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"maven": {
+				Backend:           "url",
+				Source:            "https://example.invalid/{{version}}.zip",
+				MinimumReleaseAge: "7d",
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"maven": {Use: "maven", Version: "latest", Dest: filepath.Join(t.TempDir(), "maven")},
+		},
+	}
+
+	var warnings []string
+	err := Run(context.Background(), cfg, "maven", nil, &Hooks{
+		OnWarn: func(msg string) { warnings = append(warnings, msg) },
+	})
+	if err == nil {
+		t.Fatal("expected an error (backend \"url\" cannot resolve \"latest\"), got nil")
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "minimum_release_age") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a minimum_release_age warning, got %v", warnings)
 	}
 }
 
@@ -723,11 +868,12 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 	cfg := &config.Config{
 		Specs: map[string]config.Spec{
 			"ripgrep": {
-				Backend: "github",
-				Repo:    "test/ripgrep",
-				Asset:   "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
-				Archive: "tar.gz",
-				Extract: "rg",
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				Asset:             "ripgrep-{{version}}-x86_64-unknown-linux-gnu.tar.gz",
+				Archive:           "tar.gz",
+				Extract:           "rg",
+				MinimumReleaseAge: "0h", // not what this test exercises
 				Verify: config.VerifyConfig{
 					SHA256Asset: "{{asset}}.sha256",
 				},
