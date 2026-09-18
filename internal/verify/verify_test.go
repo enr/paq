@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -191,4 +193,77 @@ func TestRunMinisignWithoutChecksumAsset(t *testing.T) {
 	if !strings.Contains(err.Error(), "no sha256_asset") {
 		t.Errorf("unexpected error: %v", err)
 	}
+}
+
+// ErrVerification is the contract cmd/paq maps to exit code 4. These tests pin
+// which failures carry it: a verdict ("the file does not match") does, an
+// error that merely prevented the check from running does not.
+func TestErrVerificationTagsMismatches(t *testing.T) {
+	artifact := writeTempFile(t, "artifact.bin", []byte("real content"))
+	const wrong256 = "0000000000000000000000000000000000000000000000000000000000000000"
+	const wrong512 = wrong256 + wrong256
+
+	t.Run("sha256 mismatch", func(t *testing.T) {
+		err := CheckFile(artifact, wrong256)
+		if !errors.Is(err, ErrVerification) {
+			t.Errorf("err = %v, want it to satisfy errors.Is(_, ErrVerification)", err)
+		}
+	})
+
+	t.Run("sha512 mismatch", func(t *testing.T) {
+		err := CheckFileSHA512(artifact, wrong512)
+		if !errors.Is(err, ErrVerification) {
+			t.Errorf("err = %v, want it to satisfy errors.Is(_, ErrVerification)", err)
+		}
+	})
+
+	t.Run("invalid minisign signature", func(t *testing.T) {
+		signer, _ := newTestMinisignKey(t)
+		_, otherPub := newTestMinisignKey(t)
+		data := []byte("payload")
+		signed := writeTempFile(t, "signed.bin", data)
+		sigPath := signToFile(t, signer, data)
+
+		err := CheckMinisign(signed, sigPath, otherPub)
+		if !errors.Is(err, ErrVerification) {
+			t.Errorf("err = %v, want it to satisfy errors.Is(_, ErrVerification)", err)
+		}
+	})
+
+	// The tag must survive the wrapping Run and the pipeline add.
+	t.Run("survives wrapping", func(t *testing.T) {
+		err := Run(Plan{ArtifactPath: artifact, SHA256Literal: wrong256})
+		if !errors.Is(err, ErrVerification) {
+			t.Errorf("Run err = %v, want it to satisfy errors.Is(_, ErrVerification)", err)
+		}
+	})
+}
+
+func TestErrVerificationDoesNotTagUnperformableChecks(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.bin")
+	const wrong256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+	t.Run("unreadable artifact", func(t *testing.T) {
+		err := CheckFile(missing, wrong256)
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if errors.Is(err, ErrVerification) {
+			t.Errorf("err = %v, must NOT be tagged: the check could not run", err)
+		}
+	})
+
+	t.Run("unreadable checksum document", func(t *testing.T) {
+		err := Run(Plan{
+			ArtifactPath:    writeTempFile(t, "a.bin", []byte("x")),
+			SHA256AssetPath: missing,
+			ArtifactName:    "a.bin",
+		})
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if errors.Is(err, ErrVerification) {
+			t.Errorf("err = %v, must NOT be tagged: the check could not run", err)
+		}
+	})
 }

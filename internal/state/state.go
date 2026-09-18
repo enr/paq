@@ -2,7 +2,9 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -160,6 +162,23 @@ func (a InstalledApp) OwnedPaths() []string {
 		return a.Files
 	}
 	return []string{a.Dest}
+}
+
+// MissingPaths returns the paths the record claims to own that are no longer
+// on disk. A non-empty result means the state DB and the filesystem have
+// drifted apart: paq believes the tool is installed and it is not.
+//
+// Only "does not exist" counts. Any other stat error (a permission denied on a
+// parent directory, say) means the path could not be checked, which is not the
+// same as knowing it is gone.
+func (a InstalledApp) MissingPaths() []string {
+	var missing []string
+	for _, p := range a.OwnedPaths() {
+		if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+			missing = append(missing, p)
+		}
+	}
+	return missing
 }
 
 // pathsOverlap reports whether a and b share at least one path (after cleaning).

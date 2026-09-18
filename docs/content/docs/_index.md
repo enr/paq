@@ -170,7 +170,7 @@ is the easy way to guarantee this.
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
 | `paq config show` | | Show the config path, effective default directories, registry cache, and apps |
-| `paq doctor` | | Check the paq environment, paths, and `PATH` |
+| `paq doctor` | | Check the paq environment, paths, `PATH`, and installed-tool drift |
 | `paq self-update` | | Update paq itself to the latest release |
 | `paq version` | | Print the paq version |
 | `paq completion <shell>` | | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`) |
@@ -296,6 +296,11 @@ and no `@version` is given, all of them are printed.
 paq which rg
 paq which rg@14.1.1
 ```
+
+A recorded path that is no longer on disk is never printed: `which` feeds
+scripts (`$(paq which rg)`), so handing one a path that does not exist would
+turn a missing tool into a confusing failure somewhere else. Such a version is
+skipped, and when nothing is left `which` exits non-zero.
 
 ### self-update
 
@@ -517,6 +522,78 @@ locating the same document. `sha256_json` only says how to read it, so it works
 with either. An algorithm prefix (`sha256:`, `sha256-`) is stripped from the
 selected value.
 
+SHA-512 is available through the same two shapes, and is checked after the
+SHA-256 one when both are configured:
+
+```toml
+[specs.mytool.verify]
+sha512       = "9f86d081..."          # the digest, inlined in the recipe
+sha512_asset = "{{asset}}.sha512"     # or a checksum file next to the asset
+```
+
+A recipe can also require a [minisign](https://jedisct1.github.io/minisign/)
+signature. The signature covers the **checksum file**, not the artifact: paq
+verifies it first, then trusts the checksum to verify what was downloaded.
+`public_key` and `signed_asset` must be set together, and one of `sha256_asset`
+or `sha256_url` is required (there must be a document to sign):
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "{{asset}}.sha256"
+
+[specs.mytool.verify.minisign]
+public_key   = "RWQ...publisher-minisign-public-key..."
+signed_asset = "{{asset}}.sha256.minisig"
+```
+
+### Restricting the supported platforms
+
+When a project does not publish a build for every platform, list the ones it
+does with `platforms`. An entry may name an OS alone (matching all its
+architectures) or an `os/arch` pair. Omitting the field means "no restriction":
+
+```toml
+[specs.mytool]
+backend  = "github"
+repo     = "owner/mytool"
+asset    = "mytool-{{version}}-{{os}}-{{arch}}.tar.gz"
+archive  = "tar.gz"
+platforms = ["linux", "darwin/arm64"]
+```
+
+Installing on a platform outside the list fails up front with
+`"mytool" is not available for windows/amd64 (supported: linux, darwin/arm64)`,
+instead of downloading an asset that does not exist. `paq registry show` lists
+the supported platforms of a recipe that sets the field.
+
+### Custom template placeholders
+
+`templates` defines placeholders of your own, usable in every templated field
+of the recipe. It keeps a fragment that appears in several fields (a download
+URL and its checksum URL, typically) defined in one place.
+`templates_os.<os>` overrides a placeholder on a given OS:
+
+```toml
+[specs.mytool]
+backend = "url"
+source  = "https://example.com/{{version}}/{{my_platform}}/mytool.tar.gz"
+archive = "tar.gz"
+
+[specs.mytool.templates]
+my_platform = "{{os}}-{{arch}}"
+
+[specs.mytool.templates_os.windows]
+my_platform = "{{os}}-{{arch}}-archive"
+
+[specs.mytool.verify]
+sha256_url  = "https://example.com/api/{{my_platform}}/latest"
+sha256_json = "sha256hash"
+```
+
+Custom placeholders may reference the built-in ones from the
+[table below](#template-placeholders). `{{rust_target}}` is itself defined this
+way, in the registry's shared `templates.toml`.
+
 ### Resolving `latest`
 
 When an app is pinned to `version = "latest"`, paq resolves the newest version
@@ -680,3 +757,16 @@ public_key = "RWQ...your-minisign-public-key..."
 
 Install state is stored in `~/.local/state/paq/state.json` (Linux/macOS) or
 `%LOCALAPPDATA%\paq\state.json` (Windows).
+
+paq does not watch that directory, so removing an installed file by hand leaves
+a record claiming the tool is still there. Every command that reads the state
+checks the filesystem rather than trusting it:
+
+- `paq ls` lists the record and warns how many tools are missing on disk;
+  `paq ls --json` carries a `missing` field per entry.
+- `paq which` never prints a path that is gone, and exits non-zero when that
+  leaves nothing to print.
+- `paq doctor` names each missing record and exits non-zero.
+
+Reinstall the tool with `paq install <name>`, or drop the stale record with
+`paq uninstall <name>`.

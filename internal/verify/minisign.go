@@ -20,9 +20,15 @@ func CheckMinisign(filePath, signaturePath, pubKeyBase64 string) error {
 		return fmt.Errorf("read signature file %s: %w", signaturePath, err)
 	}
 
+	// From here on the failures are verdicts on the signature itself, so they
+	// carry ErrVerification (exit code 4): a malformed .minisig is a signature
+	// that does not check out, and Verify reports a signature made by another
+	// key as an error ("incompatible key identifiers") rather than as
+	// valid == false. Only the public key and the two file reads above are
+	// "could not check" cases.
 	sig, err := minisign.DecodeSignature(string(sigBytes))
 	if err != nil {
-		return fmt.Errorf("decode signature: %w", err)
+		return failed("decode signature: %v", err)
 	}
 
 	fileBytes, err := os.ReadFile(filePath)
@@ -32,10 +38,10 @@ func CheckMinisign(filePath, signaturePath, pubKeyBase64 string) error {
 
 	valid, err := pk.Verify(fileBytes, sig)
 	if err != nil {
-		return fmt.Errorf("verify minisign signature: %w", err)
+		return failed("verify minisign signature: %v", err)
 	}
 	if !valid {
-		return fmt.Errorf("minisign signature is invalid for %s", filePath)
+		return failed("minisign signature is invalid for %s", filePath)
 	}
 	return nil
 }

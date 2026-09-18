@@ -117,9 +117,15 @@ func writeFile(root *os.Root, name string, r io.Reader, mode os.FileMode) error 
 	if err != nil {
 		return fmt.Errorf("create %s: %w", name, err)
 	}
-	defer f.Close()
 	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
 		return fmt.Errorf("write %s: %w", name, err)
+	}
+	// Closed explicitly, not deferred: a buffered write that fails on flush
+	// (full disk, quota) reports it here and nowhere else, and the extracted
+	// file would otherwise be silently truncated.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", name, err)
 	}
 	// Apply the correct permissions after writing.
 	return root.Chmod(name, mode&0777|0200)

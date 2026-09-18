@@ -358,3 +358,43 @@ func TestRecordSupersedesSharedBinaries(t *testing.T) {
 		t.Error("old rg version should have been superseded")
 	}
 }
+
+func TestMissingPaths(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present")
+	if err := os.WriteFile(present, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	absent := filepath.Join(dir, "absent")
+
+	t.Run("file kind present", func(t *testing.T) {
+		rec := InstalledApp{Name: "a", Kind: "file", Dest: present}
+		if got := rec.MissingPaths(); len(got) != 0 {
+			t.Errorf("MissingPaths = %v, want none", got)
+		}
+	})
+
+	t.Run("file kind gone", func(t *testing.T) {
+		rec := InstalledApp{Name: "a", Kind: "file", Dest: absent}
+		if got := rec.MissingPaths(); len(got) != 1 || got[0] != absent {
+			t.Errorf("MissingPaths = %v, want [%s]", got, absent)
+		}
+	})
+
+	t.Run("dir kind uses dest", func(t *testing.T) {
+		rec := InstalledApp{Name: "a", Kind: "dir", Dest: dir}
+		if got := rec.MissingPaths(); len(got) != 0 {
+			t.Errorf("MissingPaths = %v, want none for an existing directory", got)
+		}
+	})
+
+	// A "binaries" record owns every file it installed, not its (shared) dest,
+	// so losing one of them is drift even though the bin dir still exists.
+	t.Run("binaries kind reports each missing file", func(t *testing.T) {
+		rec := InstalledApp{Name: "a", Kind: "binaries", Dest: dir, Files: []string{present, absent}}
+		got := rec.MissingPaths()
+		if len(got) != 1 || got[0] != absent {
+			t.Errorf("MissingPaths = %v, want [%s]", got, absent)
+		}
+	})
+}

@@ -121,9 +121,14 @@ func installRawBinary(src, dest string, mode os.FileMode) error {
 	}
 	_, copyErr := io.Copy(tmp, in)
 	in.Close()
-	tmp.Close()
+	closeErr := tmp.Close()
 	if copyErr != nil {
 		return fmt.Errorf("copy artifact: %w", copyErr)
+	}
+	// A buffered write that fails on flush (full disk, quota) reports it at
+	// Close: without this the binary would be installed truncated.
+	if closeErr != nil {
+		return fmt.Errorf("close temp file: %w", closeErr)
 	}
 
 	if mode != 0 {

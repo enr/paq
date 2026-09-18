@@ -169,7 +169,8 @@ paq self-update --check   # only report whether an update is available
 # Print the paq version
 paq version
 
-# Check the environment: platform, config/state paths, and bin dir on PATH
+# Check the environment: platform, config/state paths, bin dir on PATH,
+# and whether any installed tool is missing on disk
 paq doctor
 paq doctor --fix   # add the bin dir to your user PATH (Windows)
 
@@ -292,6 +293,77 @@ locating the same document. `sha256_json` only says how to read it, so it works
 with either. An algorithm prefix (`sha256:`, `sha256-`) is stripped from the
 selected value.
 
+SHA-512 is available through the same two shapes, and is checked after the
+SHA-256 one when both are configured:
+
+```toml
+[specs.mytool.verify]
+sha512       = "9f86d081..."          # the digest, inlined in the recipe
+sha512_asset = "{{asset}}.sha512"     # or a checksum file next to the asset
+```
+
+A recipe can also require a [minisign](https://jedisct1.github.io/minisign/)
+signature. The signature covers the **checksum file**, not the artifact: paq
+verifies it first, then trusts the checksum to verify what was downloaded.
+`public_key` and `signed_asset` must be set together, and one of `sha256_asset`
+or `sha256_url` is required (there must be a document to sign):
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "{{asset}}.sha256"
+
+[specs.mytool.verify.minisign]
+public_key   = "RWQ...publisher-minisign-public-key..."
+signed_asset = "{{asset}}.sha256.minisig"
+```
+
+### Restricting the supported platforms
+
+When a project does not publish a build for every platform, list the ones it
+does with `platforms`. An entry may name an OS alone (matching all its
+architectures) or an `os/arch` pair. Omitting the field means "no restriction":
+
+```toml
+[specs.mytool]
+backend  = "github"
+repo     = "owner/mytool"
+asset    = "mytool-{{version}}-{{os}}-{{arch}}.tar.gz"
+archive  = "tar.gz"
+platforms = ["linux", "darwin/arm64"]
+```
+
+Installing on a platform outside the list fails up front with
+`"mytool" is not available for windows/amd64 (supported: linux, darwin/arm64)`,
+instead of downloading an asset that does not exist.
+
+### Custom template placeholders
+
+`templates` defines placeholders of your own, usable in every templated field
+of the recipe. It keeps a fragment that appears in several fields (a download
+URL and its checksum URL, typically) defined in one place.
+`templates_os.<os>` overrides a placeholder on a given OS:
+
+```toml
+[specs.mytool]
+backend = "url"
+source  = "https://example.com/{{version}}/{{my_platform}}/mytool.tar.gz"
+archive = "tar.gz"
+
+[specs.mytool.templates]
+my_platform = "{{os}}-{{arch}}"
+
+[specs.mytool.templates_os.windows]
+my_platform = "{{os}}-{{arch}}-archive"
+
+[specs.mytool.verify]
+sha256_url  = "https://example.com/api/{{my_platform}}/latest"
+sha256_json = "sha256hash"
+```
+
+Custom placeholders may reference the built-in ones from the table below.
+`{{rust_target}}` is itself defined this way, in the registry's shared
+`templates.toml`.
+
 ## External registry
 
 The registry is compiled into the binary, so out of the box paq works fully
@@ -321,11 +393,15 @@ line and is never marked stale.
 
 ### Verification and trust
 
-The archive is protected by a SHA-256 checksum that is itself signed with
-[minisign](https://jedisct1.github.io/minisign/); paq embeds the public key as
-the trust anchor and refuses to install anything that fails verification
-(exit code `4`). Because a registry controls what gets downloaded and executed,
-the signature is the security boundary — it is never optional.
+The archive is always verified against a SHA-256 checksum, and the checksum
+itself can be signed with [minisign](https://jedisct1.github.io/minisign/).
+A failed verification aborts the update with exit code `4`.
+
+Signature verification of the **default** source is still being rolled out:
+official releases do not publish a `.minisig` yet, so the binaries ship without
+an embedded trust anchor and `paq registry update` falls back to checksum-only
+verification, printing a warning. A **custom** source is different — it must
+supply its own public key, and its signature is always verified.
 
 ### Custom source
 
@@ -435,6 +511,15 @@ The last check timestamp and latest known version are cached in `~/.cache/paq/up
 ## State
 
 Install state is stored in `~/.local/state/paq/state.json` (Linux/macOS) or `%LOCALAPPDATA%\paq\state.json` (Windows).
+
+paq does not watch that directory, so removing an installed file by hand leaves
+a record claiming the tool is still there. Every command that reads the state
+checks the filesystem rather than trusting it: `paq ls` warns how many tools are
+missing on disk (and `ls --json` carries a `missing` field per entry),
+`paq which` never prints a path that is gone and exits non-zero when that leaves
+nothing to print, and `paq doctor` names each missing record and exits non-zero.
+Reinstall with `paq install <name>`, or drop the stale record with
+`paq uninstall <name>`.
 
 ## Platforms
 
