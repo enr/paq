@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/enr/paq/internal/state"
 )
 
 // doctorEnv points paq's config/state/cache at temp dirs and writes manifest
@@ -61,5 +63,59 @@ func TestRunDoctorSucceedsWhenNothingIsBroken(t *testing.T) {
 				t.Errorf("runDoctor: %v, want nil", err)
 			}
 		})
+	}
+}
+
+// State drift: the state DB says a tool is installed and its files are gone.
+// paq cannot put this right on its own — ls, which, upgrade and uninstall all
+// trust the record — so doctor must report it and fail.
+func TestRunDoctorReportsStateDrift(t *testing.T) {
+	doctorEnv(t, "")
+	dir := t.TempDir()
+
+	present := filepath.Join(dir, "bat")
+	if err := os.WriteFile(present, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "bat", Version: "0.24.0", Kind: "file", Dest: present})
+	st.Set(state.InstalledApp{
+		Name: "rg", Version: "14.1.1", Kind: "file",
+		Dest: filepath.Join(dir, "rg-never-created"),
+	})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runDoctor(doctorCmd, nil); err == nil {
+		t.Fatal("runDoctor returned nil despite a record whose file is missing")
+	}
+}
+
+// The counterpart: records that are all present must not trip the check.
+func TestRunDoctorQuietWhenStateMatchesDisk(t *testing.T) {
+	doctorEnv(t, "")
+	dir := t.TempDir()
+
+	present := filepath.Join(dir, "bat")
+	if err := os.WriteFile(present, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "bat", Version: "0.24.0", Kind: "file", Dest: present})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runDoctor(doctorCmd, nil); err != nil {
+		t.Errorf("runDoctor: %v, want nil when every record is present", err)
 	}
 }

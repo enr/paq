@@ -170,7 +170,7 @@ is the easy way to guarantee this.
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
 | `paq config show` | | Show the config path, effective default directories, registry cache, and apps |
-| `paq doctor` | | Check the paq environment, paths, and `PATH` |
+| `paq doctor` | | Check the paq environment, paths, `PATH`, and installed-tool drift |
 | `paq self-update` | | Update paq itself to the latest release |
 | `paq version` | | Print the paq version |
 | `paq completion <shell>` | | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`) |
@@ -296,6 +296,11 @@ and no `@version` is given, all of them are printed.
 paq which rg
 paq which rg@14.1.1
 ```
+
+A recorded path that is no longer on disk is never printed: `which` feeds
+scripts (`$(paq which rg)`), so handing one a path that does not exist would
+turn a missing tool into a confusing failure somewhere else. Such a version is
+skipped, and when nothing is left `which` exits non-zero.
 
 ### self-update
 
@@ -752,3 +757,16 @@ public_key = "RWQ...your-minisign-public-key..."
 
 Install state is stored in `~/.local/state/paq/state.json` (Linux/macOS) or
 `%LOCALAPPDATA%\paq\state.json` (Windows).
+
+paq does not watch that directory, so removing an installed file by hand leaves
+a record claiming the tool is still there. Every command that reads the state
+checks the filesystem rather than trusting it:
+
+- `paq ls` lists the record and warns how many tools are missing on disk;
+  `paq ls --json` carries a `missing` field per entry.
+- `paq which` never prints a path that is gone, and exits non-zero when that
+  leaves nothing to print.
+- `paq doctor` names each missing record and exits non-zero.
+
+Reinstall the tool with `paq install <name>`, or drop the stale record with
+`paq uninstall <name>`.

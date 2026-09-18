@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"fmt"
@@ -33,12 +34,15 @@ func init() {
 }
 
 func runDoctor(_ *cobra.Command, _ []string) error {
-	// problems counts only what stops paq from working — a manifest it cannot
-	// parse, a path it cannot resolve — and makes doctor exit non-zero so it
-	// can be used as a health check. Everything paq recovers from on its own
-	// stays a warning with an exit code of 0: a corrupt registry cache (it
-	// falls back to the embedded recipes), a missing manifest or state file,
-	// a bin dir outside PATH, an unset GITHUB_TOKEN.
+	// problems counts what paq cannot put right on its own and the user must
+	// act on — a manifest it cannot parse, a path it cannot resolve, a state
+	// record whose files are gone — and makes doctor exit non-zero so it can be
+	// used as a health check.
+	//
+	// Anything paq handles by itself stays a warning at exit 0: a corrupt
+	// registry cache (it falls back to the embedded recipes), a manifest or
+	// state file that does not exist yet, a bin dir outside PATH, an unset
+	// GITHUB_TOKEN.
 	problems := 0
 
 	plat := platform.Detect()
@@ -70,6 +74,35 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		ui.OKField("State", stPath)
 	} else {
 		ui.WarnField("State", stPath, "(not found — no apps installed yet)")
+	}
+
+	// Reconcile the state DB against the filesystem. Counted as a problem:
+	// unlike a corrupt registry cache, paq cannot recover from this on its own
+	// — ls, which, upgrade and uninstall all trust the record — and until the
+	// user acts, the state DB claims something that is not true.
+	if st, stErr := state.Load(); stErr != nil {
+		ui.WarnField("Installed", "unknown", "(state DB unreadable)")
+		ui.Hint("%v", stErr)
+		problems++
+	} else if len(st.Packages) > 0 {
+		var drifted []string
+		for _, rec := range st.Packages {
+			if gone := rec.MissingPaths(); len(gone) > 0 {
+				drifted = append(drifted, fmt.Sprintf("%s@%s → %s", rec.Name, rec.Version, strings.Join(gone, ", ")))
+			}
+		}
+		if len(drifted) > 0 {
+			sort.Strings(drifted)
+			ui.WarnField("Installed", fmt.Sprintf("%d tool(s)", len(st.Packages)),
+				fmt.Sprintf("(%d missing on disk)", len(drifted)))
+			for _, d := range drifted {
+				ui.Warn("  %s", d)
+			}
+			ui.Hint("reinstall them with `paq install <name>`, or drop the record with `paq uninstall <name>`")
+			problems++
+		} else {
+			ui.OKField("Installed", fmt.Sprintf("%d tool(s), all present on disk", len(st.Packages)))
+		}
 	}
 
 	if _, meta, rerr := registry.Open(); rerr != nil {

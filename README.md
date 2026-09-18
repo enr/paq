@@ -169,7 +169,8 @@ paq self-update --check   # only report whether an update is available
 # Print the paq version
 paq version
 
-# Check the environment: platform, config/state paths, and bin dir on PATH
+# Check the environment: platform, config/state paths, bin dir on PATH,
+# and whether any installed tool is missing on disk
 paq doctor
 paq doctor --fix   # add the bin dir to your user PATH (Windows)
 
@@ -510,6 +511,15 @@ The last check timestamp and latest known version are cached in `~/.cache/paq/up
 ## State
 
 Install state is stored in `~/.local/state/paq/state.json` (Linux/macOS) or `%LOCALAPPDATA%\paq\state.json` (Windows).
+
+paq does not watch that directory, so removing an installed file by hand leaves
+a record claiming the tool is still there. Every command that reads the state
+checks the filesystem rather than trusting it: `paq ls` warns how many tools are
+missing on disk (and `ls --json` carries a `missing` field per entry),
+`paq which` never prints a path that is gone and exits non-zero when that leaves
+nothing to print, and `paq doctor` names each missing record and exits non-zero.
+Reinstall with `paq install <name>`, or drop the stale record with
+`paq uninstall <name>`.
 
 ## Platforms
 

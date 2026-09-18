@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
@@ -53,6 +54,29 @@ func runWhich(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+
+	// which feeds scripts (`$(paq which rg)`), so a path that no longer exists
+	// must never be printed as though the tool were installed: the failure
+	// would surface later, somewhere else, as a confusing "no such file".
+	var present []state.InstalledApp
+	var missing []string
+	for _, rec := range matches {
+		if gone := rec.MissingPaths(); len(gone) > 0 {
+			missing = append(missing, gone...)
+			continue
+		}
+		present = append(present, rec)
+	}
+	if len(missing) > 0 {
+		ui.Warn("recorded but missing on disk: %s", strings.Join(missing, ", "))
+	}
+	if len(present) == 0 {
+		return hintError{
+			msg:  fmt.Sprintf("%q is recorded as installed but its files are missing", name),
+			hint: fmt.Sprintf("reinstall it with `paq install %s`, or drop the record with `paq uninstall %s`", name, name),
+		}
+	}
+	matches = present
 
 	if ui.Global.JSON {
 		data, _ := json.MarshalIndent(matches, "", "  ")

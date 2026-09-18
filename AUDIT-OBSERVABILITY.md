@@ -17,7 +17,7 @@ this tree; the rest are code-level readings.
 | Correct log levels (ERROR / WARN / INFO)? | **Yes.** The best part of the system — see §4. |
 | Metrics / telemetry for critical errors? | **None**, and correctly so for a local CLI. The real gap is machine-readable *error output* (§3, B4). |
 | Ambiguous return codes instead of explicit errors? | **Fixed** — exit 4 is now `errors.Is(err, verify.ErrVerification)`. |
-| State checks after critical operations? | **Missing.** Nothing ever reconciles the state DB with the disk (M1). |
+| State checks after critical operations? | **Fixed** — `ls`, `which` and `doctor` now reconcile the state DB with the disk. |
 
 ---
 
@@ -30,7 +30,7 @@ Ordered by severity. "Swallowed" means the error value exists and is discarded.
 | A1 | `cmd/paq/doctor.go:70`, `:39`, `:47` | config/state/path errors → rows silently vanish, exit 0 | **Alta** — *fixed* |
 | A2 | `cmd/paq/exitcode.go:57` | exit 4 vs 1 decided by substring match on error text | **Alta** — *fixed* |
 | A3 | `internal/archive/archive.go:120`, `internal/install/binaries.go:124` | `Close()` error on a written file → silent truncation | **Alta** — *fixed* |
-| M1 | `cmd/paq/ls.go`, `cmd/paq/which.go` | no reconciliation of state DB against disk | **Media** |
+| M1 | `cmd/paq/ls.go`, `cmd/paq/which.go` | no reconciliation of state DB against disk | **Media** — *fixed* |
 | M2 | `internal/httpretry/httpretry.go:29` | retries are invisible, even under `--debug` | **Media** |
 | M3 | `internal/install/pipeline.go:490` | "Installed ✓" printed *before* the state save that can fail | **Media** |
 | M4 | `cmd/paq/info.go:64` | `ResolveVars` error dropped in a diagnostic command | **Media** |
@@ -213,7 +213,7 @@ it after the copy error. No new test: the failure needs a filesystem that fails
 mid-write, which is not reproducible in a unit test. The 22 existing archive
 tests cover the success path and pin that the refactor did not break it.
 
-### M1 — Nothing reconciles the state DB with the disk **[verified]**
+### M1 — Nothing reconciles the state DB with the disk **[verified]** — FIXED
 
 `ls` and `which` read `state.json` and print it. Neither stats the paths.
 With a state record pointing at a deleted binary:
@@ -231,6 +231,50 @@ $ paq which rg
 path that does not exist, with a success exit code. The failure then surfaces
 somewhere else entirely, as a confusing "no such file". No command in the tool
 detects the drift — not even `doctor`.
+
+**Resolved.** `state.InstalledApp.MissingPaths()` reports which of a record's
+owned paths are gone (reusing the existing `OwnedPaths()`, so the `binaries`
+kind — whose `Dest` is a shared bin dir — is handled correctly). Only
+`fs.ErrNotExist` counts: a path that could not be *checked* is not a path known
+to be gone. Three surfaces use it:
+
+```
+$ paq ls
+NAME VERSION KIND DEST
+bat  0.24.0  file /tmp/paqtest/bin/bat
+rg   14.1.1  file /tmp/paqtest/bin/rg-DELETED
+! 1 of 2 tools are recorded but missing on disk              → exit 0
+
+$ paq which rg
+✗ "rg" is recorded as installed but its files are missing    → exit 1
+↪ hint: reinstall it with `paq install rg`, or drop the record with `paq uninstall rg`
+
+$ paq doctor
+! Installed:     2 tool(s) (1 missing on disk)
+!   rg@14.1.1 → /tmp/paqtest/bin/rg-DELETED
+✗ 1 problem(s) found                                         → exit 1
+```
+
+Decisions worth recording:
+
+- **`ls` keeps its table shape.** The drift is reported beside the table rather
+  than as a `STATUS` column, so no existing output is reformatted. `ls --json`
+  carries `missing` per entry, which is what a script needs.
+- **The `missing` field is not persisted.** `PrintLsTable` used to marshal
+  `[]state.InstalledApp` directly — the same struct the state file is written
+  from — so adding a field there would have put `"missing"` into `state.json`.
+  It lives on a separate `ui.LsEntry` view type instead, pinned by
+  `TestStateFileHasNoMissingField`.
+- **`which` skips a missing version rather than failing outright**, so a stale
+  record for one version does not break a query that another version can still
+  answer. It exits non-zero only when nothing is left to print.
+- **Drift counts as a `doctor` problem.** This widened the rule set in A1:
+  it is not "paq cannot work", it is "paq cannot put this right on its own and
+  the user must act" — which is also what distinguishes it from the corrupt
+  registry cache that `TestOfflineDegradation` guards.
+- **Three existing `which` tests had to change.** They asserted on hardcoded
+  paths (`/opt/rg-13`) that were never created, so they were testing path
+  formatting while implicitly encoding the bug. They now create real files.
 
 ### M2 — Retries are completely invisible
 
@@ -448,6 +492,4 @@ Recorded so the findings above are read in proportion.
 Remaining:
 
 1. **M3, M4, B3** — small, local, each removes one silent path.
-2. **M1** — drift check in `doctor` first (it now has a `problems` counter and
-   a test file to hang it on), `ls`/`which` after.
-3. **M2, B2, B1, B4** — observability polish.
+2. **M2, B2, B1, B4** — observability polish.

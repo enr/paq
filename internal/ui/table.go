@@ -29,14 +29,29 @@ var (
 	labelStyle  = lipgloss.NewStyle().Bold(true).Width(16)
 )
 
+// LsEntry is a row of `paq ls`: an installed record plus whether the paths it
+// owns are still on disk. A distinct type from state.InstalledApp on purpose —
+// the state file is serialized from that struct, and "missing" is a fact about
+// the filesystem right now, not something to persist.
+type LsEntry struct {
+	state.InstalledApp
+	// Missing reports that the record's files are gone: paq believes the tool
+	// is installed and it is not.
+	Missing bool `json:"missing"`
+}
+
 // PrintLsTable prints the table of installed packages.
-func PrintLsTable(packages []state.InstalledApp) {
+func PrintLsTable(entries []LsEntry) {
 	if Global.JSON {
-		data, _ := json.MarshalIndent(packages, "", "  ")
+		data, _ := json.MarshalIndent(entries, "", "  ")
 		fmt.Println(string(data))
 		return
 	}
 
+	packages := make([]state.InstalledApp, len(entries))
+	for i, e := range entries {
+		packages[i] = e.InstalledApp
+	}
 	pkgs := sortedPackages(packages)
 
 	headers := []string{"NAME", "VERSION", "KIND"}
