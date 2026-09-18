@@ -87,15 +87,16 @@ docs and against actual use in the shipped registry (`embedded/registry/*.toml`)
 | `env_arch` | **no** | yes | `ripgrep` |
 | `minimum_release_age` (spec + `[defaults]`) | **no** | yes | — |
 | per-OS override blocks (`[specs.x.windows]`) | **no** | yes | yes |
-| **`platforms`** | **no** | **no** | `bun`, `gip`, `inner`, `micro`, `runp`, `vscode` |
-| **`templates`** | **no** | **no** | `templates`, `vscode` |
-| **`templates_os`** | **no** | **no** | `vscode` |
-| **`verify.sha512`** | **no** | **no** | `jvm` |
-| **`verify.sha512_asset`** | **no** | **no** | `jvm` |
-| **`verify.minisign.public_key` / `signed_asset`** (spec-level) | **no** | **no** | — |
+| **`platforms`** | yes | yes | `bun`, `gip`, `inner`, `micro`, `runp`, `vscode` |
+| **`templates`** | yes | yes | `templates`, `vscode` |
+| **`templates_os`** | yes | yes | `vscode` |
+| **`verify.sha512`** | yes | yes | `jvm` |
+| **`verify.sha512_asset`** | yes | yes | `jvm` |
+| **`verify.minisign.public_key` / `signed_asset`** (spec-level) | yes | yes | — |
 
-Six fields are implemented, exercised by the registry that ships inside the
-binary, and documented **nowhere**.
+~~Six fields are implemented, exercised by the registry that ships inside the
+binary, and documented **nowhere**.~~ Resolved (H4): all six are now documented
+in both surfaces.
 
 ---
 
@@ -108,18 +109,18 @@ binary, and documented **nowhere**.
 | `internal/verify` | 88.7% | |
 | `internal/httpretry` | 87.5% | |
 | `internal/platform` | 83.3% | |
-| `internal/version` | 83.2% | `Compare`/`compareNumeric` at 0% |
+| `internal/version` | 88.8% | was 83.2%; `Compare` now at 100% |
 | `internal/state` | 82.8% | |
 | `internal/backend` | 82.3% | `url.go Resolve` at 0% |
 | `internal/config` | 82.1% | |
 | `internal/install` | 77.3% | |
 | `internal/download` | 74.0% | |
-| `internal/archive` | 72.3% | `tar.xz` path at 0% |
+| `internal/archive` | 75.7% | was 72.3%; `extractTarXz` now at 87.5% |
 | `internal/registry` | 66.7% | |
 | `internal/updatecheck` | 57.5% | |
 | `cmd/paq` | 50.7% | |
 | **`internal/ui`** | **2.1%** | one test (`TestColWidths`) |
-| **`internal/jsonpath`** | **0.0%** | **no test file** |
+| `internal/jsonpath` | **100.0%** | was 0.0%, no test file |
 
 `e2e/`: a single test (`TestInstallRipgrep`), gated behind `workflow_dispatch`,
 covering the `github` backend + `tar.gz` + single `extract` only.
@@ -128,7 +129,12 @@ covering the `github` backend + `tar.gz` + single `extract` only.
 
 ## 4. Gap report
 
-### HIGH
+### HIGH — all resolved
+
+Fixed in the same branch as this report; each item below records what was done.
+Coverage moved: `jsonpath` 0.0% → **100.0%**, `version` 83.2% → **88.8%**
+(`Compare`/`compareNumeric` 0% → 100%), `archive` 72.3% → **75.7%**
+(`extractTarXz` 0% → 87.5%).
 
 **H1 — The README states a security guarantee the code does not provide.**
 `README.md:323-328` says the registry checksum is minisign-signed, that "paq
@@ -140,6 +146,12 @@ security boundary — **it is never optional**". The code says otherwise:
 does not. A user reading the README believes downloads from the default source
 are signature-verified when they are not. Fix the README to match the site.
 
+**Resolved:** README "Verification and trust" now matches the implementation
+and the site — the checksum is always verified, the signature on the default
+source is described as still being rolled out (no embedded trust anchor,
+checksum-only fallback with a warning), and a custom source is noted as always
+signature-verified.
+
 **H2 — `internal/jsonpath` has no tests at all, and sits on the checksum path.**
 `Select`/`String` resolve `verify.sha256_json` (which hash is checked) and
 `latest_json` (which version is installed). Zero coverage on the component that
@@ -147,6 +159,15 @@ decides *which bytes count as the expected hash* is the riskiest hole in the
 suite: a selector that silently resolves to the wrong node yields a verification
 that passes against an attacker-chosen digest. Untested branches include array
 indexing, out-of-range indices, missing keys, and the non-string assertion.
+
+**Resolved:** `internal/jsonpath/jsonpath_test.go` takes the package to 100%.
+Tests decode real JSON (so the types match what the callers pass) and cover
+object keys, nesting, array indexing, top-level arrays and non-string nodes;
+plus nine error cases — empty selector, missing key, key on an array, index out
+of range, negative index, descent into a string and into null, trailing empty
+segment. Two of them assert the property that matters here: a failed `Select`
+returns `nil` and a failed `String` returns `""` **alongside** the error, never
+a zero value that a caller could mistake for a digest.
 
 **H3 — `version.Compare` is untested and drives four decisions.**
 `internal/version/clean.go:40` is at 0% coverage, yet it decides whether
@@ -158,6 +179,17 @@ build metadata (`Build()` exists but is not consulted) and any fourth component
 are dropped, so `21.0.2+13` and `21.0.2+9` compare equal. Whether that is
 intended is undocumented and unasserted.
 
+**Resolved:** `TestCompare` covers the documented contract — ordering by major,
+then minor, then patch; numeric rather than lexicographic comparison (`1.10.0`
+> `1.9.0`, `0.0.16` > `0.0.9`); missing fields counting as 0 (`1.2` == `1.2.0`);
+non-numeric fields counting as 0. Every case is also asserted antisymmetric
+(`Compare(b, a) == -Compare(a, b)`), since the call sites branch on both "is
+the remote newer" and "is the local older". `Compare`/`compareNumeric` are now
+at 100%. The build-metadata observation is recorded as
+`TestCompareIgnoresBuildMetadata`, which documents the behaviour rather than
+changing it: every call site runs `Clean` first and `Clean` strips the build
+suffix, so `Compare` never sees one in practice.
+
 **H4 — Six shipped config fields are documented nowhere.**
 `platforms`, `templates`, `templates_os`, `verify.sha512`,
 `verify.sha512_asset` and spec-level `verify.minisign.*` are absent from both
@@ -167,12 +199,35 @@ A user reading a shipped recipe cannot understand it, and cannot write an
 equivalent one. `sha512` is a verification primitive — undocumented verification
 options tend to go unused.
 
+**Resolved:** all six are now documented in both the README and the site.
+`verify.sha512`/`sha512_asset` and spec-level `verify.minisign` were added to
+the verification section (noting that the signature covers the *checksum file*,
+that `public_key` and `signed_asset` must be set together, and that one of
+`sha256_asset`/`sha256_url` is required); `platforms` and
+`templates`/`templates_os` got a section each, with the real failure message
+for an unsupported platform. Every TOML example was checked against the loader
+before being written down.
+
 **H5 — The `tar.xz` extraction path has zero coverage.**
 `internal/archive/archive_test.go` is the strongest file in the suite: 22 tests
 covering path traversal, absolute and escaping symlink targets, symlink chains,
 hardlinks outside the extract scope, and metadata entries. All of them exercise
-`tar.gz` and `zip`. `extractTarXz` (`internal/archive/tarxz.go:10`) is at 0%, so
-none of that hardening is proven for the third supported format.
+`tar.gz` and `zip`. `extractTarXz` (`internal/archive/tarxz.go:10`) was at 0%.
+
+*Correction to the severity first assigned here:* `extractTarXz` and
+`extractTarGz` both delegate to the same `extractTar`, so the hardening was
+already structurally covered for `tar.xz` — the claim that "none of that
+hardening is proven for the third supported format" overstated the risk. What
+was genuinely untested was the xz decompression wrapper and its routing in
+`Extract`. This is a real gap, but a smaller one than High implies.
+
+**Resolved:** four tests covering that seam — single-file extract, strip
+components, one path-traversal case to prove the shared checks are reached
+through this format, and a non-xz input asserted to fail in the reader rather
+than look like an empty archive. `extractTarXz` is now at 87.5% (the
+uncovered remainder is the `os.Open` error branch). Deliberately not done:
+duplicating all 22 security tests per format, which would triple the file to
+re-prove shared code.
 
 ### MEDIUM
 
@@ -268,14 +323,14 @@ Worth recording so the gaps above are read in proportion:
 
 ## 6. Suggested order of work
 
-1. H1 — one README edit; it is the only item that misleads about security.
-2. H2, H3 — two small unit-test files (`jsonpath`, `version.Compare`); highest
-   risk-reduction per line of test written.
-3. H4 — document the six missing fields, on the site first, then the README.
-4. H5 — a `tar.xz` fixture through the existing archive test table.
-5. M6 — ungate e2e on pull requests, then widen it (`url` backend, `zip`,
+~~1. H1~~ ~~2. H2, H3~~ ~~3. H4~~ ~~4. H5~~ — done, see the HIGH section.
+
+Remaining, in suggested order:
+
+1. M6 — ungate e2e on pull requests, then widen it (`url` backend, `zip`,
    `binaries[]`).
-6. M1, M2, L2 — one README pass closing every remaining flag/field gap.
-7. M3, M4 — golden-output tests for the table and `--json` renderers; these
+2. M1, M2, L2 — one README pass closing every remaining flag/field gap.
+3. M3, M4 — golden-output tests for the table and `--json` renderers; these
    close two gaps at once.
-8. M5 — add `windows-latest` and `macos-latest` to the CI test matrix.
+4. M5 — add `windows-latest` and `macos-latest` to the CI test matrix.
+5. M7, M8, L1, L3 — the rest.

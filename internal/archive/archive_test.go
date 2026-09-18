@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ulikunitz/xz"
 )
 
 // makeTarGz creates an in-memory .tar.gz with the given entries.
@@ -30,6 +32,32 @@ func makeTarGz(t *testing.T, entries map[string]string) string {
 	gz.Close()
 
 	tmp, _ := os.CreateTemp(t.TempDir(), "test-*.tar.gz")
+	tmp.Write(buf.Bytes())
+	tmp.Close()
+	return tmp.Name()
+}
+
+// makeTarXz creates an in-memory .tar.xz with the given entries.
+func makeTarXz(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	xzw, err := xz.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(xzw)
+	for name, content := range entries {
+		tw.WriteHeader(&tar.Header{
+			Name: name,
+			Mode: 0755,
+			Size: int64(len(content)),
+		})
+		tw.Write([]byte(content))
+	}
+	tw.Close()
+	xzw.Close()
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-*.tar.xz")
 	tmp.Write(buf.Bytes())
 	tmp.Close()
 	return tmp.Name()
@@ -620,5 +648,86 @@ func TestExtractTarGzDanglingSymlinkAllowed(t *testing.T) {
 	}
 	if target != filepath.FromSlash("../lib/not-shipped.so") {
 		t.Errorf("link target = %q", target)
+	}
+}
+
+// The tar.xz path shares extractTar with tar.gz, so the traversal and symlink
+// hardening proven above applies to it too. What is specific to this format is
+// the xz decompression wrapper and its routing in Extract: these tests cover
+// that seam, plus one traversal case to prove the shared checks are really
+// reached through it.
+
+func TestExtractTarXzSingleFile(t *testing.T) {
+	txz := makeTarXz(t, map[string]string{
+		"micro-2.0.14/micro":   "binary-content",
+		"micro-2.0.14/LICENSE": "license",
+	})
+
+	dest := t.TempDir()
+	if err := Extract(txz, "tar.xz", ExtractOpts{Extract: "micro", Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dest, "micro"))
+	if err != nil {
+		t.Fatalf("micro not extracted: %v", err)
+	}
+	if string(data) != "binary-content" {
+		t.Errorf("micro content = %q, want binary-content", data)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "LICENSE")); !os.IsNotExist(err) {
+		t.Error("LICENSE should not have been extracted")
+	}
+}
+
+func TestExtractTarXzStripComponents(t *testing.T) {
+	txz := makeTarXz(t, map[string]string{
+		"node-v20.11.0/bin/node": "node-binary",
+	})
+
+	dest := t.TempDir()
+	if err := Extract(txz, "tar.xz", ExtractOpts{StripComponents: 1, Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "node"))
+	if err != nil {
+		t.Fatalf("bin/node not extracted: %v", err)
+	}
+	if string(data) != "node-binary" {
+		t.Errorf("node content = %q, want node-binary", data)
+	}
+}
+
+func TestExtractTarXzPathTraversalRejected(t *testing.T) {
+	txz := makeTarXz(t, map[string]string{
+		"../../evil.txt": "pwned",
+	})
+
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	if err := Extract(txz, "tar.xz", ExtractOpts{Dest: dest}); err == nil {
+		t.Fatal("expected error for path traversal entry, got nil")
+	}
+
+	if _, err := os.Stat(filepath.Join(parent, "evil.txt")); !os.IsNotExist(err) {
+		t.Error("path traversal entry escaped the destination directory")
+	}
+}
+
+// A file that is not xz-compressed must fail in the reader, not be mistaken
+// for an empty archive that silently extracts nothing.
+func TestExtractTarXzRejectsNonXzInput(t *testing.T) {
+	notXz := filepath.Join(t.TempDir(), "broken.tar.xz")
+	if err := os.WriteFile(notXz, []byte("this is not an xz stream"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Extract(notXz, "tar.xz", ExtractOpts{Dest: t.TempDir()})
+	if err == nil {
+		t.Fatal("expected an error for a non-xz file, got nil")
+	}
+	if !strings.Contains(err.Error(), "xz reader") {
+		t.Errorf("error = %v, want it to name the xz reader", err)
 	}
 }
