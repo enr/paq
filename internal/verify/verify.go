@@ -1,6 +1,30 @@
 package verify
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrVerification marks the failures that mean "the artifact did not match
+// what was expected": a checksum mismatch or an invalid signature. Callers
+// classify with errors.Is (cmd/paq maps it to exit code 4) instead of
+// matching on message text, which silently breaks when a message is reworded.
+//
+// It deliberately does NOT cover the I/O and parse errors of this package
+// (an unreadable artifact, a malformed checksum document): those mean the
+// check could not be performed, not that it failed.
+var ErrVerification = errors.New("verification failed")
+
+// mismatch tags an error as an ErrVerification without altering its message,
+// so what the user reads is unchanged.
+type mismatch struct{ err error }
+
+func (e mismatch) Error() string        { return e.err.Error() }
+func (e mismatch) Unwrap() error        { return e.err }
+func (e mismatch) Is(target error) bool { return target == ErrVerification }
+
+// failed builds a tagged verification failure.
+func failed(format string, a ...any) error { return mismatch{fmt.Errorf(format, a...)} }
 
 // Plan describes what to verify for a downloaded artifact.
 type Plan struct {

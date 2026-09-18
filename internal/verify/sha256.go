@@ -28,7 +28,7 @@ func CheckFile(filePath string, expected string) error {
 	got := hex.EncodeToString(h.Sum(nil))
 	expected = strings.TrimSpace(strings.ToLower(expected))
 	if got != expected {
-		return fmt.Errorf("sha256 mismatch for %s:\n  got:  %s\n  want: %s", filepath.Base(filePath), got, expected)
+		return failed("sha256 mismatch for %s:\n  got:  %s\n  want: %s", filepath.Base(filePath), got, expected)
 	}
 	return nil
 }

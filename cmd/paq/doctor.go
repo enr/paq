@@ -33,26 +33,48 @@ func init() {
 }
 
 func runDoctor(_ *cobra.Command, _ []string) error {
+	// problems counts only what stops paq from working — a manifest it cannot
+	// parse, a path it cannot resolve — and makes doctor exit non-zero so it
+	// can be used as a health check. Everything paq recovers from on its own
+	// stays a warning with an exit code of 0: a corrupt registry cache (it
+	// falls back to the embedded recipes), a missing manifest or state file,
+	// a bin dir outside PATH, an unset GITHUB_TOKEN.
+	problems := 0
+
 	plat := platform.Detect()
 	ui.OKField("Platform", plat.OS+"/"+plat.Arch)
 
-	if cfgPath, err := config.UserManifestPath(); err == nil {
-		if _, err := os.Stat(cfgPath); err == nil {
-			ui.OKField("Config", cfgPath)
-		} else {
+	cfgPath, pathErr := config.UserManifestPath()
+	switch {
+	case pathErr != nil:
+		ui.WarnField("Config", "path unknown", "("+pathErr.Error()+")")
+		problems++
+	default:
+		if _, statErr := os.Stat(cfgPath); statErr != nil {
 			ui.WarnField("Config", cfgPath, "(not found)")
+		} else if _, parseErr := config.LoadUserConfig(); parseErr != nil {
+			// Stat alone would report a green row for a manifest paq cannot
+			// parse — the one case doctor most needs to surface.
+			ui.WarnField("Config", cfgPath, "(unusable)")
+			ui.Hint("%v", parseErr)
+			problems++
+		} else {
+			ui.OKField("Config", cfgPath)
 		}
 	}
 
-	if stPath, err := state.StatePath(); err == nil {
-		if _, err := os.Stat(stPath); err == nil {
-			ui.OKField("State", stPath)
-		} else {
-			ui.WarnField("State", stPath, "(not found — no apps installed yet)")
-		}
+	if stPath, err := state.StatePath(); err != nil {
+		ui.WarnField("State", "path unknown", "("+err.Error()+")")
+		problems++
+	} else if _, err := os.Stat(stPath); err == nil {
+		ui.OKField("State", stPath)
+	} else {
+		ui.WarnField("State", stPath, "(not found — no apps installed yet)")
 	}
 
 	if _, meta, rerr := registry.Open(); rerr != nil {
+		// Not counted as a problem: paq falls back to the embedded registry,
+		// so this is degraded, not broken (see TestOfflineDegradation).
 		ui.WarnField("Registry", "external cache unusable", "("+rerr.Error()+")")
 		ui.Hint("run `paq registry update` to refresh the external registry")
 	} else if meta != nil {
@@ -68,7 +90,13 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	cfg, err := loadConfig()
-	if err == nil {
+	if err != nil {
+		// Reported, not skipped: silently dropping the install-dir and PATH
+		// rows leaves a report that looks healthy apart from a few absent lines.
+		ui.WarnField("Install dirs", "unknown", "(configuration unusable)")
+		ui.Hint("%v", err)
+		problems++
+	} else {
 		binDir, optDir := config.DefaultDestRoots(cfg.Defaults)
 		ui.OKField("Bin dir", binDir)
 		ui.OKField("Opt dir", optDir)
@@ -115,6 +143,9 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		ui.Hint("set GITHUB_TOKEN to avoid rate-limiting when installing GitHub-backed tools")
 	}
 
+	if problems > 0 {
+		return fmt.Errorf("%d problem(s) found", problems)
+	}
 	return nil
 }
 

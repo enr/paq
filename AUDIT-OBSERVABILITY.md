@@ -12,11 +12,11 @@ this tree; the rest are code-level readings.
 
 | Question | Verdict |
 |---|---|
-| Are errors always logged? | **No.** `doctor` drops three of them; `info` drops one. |
-| Are there paths that swallow errors? | **Yes**, 6 (listed in §1). |
+| Are errors always logged? | `doctor`'s three are **fixed**; `info` still drops one (M4). |
+| Are there paths that swallow errors? | 6 found; the 3 high-severity ones are **fixed**, 3 remain (§1). |
 | Correct log levels (ERROR / WARN / INFO)? | **Yes.** The best part of the system — see §4. |
 | Metrics / telemetry for critical errors? | **None**, and correctly so for a local CLI. The real gap is machine-readable *error output* (§3, B4). |
-| Ambiguous return codes instead of explicit errors? | **Yes** — exit code 4 is decided by string matching (A2). |
+| Ambiguous return codes instead of explicit errors? | **Fixed** — exit 4 is now `errors.Is(err, verify.ErrVerification)`. |
 | State checks after critical operations? | **Missing.** Nothing ever reconciles the state DB with the disk (M1). |
 
 ---
@@ -27,9 +27,9 @@ Ordered by severity. "Swallowed" means the error value exists and is discarded.
 
 | # | Location | What is lost | Severity |
 |---|---|---|---|
-| A1 | `cmd/paq/doctor.go:70`, `:39`, `:47` | config/state/path errors → rows silently vanish, exit 0 | **Alta** |
-| A2 | `cmd/paq/exitcode.go:57` | exit 4 vs 1 decided by substring match on error text | **Alta** |
-| A3 | `internal/archive/archive.go:120`, `internal/install/binaries.go:124` | `Close()` error on a written file → silent truncation | **Alta** |
+| A1 | `cmd/paq/doctor.go:70`, `:39`, `:47` | config/state/path errors → rows silently vanish, exit 0 | **Alta** — *fixed* |
+| A2 | `cmd/paq/exitcode.go:57` | exit 4 vs 1 decided by substring match on error text | **Alta** — *fixed* |
+| A3 | `internal/archive/archive.go:120`, `internal/install/binaries.go:124` | `Close()` error on a written file → silent truncation | **Alta** — *fixed* |
 | M1 | `cmd/paq/ls.go`, `cmd/paq/which.go` | no reconciliation of state DB against disk | **Media** |
 | M2 | `internal/httpretry/httpretry.go:29` | retries are invisible, even under `--debug` | **Media** |
 | M3 | `internal/install/pipeline.go:490` | "Installed ✓" printed *before* the state save that can fail | **Media** |
@@ -42,7 +42,7 @@ Ordered by severity. "Swallowed" means the error value exists and is discarded.
 
 ## 2. Risks, in detail
 
-### A1 — `doctor`, the diagnostic command, hides the problem and exits 0 **[verified]**
+### A1 — `doctor`, the diagnostic command, hides the problem and exits 0 **[verified]** — FIXED
 
 `runDoctor` guards three blocks with `if err == nil` and supplies no `else`:
 
@@ -88,7 +88,31 @@ Secondary: `doctor` returns `nil` regardless of how many `WarnField`/`Warn`
 lines it emitted, so its exit code carries no health signal and it cannot be
 used as a CI gate.
 
-### A2 — Exit code 4 is decided by string matching
+**Resolved.** The three `if err == nil` blocks now report their error instead
+of skipping, the Config row parses the manifest (`config.LoadUserConfig`)
+rather than only stat-ing it, and a `problems` counter drives the exit code.
+Same scenario now:
+
+```
+! Config:        …/config.toml (unusable)
+↪ hint: parse user config: toml: expected '=' after key
+! Install dirs:  unknown (configuration unusable)
+↪ hint: load user config: parse user config: toml: expected '=' after key
+✗ 2 problem(s) found
+EXIT CODE: 1
+```
+
+**Behaviour change**, deliberate: `doctor` can now exit non-zero. The line is
+drawn at *what stops paq from working* — an unparseable manifest, a path that
+cannot be resolved. Everything paq recovers from on its own stays a warning at
+exit 0: a corrupt registry cache (it falls back to the embedded recipes), a
+missing manifest or state file, a bin dir outside PATH, an unset
+`GITHUB_TOKEN`. The first draft of this fix also counted the corrupt cache,
+which broke `TestOfflineDegradation` — that test was right, and the line moved
+to where it is now. `doctor_test.go` (the command had no test file at all) pins
+both sides.
+
+### A2 — Exit code 4 is decided by string matching — FIXED
 
 `exitCodeFor` classifies failures by searching the *rendered message*:
 
@@ -117,7 +141,32 @@ A second-order effect: `runParallel` wraps batch failures into
 `fmt.Errorf("%d installed, %d failed: %s", …)`. Classification currently
 survives because the inner text is interpolated — by luck, not by design.
 
-### A3 — `Close()` discarded on two write paths
+**Resolved.** `internal/verify` now exports `ErrVerification`, attached at the
+three verdict sites (`sha256.go`, `sha512.go`, `minisign.go`) by a wrapper that
+leaves the message text untouched, and `isVerifyError` is a one-line
+`errors.Is`. Three things this surfaced:
+
+- **A latent bug.** `pk.Verify` reports a signature made by *another key* as an
+  error ("incompatible key identifiers"), not as `valid == false`, so that path
+  was untagged. Writing the test caught it before it shipped; a wrong-key
+  signature would have dropped from exit 4 to exit 1. `decode signature` is
+  tagged too — a malformed `.minisig` is a signature that does not check out.
+- **The batch path had to be fixed**, not just classified: `%s` flattens the
+  error chain, so `errors.Is` alone would have regressed every batch install to
+  exit 1. `batchError` now carries the verdict explicitly. It deliberately does
+  *not* expose the per-app errors through `Unwrap`, because `ErrAlreadyShown`
+  would then match through it and suppress the summary entirely.
+- **A refinement.** An artifact paq cannot read, or a checksum document it
+  cannot parse, used to yield exit 4 (the substring `"integrity check"` matched
+  the wrapper). They are now exit 1: the check could not run, which is not the
+  same as "the file does not match". Exit 4 means tampering and nothing else.
+
+The missing test now exists: `TestExitCodeForRealVerificationFailures` drives
+real failures through `verify.Run` and asserts the exit code, so rewording a
+message can no longer downgrade it silently. A `lookalike text` case asserts
+the converse — an error that merely reads like a mismatch is not one.
+
+### A3 — `Close()` discarded on two write paths — FIXED
 
 Buffered-write failures (ENOSPC, quota, I/O error) surface at `Close`, not
 necessarily at `io.Copy`. Two paths discard it:
@@ -157,6 +206,12 @@ if err := tmp.Close(); err != nil {
 Honest caveat: triggering this needs a genuinely failing write (full disk,
 quota, failing device), so it is rare. But it is precisely the class of failure
 that must not be silent, and the fix is three lines.
+
+**Resolved.** Both paths now check `Close` and report it. `writeFile` closes
+explicitly instead of deferring; `installRawBinary` keeps the error and returns
+it after the copy error. No new test: the failure needs a filesystem that fails
+mid-write, which is not reproducible in a unit test. The 22 existing archive
+tests cover the success path and pin that the refactor did not break it.
 
 ### M1 — Nothing reconciles the state DB with the disk **[verified]**
 
@@ -388,10 +443,11 @@ Recorded so the findings above are read in proportion.
 
 ## 5. Suggested order
 
-1. **A1** — `doctor` is the problem-detection surface; it lying is the worst
-   single defect here, and the fix is contained.
-2. **A2** — typed error + one test coupling `verify.Run` to `exitCodeFor`.
-3. **A3** — three lines on each write path.
-4. **M3, M4, B3** — small, local, each removes one silent path.
-5. **M1** — drift check in `doctor` first (cheap), `ls`/`which` after.
-6. **M2, B2, B1, B4** — observability polish.
+~~1. **A1** — 2. **A2** — 3. **A3**~~ — done, see §2.
+
+Remaining:
+
+1. **M3, M4, B3** — small, local, each removes one silent path.
+2. **M1** — drift check in `doctor` first (it now has a `problems` counter and
+   a test file to hang it on), `ls`/`which` after.
+3. **M2, B2, B1, B4** — observability polish.

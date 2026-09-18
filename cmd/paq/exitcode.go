@@ -1,6 +1,11 @@
 package main
 
-import "strings"
+import (
+	"errors"
+	"strings"
+
+	"github.com/enr/paq/internal/verify"
+)
 
 // Exit codes returned by the CLI. 0 (success) and 2 (panic) are handled
 // elsewhere (Execute/main); the values below let scripts distinguish the
@@ -11,10 +16,10 @@ const (
 	exitVerify = 4 // checksum or signature verification failed
 )
 
-// exitCodeFor maps err to a process exit code. It relies on the error
-// messages produced by cobra (usage errors) and by internal/verify /
-// internal/install (verification failures), since neither currently exposes
-// a typed/sentinel error for these cases.
+// exitCodeFor maps err to a process exit code. Verification failures are
+// recognized by verify.ErrVerification, which survives wrapping and any
+// rewording of the message. Usage errors still rely on cobra's message
+// prefixes, since cobra exposes nothing else to key on.
 func exitCodeFor(err error) int {
 	if err == nil {
 		return 0
@@ -53,20 +58,13 @@ func isUsageError(err error) bool {
 }
 
 // isVerifyError reports whether err originates from a failed integrity or
-// signature check, using the same message substrings hintFor already keys on.
+// signature check. The pipeline wraps these with %w all the way up (including
+// through the aggregate error of a parallel install), so errors.Is finds them
+// wherever they are nested.
+//
+// Note that an artifact paq could not read or a checksum document it could not
+// parse are NOT verification failures: the check could not run, which is a
+// generic error (exit 1), not "the file does not match" (exit 4).
 func isVerifyError(err error) bool {
-	msg := strings.ToLower(err.Error())
-	verifySubstrings := []string{
-		"sha256 mismatch",
-		"sha512 mismatch",
-		"integrity check",
-		"signature verification failed",
-		"minisign signature is invalid",
-	}
-	for _, s := range verifySubstrings {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
+	return errors.Is(err, verify.ErrVerification)
 }

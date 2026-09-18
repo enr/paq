@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/enr/paq/internal/install"
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/ui"
+	"github.com/enr/paq/internal/verify"
 	"github.com/spf13/cobra"
 )
 
@@ -109,6 +111,25 @@ func installParallel(ctx context.Context, cfg *config.Config, names []string) er
 	})
 }
 
+// batchError summarizes the outcome of a parallel run. The per-app errors
+// have already been shown individually, so the summary must not itself count
+// as "already shown" (ErrAlreadyShown would then hide it) — which rules out
+// exposing the underlying errors through Unwrap. A verification failure in any
+// app must still drive the process exit code, so that one classification is
+// propagated explicitly.
+type batchError struct {
+	msg string
+	// failedVerification records that at least one app failed an integrity or
+	// signature check, so the batch still exits with exitVerify.
+	failedVerification bool
+}
+
+func (e batchError) Error() string { return e.msg }
+
+func (e batchError) Is(target error) bool {
+	return e.failedVerification && target == verify.ErrVerification
+}
+
 // runParallel runs action over names concurrently (max maxParallel
 // goroutines), each with a [name]-prefixed, mutex-serialized set of hooks so
 // output from different goroutines doesn't interleave.
@@ -122,6 +143,9 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 		stdoutMu sync.Mutex
 		done     int
 		failed   []string
+		// Tracked here rather than re-derived from the summary text: the
+		// per-app errors are not reachable from the returned batchError.
+		failedVerification bool
 	)
 
 	var g errgroup.Group
@@ -143,6 +167,9 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 					ui.Fail("%s%v", prefix, err)
 				}
 				failed = append(failed, fmt.Sprintf("%s (%v)", name, err))
+				if errors.Is(err, verify.ErrVerification) {
+					failedVerification = true
+				}
 				return nil
 			}
 			done++
@@ -153,7 +180,10 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 
 	if len(failed) > 0 {
 		sort.Strings(failed)
-		return fmt.Errorf("%d %s, %d failed: %s", done, verb, len(failed), strings.Join(failed, "; "))
+		return batchError{
+			msg:                fmt.Sprintf("%d %s, %d failed: %s", done, verb, len(failed), strings.Join(failed, "; ")),
+			failedVerification: failedVerification,
+		}
 	}
 	ui.OK("%d %s", done, verb)
 	return nil
