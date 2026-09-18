@@ -23,6 +23,14 @@ const (
 // don't have to wait for it.
 var BaseDelay = time.Second
 
+// OnRetry, when non-nil, is called right before Do waits and retries a
+// request: attempt is the attempt that just failed (1-based), resp is the
+// response that triggered the retry (nil on a transport error, in which case
+// err is set), and delay is how long Do is about to wait. Left nil by
+// default (a no-op); cmd/paq wires it to ui.Debug so retries are visible
+// under --debug instead of an install just going quiet for a while.
+var OnRetry func(attempt int, resp *http.Response, err error, delay time.Duration)
+
 // Do sends req with client and retries transient failures. Only requests that
 // can be replayed as-is are safe here: paq issues GETs without a body.
 // The request's context bounds the wait between attempts.
@@ -35,6 +43,9 @@ func Do(client *http.Client, req *http.Request) (*http.Response, error) {
 		delay, ok := delayFor(attempt, resp)
 		if !ok {
 			return resp, err
+		}
+		if OnRetry != nil {
+			OnRetry(attempt, resp, err, delay)
 		}
 		if resp != nil {
 			resp.Body.Close()

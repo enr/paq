@@ -52,6 +52,86 @@ func TestDoRetriesServerErrors(t *testing.T) {
 	}
 }
 
+// TestDoInvokesOnRetryForEachRetriedAttempt verifies the hook cmd/paq wires to
+// ui.Debug (AUDIT-OBSERVABILITY.md M2: retries used to be invisible even with
+// --debug) fires once per retry, with the attempt number and delay, and never
+// fires for the attempt that ultimately succeeds or gives up.
+func TestDoInvokesOnRetryForEachRetriedAttempt(t *testing.T) {
+	shortDelays(t)
+	prevOnRetry := OnRetry
+	t.Cleanup(func() { OnRetry = prevOnRetry })
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	type call struct {
+		attempt int
+		status  int
+		delay   time.Duration
+	}
+	var retries []call
+	OnRetry = func(attempt int, resp *http.Response, err error, delay time.Duration) {
+		if err != nil {
+			t.Fatalf("OnRetry called with a transport error for an HTTP 502: %v", err)
+		}
+		retries = append(retries, call{attempt, resp.StatusCode, delay})
+	}
+
+	resp, err := Do(srv.Client(), get(t, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if len(retries) != 2 {
+		t.Fatalf("OnRetry called %d time(s), want 2 (one per retried attempt): %+v", len(retries), retries)
+	}
+	for i, r := range retries {
+		if want := i + 1; r.attempt != want {
+			t.Errorf("retries[%d].attempt = %d, want %d", i, r.attempt, want)
+		}
+		if r.status != http.StatusBadGateway {
+			t.Errorf("retries[%d].status = %d, want %d", i, r.status, http.StatusBadGateway)
+		}
+		if r.delay <= 0 {
+			t.Errorf("retries[%d].delay = %v, want > 0", i, r.delay)
+		}
+	}
+}
+
+// A request that never needs a retry (first-try success) or that fails in a
+// non-retryable way (404) must leave OnRetry untouched.
+func TestDoDoesNotInvokeOnRetryWithoutARetry(t *testing.T) {
+	shortDelays(t)
+	prevOnRetry := OnRetry
+	t.Cleanup(func() { OnRetry = prevOnRetry })
+
+	called := false
+	OnRetry = func(int, *http.Response, error, time.Duration) { called = true }
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	resp, err := Do(srv.Client(), get(t, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if called {
+		t.Error("OnRetry was called for a request that was never retried")
+	}
+}
+
 func TestDoDoesNotRetryClientErrors(t *testing.T) {
 	shortDelays(t)
 

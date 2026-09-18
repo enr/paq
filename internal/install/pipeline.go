@@ -515,9 +515,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			return fmt.Errorf("install dir: %w", err)
 		}
 	}
-	ok(fmt.Sprintf("Installed %s %s → %s", appName, ver, dest))
-
-	// 13. Record in the state DB (under a mutex to avoid races with other parallel goroutines).
+	// 13. Record in the state DB (under a mutex to avoid races with other
+	// parallel goroutines). Done before announcing success: the files are on
+	// disk either way, but if this fails, the tool is not yet trackable by
+	// ls/which/uninstall/upgrade — not a state worth calling "Installed ✓".
 	if err := state.Update(func(st *state.State) error {
 		st.Record(state.InstalledApp{
 			Name:        appName,
@@ -534,6 +535,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("save state: %w", err)
 	}
 	dbg("state record saved: name=%q version=%q kind=%q", appName, ver, kind)
+
+	ok(fmt.Sprintf("Installed %s %s → %s", appName, ver, dest))
 
 	// Pin the freshly-resolved version in paq.lock.toml, so a later `paq
 	// install` (this machine or another sharing the manifest+lockfile)

@@ -1164,6 +1164,54 @@ func TestPipelineRecordsInstalledState(t *testing.T) {
 	}
 }
 
+// TestPipelineDoesNotAnnounceSuccessBeforeStateSaveSucceeds is a regression
+// test for AUDIT-OBSERVABILITY.md M3: "Installed ✓" must not be reported
+// before the state record is actually saved. Before the fix, a failing state
+// save (disk full, contended lock, ...) produced the contradictory sequence
+// "✓ Installed rg ... → /path" immediately followed by "✗ save state: ...",
+// while the tool was on disk but untracked by ls/upgrade/uninstall.
+func TestPipelineDoesNotAnnounceSuccessBeforeStateSaveSucceeds(t *testing.T) {
+	// Point XDG_STATE_HOME at a path that already exists as a regular file:
+	// state.Update's directory creation then fails deterministically.
+	blocker := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_STATE_HOME", blocker)
+
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip", StripComponents: 1},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	var oks []string
+	hooks := &Hooks{OnOK: func(msg string) { oks = append(oks, msg) }}
+	err := Run(context.Background(), cfg, "tool", nil, hooks)
+
+	if err == nil {
+		t.Fatal("Run succeeded despite an unwritable state directory")
+	}
+	if !strings.Contains(err.Error(), "save state") {
+		t.Errorf("error = %v, want it to mention the state save failure", err)
+	}
+	for _, msg := range oks {
+		if strings.Contains(msg, "Installed") {
+			t.Errorf("OnOK reported %q before the state save that failed", msg)
+		}
+	}
+}
+
 // TestPipelineSkipsWhenAlreadyInstalled verifies that a second install of the
 // same version does no work at all, and that Force overrides the skip. Without
 // this, a broken skip check makes every `paq install` re-download and
