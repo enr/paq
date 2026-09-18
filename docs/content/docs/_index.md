@@ -93,6 +93,21 @@ dest = "~/opt/jdk-{{version}}"
 
 `{{ext}}` expands to `.exe` on Windows, empty on Linux/macOS.
 
+### Custom manifest location
+
+By default paq reads/writes `~/.config/paq/config.toml` (`%APPDATA%\paq\config.toml`
+on Windows). Point it at a different file with `--config <path>` or the `PAQ_CONFIG`
+environment variable (the flag wins if both are set) — useful for multiple profiles,
+CI, or a manifest kept under version control elsewhere:
+
+```bash
+paq --config ~/dotfiles/paq-work.toml install
+PAQ_CONFIG=~/dotfiles/paq-work.toml paq ls
+```
+
+Only the manifest path moves; the state DB and registry cache still follow
+`XDG_STATE_HOME`/`XDG_CACHE_HOME` as usual.
+
 ### Default install directories
 
 An optional `[defaults]` table sets the base directories used to derive an
@@ -150,6 +165,28 @@ Each entry is tracked independently (`paq ls`, install state are keyed by the
 app name). The two `dest` paths must resolve to different locations — otherwise
 the second install overwrites the first; templating `dest` with `{{version}}`
 is the easy way to guarantee this.
+
+### Reproducible installs (paq.lock.toml)
+
+An app pinned to `version = "latest"` resolves to whatever release is newest
+*at install time* — two machines running `paq install` from the same manifest
+on different days can end up with different versions. paq closes that gap
+with a lockfile, `paq.lock.toml`, generated next to the manifest:
+
+- The first time a "latest"-tracking app is installed, paq resolves it live
+  and records the result (version + sha256) in `paq.lock.toml`.
+- Every later `paq install` for that app reuses the locked version instead of
+  resolving "latest" again — no network call, and the exact same version on
+  every machine that shares the manifest and lockfile.
+- `paq upgrade` always checks upstream regardless of the lock, and refreshes
+  the lock entry to whatever it installs.
+
+Commit `paq.lock.toml` alongside `config.toml` in version control so a
+teammate's `paq install` reproduces your setup exactly. It only pins apps
+that track `"latest"`; a fixed version or a spec's `default_version` is
+already deterministic and gets no entry. `paq info <app>` shows an app's
+locked version, if any. The file is generated — don't hand-edit it; `paq
+upgrade` is what moves a pin forward.
 
 ## Commands
 
@@ -381,8 +418,9 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 
 | Flag | Description |
 |------|-------------|
+| `--config <path>` | Use this manifest file instead of the default location (also `PAQ_CONFIG`) |
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `which`); fails on commands that don't support it |
+| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `which`, `doctor`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |

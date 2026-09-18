@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -117,5 +118,72 @@ func TestRunDoctorQuietWhenStateMatchesDisk(t *testing.T) {
 
 	if err := runDoctor(doctorCmd, nil); err != nil {
 		t.Errorf("runDoctor: %v, want nil when every record is present", err)
+	}
+}
+
+// paq doctor --json must be usable as a CI health gate: valid JSON on stdout
+// (nothing else mixed in), a "problems" count matching the exit behavior, and
+// at least one check flagged as the problem's source.
+func TestRunDoctorJSON(t *testing.T) {
+	doctorEnv(t, "this is not = valid toml [[[\n")
+
+	var runErr error
+	out := withJSON(t, func() {
+		runErr = runDoctor(doctorCmd, nil)
+	})
+
+	if runErr == nil {
+		t.Fatal("runDoctor returned nil for an unparsable manifest in --json mode")
+	}
+
+	var report doctorReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\noutput:\n%s", err, out)
+	}
+	if report.Problems == 0 {
+		t.Error("report.Problems = 0, want > 0 for an unparsable manifest")
+	}
+
+	var sawProblem bool
+	for _, c := range report.Checks {
+		if c.Name == "config" {
+			if c.Status != "warn" {
+				t.Errorf("config check status = %q, want %q", c.Status, "warn")
+			}
+			if !c.Problem {
+				t.Error(`config check has Problem = false, want true for an unparsable manifest`)
+			}
+		}
+		if c.Problem {
+			sawProblem = true
+		}
+	}
+	if !sawProblem {
+		t.Error("no check in the report is marked as a problem, despite report.Problems > 0")
+	}
+}
+
+// The healthy case must report zero problems and a clean exit, symmetric with
+// TestRunDoctorSucceedsWhenNothingIsBroken.
+func TestRunDoctorJSONSucceedsWhenNothingIsBroken(t *testing.T) {
+	doctorEnv(t, "")
+
+	var runErr error
+	out := withJSON(t, func() {
+		runErr = runDoctor(doctorCmd, nil)
+	})
+	if runErr != nil {
+		t.Errorf("runDoctor: %v, want nil", runErr)
+	}
+
+	var report doctorReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\noutput:\n%s", err, out)
+	}
+	if report.Problems != 0 {
+		t.Errorf("report.Problems = %d, want 0", report.Problems)
+	}
+	if len(report.Checks) == 0 {
+		t.Error("report.Checks is empty, want at least the platform/registry/... rows")
 	}
 }

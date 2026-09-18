@@ -51,7 +51,9 @@ func registryIsStale(meta *registry.Meta) bool {
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version of paq",
-	Args:  cobra.NoArgs,
+	Long: "Print paq's version, build revision, build time, Go runtime version, and the " +
+		"active registry version (the embedded one, or the external snapshot when installed).",
+	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(versionInfo())
 	},

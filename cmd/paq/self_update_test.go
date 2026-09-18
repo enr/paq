@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/template"
+	"github.com/spf13/cobra"
 )
 
 func TestSelfUpdateAssetName(t *testing.T) {
@@ -81,6 +83,118 @@ func serveSelfUpdateRelease(t *testing.T, tag, assetName string, f selfUpdateFix
 		return &http.Client{Transport: &selfUpdateRewriteTransport{base: srv.URL}}
 	}
 	t.Cleanup(func() { selfUpdateClient = prev })
+}
+
+// serveSelfUpdateLatest points selfUpdateClient at a fake GitHub API exposing
+// only the "latest release" lookup (tag_name = tag). Used for runSelfUpdate's
+// early-return paths (up to date / --check / ahead of latest), which must
+// never reach the asset-download endpoints; any other request is counted so
+// tests can assert none occurred.
+func serveSelfUpdateLatest(t *testing.T, tag string) *atomic.Bool {
+	t.Helper()
+	var otherRequest atomic.Bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/enr/paq/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"tag_name": tag})
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		otherRequest.Store(true)
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	prev := selfUpdateClient
+	selfUpdateClient = func() *http.Client {
+		return &http.Client{Transport: &selfUpdateRewriteTransport{base: srv.URL}}
+	}
+	t.Cleanup(func() { selfUpdateClient = prev })
+
+	return &otherRequest
+}
+
+// selfUpdateCmdWithFlags builds a throwaway command carrying the same
+// --check/--force flags as selfUpdateCmd, so a test doesn't disturb the
+// shared global command's flag state.
+func selfUpdateCmdWithFlags(t *testing.T, check, force bool) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.Flags().BoolP("check", "c", false, "")
+	cmd.Flags().BoolP("force", "f", false, "")
+	if check {
+		if err := cmd.Flags().Set("check", "true"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if force {
+		if err := cmd.Flags().Set("force", "true"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cmd
+}
+
+// TestRunSelfUpdateAlreadyUpToDate verifies that a version matching the
+// latest release returns cleanly without touching any download endpoint.
+func TestRunSelfUpdateAlreadyUpToDate(t *testing.T) {
+	withVersion(t, "1.0.0")
+	otherRequest := serveSelfUpdateLatest(t, "v1.0.0")
+
+	if err := runSelfUpdate(selfUpdateCmdWithFlags(t, false, false), nil); err != nil {
+		t.Fatalf("runSelfUpdate: %v, want nil (already up to date)", err)
+	}
+	if otherRequest.Load() {
+		t.Error("runSelfUpdate touched a download endpoint despite being up to date")
+	}
+}
+
+// TestRunSelfUpdateAheadOfLatest verifies a version newer than the latest
+// release (a pre-release/dev build) is reported, not treated as an error.
+func TestRunSelfUpdateAheadOfLatest(t *testing.T) {
+	withVersion(t, "2.0.0")
+	otherRequest := serveSelfUpdateLatest(t, "v1.0.0")
+
+	if err := runSelfUpdate(selfUpdateCmdWithFlags(t, false, false), nil); err != nil {
+		t.Fatalf("runSelfUpdate: %v, want nil (ahead of the latest release is not an error)", err)
+	}
+	if otherRequest.Load() {
+		t.Error("runSelfUpdate touched a download endpoint despite already being ahead of the latest release")
+	}
+}
+
+// TestRunSelfUpdateCheckOnlyReportsAvailability verifies --check reports an
+// available update without downloading or installing it.
+func TestRunSelfUpdateCheckOnlyReportsAvailability(t *testing.T) {
+	withVersion(t, "1.0.0")
+	otherRequest := serveSelfUpdateLatest(t, "v2.0.0")
+
+	if err := runSelfUpdate(selfUpdateCmdWithFlags(t, true, false), nil); err != nil {
+		t.Fatalf("runSelfUpdate --check: %v, want nil", err)
+	}
+	if otherRequest.Load() {
+		t.Error("--check must only report availability, never download anything")
+	}
+}
+
+// TestRunSelfUpdateForceProceedsWhenUpToDate verifies --force bypasses the
+// up-to-date short-circuit: it must reach the real update path (asset
+// resolution) rather than silently no-opping like a plain `self-update` would.
+// The fixture has no asset endpoints, so the attempt fails past that point —
+// the failure itself is the proof --force did not take the early return.
+func TestRunSelfUpdateForceProceedsWhenUpToDate(t *testing.T) {
+	withVersion(t, "1.0.0")
+	otherRequest := serveSelfUpdateLatest(t, "v1.0.0")
+
+	err := runSelfUpdate(selfUpdateCmdWithFlags(t, false, true), nil)
+	if err == nil {
+		t.Fatal("expected an error once --force proceeds to a real (unfixtured) download, got nil")
+	}
+	if !otherRequest.Load() {
+		t.Error("--force did not attempt to resolve/download release assets")
+	}
 }
 
 func withDefaultPublicKey(t *testing.T, key string) {

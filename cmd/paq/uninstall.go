@@ -27,6 +27,11 @@ var uninstallCmd = &cobra.Command{
 	Use:     "uninstall <app[@version]>...",
 	Aliases: []string{"rm", "remove"},
 	Short:   "Uninstall one or more tools (use app@version to disambiguate multiple versions)",
+	Long: "Remove one or more installed tools: deletes the files they own and drops their " +
+		"state record. Prompts for confirmation unless --yes is given; a non-interactive " +
+		"session (no TTY on stdout) must pass --yes instead. A path still owned by another " +
+		"installed version is left in place. Use app@version to pick one when multiple " +
+		"versions of the same tool are installed.",
 	Example: `  paq uninstall rg
   paq uninstall rg bat      # uninstall multiple tools
   paq uninstall rg@14.0.0   # disambiguate when multiple versions are installed

@@ -253,4 +253,9 @@ type Config struct {
 	GlobalTemplates map[string]string
 	// GlobalTemplatesOS contains the per-OS meta-templates from templates.toml.
 	GlobalTemplatesOS map[string]map[string]string
+	// Lock is the parsed paq.lock.toml, consulted by the install pipeline to
+	// reproduce a previously-resolved "latest" version instead of re-resolving
+	// it live. Never nil once loaded through Merge; callers built directly
+	// (mainly tests) must nil-check before use.
+	Lock *Lock
 }

@@ -2,13 +2,27 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
+	"github.com/spf13/cobra"
 )
+
+// cmdWithContext returns a throwaway command carrying a non-nil context:
+// outdatedCmd (like other package-level commands) only gets one from cobra's
+// own Execute machinery, which these tests bypass by calling runOutdated directly.
+func cmdWithContext() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	return cmd
+}
 
 func TestEvaluateOutdated(t *testing.T) {
 	cases := []struct {
@@ -138,6 +152,108 @@ func TestCheckOutdatedErrorsOnMissingSpec(t *testing.T) {
 	_, _, err := checkOutdated(context.Background(), cfg, st, "rg", func(string, ...any) {})
 	if err == nil {
 		t.Fatal("expected error for missing spec, got nil")
+	}
+}
+
+// outdatedManifest builds a manifest with one app tracking "latest" via the
+// "json" strategy against srv, so its "latest" resolution is fully offline
+// and deterministic.
+func outdatedManifest(latestURL string) string {
+	return fmt.Sprintf(`[apps.tool]
+use = "tool"
+version = "latest"
+
+[specs.tool]
+backend = "url"
+source = "https://example.com/tool-{{version}}.tar.gz"
+archive = "tar.gz"
+latest_strategy = "json"
+latest_url = %q
+latest_json = "version"
+`, latestURL)
+}
+
+func TestRunOutdatedNoAppsConfigured(t *testing.T) {
+	doctorEnv(t, "")
+
+	out := captureStdout(t, func() {
+		if err := runOutdated(cmdWithContext(), nil); err != nil {
+			t.Fatalf("runOutdated: %v", err)
+		}
+	})
+	if !strings.Contains(out, "No apps configured") {
+		t.Errorf("output = %q, want the no-apps-configured message", out)
+	}
+}
+
+func TestRunOutdatedNoAppsConfiguredJSON(t *testing.T) {
+	doctorEnv(t, "")
+
+	out := withJSON(t, func() {
+		if err := runOutdated(cmdWithContext(), nil); err != nil {
+			t.Fatalf("runOutdated: %v", err)
+		}
+	})
+	var got []ui.OutdatedEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\noutput:\n%s", err, out)
+	}
+	if len(got) != 0 {
+		t.Errorf("got = %v, want an empty array", got)
+	}
+}
+
+func TestRunOutdatedReportsOutdatedApp(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"version":"2.0.0"}`))
+	}))
+	defer srv.Close()
+	doctorEnv(t, outdatedManifest(srv.URL))
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0"})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runOutdated(cmdWithContext(), nil); err != nil {
+			t.Fatalf("runOutdated: %v", err)
+		}
+	})
+	for _, want := range []string{"tool", "1.0.0", "2.0.0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRunOutdatedAllUpToDate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"version":"1.0.0"}`))
+	}))
+	defer srv.Close()
+	doctorEnv(t, outdatedManifest(srv.URL))
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0"})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runOutdated(cmdWithContext(), nil); err != nil {
+			t.Fatalf("runOutdated: %v", err)
+		}
+	})
+	if !strings.Contains(out, "up to date") {
+		t.Errorf("output = %q, want the up-to-date message", out)
 	}
 }
 

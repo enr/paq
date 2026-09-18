@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +28,7 @@ var jsonCapableCommands = map[string]bool{
 	"paq search":          true,
 	"paq outdated":        true,
 	"paq which":           true,
+	"paq doctor":          true,
 }
 
 var (
@@ -32,6 +37,7 @@ var (
 	flagQuiet   bool
 	flagVerbose bool
 	flagDebug   bool
+	flagConfig  string
 )
 
 var rootCmd = &cobra.Command{
@@ -53,6 +59,9 @@ var rootCmd = &cobra.Command{
 		}
 		if flagJSON && cmd.Runnable() && !jsonCapableCommands[cmd.CommandPath()] {
 			return fmt.Errorf("--json is not supported by %q", cmd.CommandPath())
+		}
+		if err := applyConfigPathOverride(); err != nil {
+			return err
 		}
 		return nil
 	},
@@ -89,4 +98,41 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Print detailed debug output to stderr (implies --verbose)")
+	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "Path to the manifest file (default: ~/.config/paq/config.toml, or $PAQ_CONFIG)")
+
+	// Surface httpretry's retries under --debug: reads ui.Global.Debug at call
+	// time (set once here, evaluated on every retry), so a slow or flaky
+	// network no longer looks like paq just going quiet for a while.
+	httpretry.OnRetry = func(attempt int, resp *http.Response, err error, delay time.Duration) {
+		if !ui.Global.Debug {
+			return
+		}
+		if err != nil {
+			ui.Debug("HTTP request failed (attempt %d): %v — retrying in %s", attempt, err, delay)
+			return
+		}
+		ui.Debug("HTTP request got status %d (attempt %d) — retrying in %s", resp.StatusCode, attempt, delay)
+	}
+}
+
+// applyConfigPathOverride sets config.PathOverride from --config, falling
+// back to PAQ_CONFIG when the flag is not set, so a manifest can live outside
+// the XDG-derived default (multiple profiles, CI, a dotfiles-managed path).
+// Always assigns (clearing the override when neither is set) so the package
+// global doesn't leak a stale value across commands within the same process.
+func applyConfigPathOverride() error {
+	path := flagConfig
+	if path == "" {
+		path = os.Getenv("PAQ_CONFIG")
+	}
+	if path == "" {
+		config.PathOverride = ""
+		return nil
+	}
+	resolved, err := expandHome(path)
+	if err != nil {
+		return fmt.Errorf("resolve --config: %w", err)
+	}
+	config.PathOverride = resolved
+	return nil
 }
