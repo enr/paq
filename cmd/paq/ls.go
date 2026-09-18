@@ -12,8 +12,11 @@ var lsCmd = &cobra.Command{
 	Use:     "ls",
 	Aliases: []string{"list"},
 	Short:   "List installed tools",
-	Args:    cobra.NoArgs,
-	RunE:    runLs,
+	Long: "List every tool paq has installed, with its version, kind and destination. " +
+		"Reconciles the state record against the filesystem: a tool whose files are gone " +
+		"is counted and flagged (per-entry in --json) rather than reported as installed.",
+	Args: cobra.NoArgs,
+	RunE: runLs,
 }
 
 func init() {

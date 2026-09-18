@@ -30,6 +30,11 @@ var installCmd = &cobra.Command{
 	Use:     "install [app...]",
 	Aliases: []string{"i"},
 	Short:   "Install a tool (or all tools from manifest if no app specified)",
+	Long: "Install one or more tools. A name that isn't yet in the manifest is auto-imported " +
+		"from the registry, with a default version and destination, before being installed. " +
+		"With no arguments, installs every app declared in the manifest instead. " +
+		"Installing more than one app runs them concurrently (up to 3 at a time), " +
+		"each with a [name]-prefixed line of output.",
 	Example: `  paq install ripgrep            # install, recording it in the manifest
   paq install ripgrep --no-save  # install without recording it (ephemeral)
   paq install ripgrep bat delta  # install multiple tools
@@ -317,5 +322,12 @@ func loadConfigWithMeta() (*config.Config, *registry.Meta, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("merge config: %w", err)
 	}
+
+	lock, err := config.LoadLock()
+	if err != nil {
+		return nil, nil, fmt.Errorf("load lockfile: %w", err)
+	}
+	cfg.Lock = lock
+
 	return cfg, regMeta, nil
 }

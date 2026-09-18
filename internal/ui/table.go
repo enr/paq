@@ -368,17 +368,21 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 
 // PrintInfoDetail prints an app's details (recipe + installed versions).
 // installed contains all the app's versions present in the state (can be
-// empty). vars carries the offline-resolved template placeholders (platform,
-// arch/os/env overrides, meta-templates, and the version when pinned); fields
-// that still contain an unresolved {{version}}-family placeholder are shown
-// raw instead of resolved.
-func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp, vars template.Vars) {
+// empty). lockedVersion is the version pinned for name in paq.lock.toml, or
+// "" if the app is unpinned or doesn't track "latest". vars carries the
+// offline-resolved template placeholders (platform, arch/os/env overrides,
+// meta-templates, and the version when pinned); fields that still contain an
+// unresolved {{version}}-family placeholder are shown raw instead of resolved.
+func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp, lockedVersion string, vars template.Vars) {
 	if Global.JSON {
 		out := map[string]any{
 			"name":      name,
 			"spec":      spec,
 			"app":       app,
 			"installed": installed,
+		}
+		if lockedVersion != "" {
+			out["locked_version"] = lockedVersion
 		}
 		data, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(data))
@@ -399,6 +403,9 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 	fmt.Println()
 	render("App", name)
 	render("Version", app.Version)
+	if lockedVersion != "" {
+		render("Locked ver", lockedVersion+" (paq.lock.toml)")
+	}
 	render("Dest", app.Dest)
 	fmt.Println()
 	render("Spec", app.Use)

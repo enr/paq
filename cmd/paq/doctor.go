@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +18,27 @@ import (
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// doctorCheck is one row of the report, in the shape "paq doctor --json"
+// emits it. Human output renders the same data through ui.OKField/WarnField;
+// see the report/reportOK/reportWarn helpers below.
+type doctorCheck struct {
+	Name    string   `json:"name"`
+	Status  string   `json:"status"` // "ok" or "warn"
+	Value   string   `json:"value,omitempty"`
+	Note    string   `json:"note,omitempty"`
+	Hint    string   `json:"hint,omitempty"`
+	Details []string `json:"details,omitempty"`
+	Problem bool     `json:"problem,omitempty"`
+}
+
+// doctorReport is the top-level JSON document for "paq doctor --json":
+// problems mirrors the count that also drives the command's exit code, so a
+// script can gate on it without counting checks itself.
+type doctorReport struct {
+	Checks   []doctorCheck `json:"checks"`
+	Problems int           `json:"problems"`
+}
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -43,37 +65,71 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// registry cache (it falls back to the embedded recipes), a manifest or
 	// state file that does not exist yet, a bin dir outside PATH, an unset
 	// GITHUB_TOKEN.
+	var checks []doctorCheck
 	problems := 0
 
+	// reportOK/reportWarn record one row of the "label: value" shape: in
+	// --json mode into checks (jsonName), otherwise through the same
+	// ui.OKField/WarnField calls the human report always used (humanLabel).
+	// Kept side by side (rather than one rendering pass over the collected
+	// checks) so the human output is byte-for-byte what it was before --json
+	// existed.
+	reportOK := func(jsonName, humanLabel, value string) {
+		if ui.Global.JSON {
+			checks = append(checks, doctorCheck{Name: jsonName, Status: "ok", Value: value})
+			return
+		}
+		ui.OKField(humanLabel, value)
+	}
+	reportWarn := func(jsonName, humanLabel, value, note, hint string, isProblem bool, details ...string) {
+		if isProblem {
+			problems++
+		}
+		if ui.Global.JSON {
+			checks = append(checks, doctorCheck{
+				Name: jsonName, Status: "warn", Value: value, Note: note, Hint: hint,
+				Details: details, Problem: isProblem,
+			})
+			return
+		}
+		note2 := ""
+		if note != "" {
+			note2 = "(" + note + ")"
+		}
+		ui.WarnField(humanLabel, value, note2)
+		for _, d := range details {
+			ui.Warn("  %s", d)
+		}
+		if hint != "" {
+			ui.Hint("%s", hint)
+		}
+	}
+
 	plat := platform.Detect()
-	ui.OKField("Platform", plat.OS+"/"+plat.Arch)
+	reportOK("platform", "Platform", plat.OS+"/"+plat.Arch)
 
 	cfgPath, pathErr := config.UserManifestPath()
 	switch {
 	case pathErr != nil:
-		ui.WarnField("Config", "path unknown", "("+pathErr.Error()+")")
-		problems++
+		reportWarn("config", "Config", "path unknown", pathErr.Error(), "", true)
 	default:
 		if _, statErr := os.Stat(cfgPath); statErr != nil {
-			ui.WarnField("Config", cfgPath, "(not found)")
+			reportWarn("config", "Config", cfgPath, "not found", "", false)
 		} else if _, parseErr := config.LoadUserConfig(); parseErr != nil {
 			// Stat alone would report a green row for a manifest paq cannot
 			// parse — the one case doctor most needs to surface.
-			ui.WarnField("Config", cfgPath, "(unusable)")
-			ui.Hint("%v", parseErr)
-			problems++
+			reportWarn("config", "Config", cfgPath, "unusable", parseErr.Error(), true)
 		} else {
-			ui.OKField("Config", cfgPath)
+			reportOK("config", "Config", cfgPath)
 		}
 	}
 
 	if stPath, err := state.StatePath(); err != nil {
-		ui.WarnField("State", "path unknown", "("+err.Error()+")")
-		problems++
+		reportWarn("state", "State", "path unknown", err.Error(), "", true)
 	} else if _, err := os.Stat(stPath); err == nil {
-		ui.OKField("State", stPath)
+		reportOK("state", "State", stPath)
 	} else {
-		ui.WarnField("State", stPath, "(not found — no apps installed yet)")
+		reportWarn("state", "State", stPath, "not found — no apps installed yet", "", false)
 	}
 
 	// Reconcile the state DB against the filesystem. Counted as a problem:
@@ -81,9 +137,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// — ls, which, upgrade and uninstall all trust the record — and until the
 	// user acts, the state DB claims something that is not true.
 	if st, stErr := state.Load(); stErr != nil {
-		ui.WarnField("Installed", "unknown", "(state DB unreadable)")
-		ui.Hint("%v", stErr)
-		problems++
+		reportWarn("installed", "Installed", "unknown", "state DB unreadable", stErr.Error(), true)
 	} else if len(st.Packages) > 0 {
 		var drifted []string
 		for _, rec := range st.Packages {
@@ -93,48 +147,46 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		}
 		if len(drifted) > 0 {
 			sort.Strings(drifted)
-			ui.WarnField("Installed", fmt.Sprintf("%d tool(s)", len(st.Packages)),
-				fmt.Sprintf("(%d missing on disk)", len(drifted)))
-			for _, d := range drifted {
-				ui.Warn("  %s", d)
-			}
-			ui.Hint("reinstall them with `paq install <name>`, or drop the record with `paq uninstall <name>`")
-			problems++
+			reportWarn("installed", "Installed",
+				fmt.Sprintf("%d tool(s)", len(st.Packages)),
+				fmt.Sprintf("%d missing on disk", len(drifted)),
+				"reinstall them with `paq install <name>`, or drop the record with `paq uninstall <name>`",
+				true, drifted...)
 		} else {
-			ui.OKField("Installed", fmt.Sprintf("%d tool(s), all present on disk", len(st.Packages)))
+			reportOK("installed", "Installed", fmt.Sprintf("%d tool(s), all present on disk", len(st.Packages)))
 		}
 	}
 
 	if _, meta, rerr := registry.Open(); rerr != nil {
 		// Not counted as a problem: paq falls back to the embedded registry,
 		// so this is degraded, not broken (see TestOfflineDegradation).
-		ui.WarnField("Registry", "external cache unusable", "("+rerr.Error()+")")
-		ui.Hint("run `paq registry update` to refresh the external registry")
+		reportWarn("registry", "Registry", "external cache unusable", rerr.Error(),
+			"run `paq registry update` to refresh the external registry", false)
 	} else if meta != nil {
 		value := fmt.Sprintf("external %s, %d recipes, fetched %s", meta.Version, meta.SpecCount, humanAge(meta.FetchedAt))
 		if registryIsStale(meta) {
-			ui.WarnField("Registry", value, fmt.Sprintf("(stale: older than paq %s)", Version))
-			ui.Hint("run `paq registry update` to refresh the external registry")
+			reportWarn("registry", "Registry", value, fmt.Sprintf("stale: older than paq %s", Version),
+				"run `paq registry update` to refresh the external registry", false)
 		} else {
-			ui.OKField("Registry", value)
+			reportOK("registry", "Registry", value)
 		}
 	} else {
-		ui.OKField("Registry", "embedded only")
+		reportOK("registry", "Registry", "embedded only")
 	}
 
 	cfg, err := loadConfig()
 	if err != nil {
 		// Reported, not skipped: silently dropping the install-dir and PATH
 		// rows leaves a report that looks healthy apart from a few absent lines.
-		ui.WarnField("Install dirs", "unknown", "(configuration unusable)")
-		ui.Hint("%v", err)
-		problems++
+		reportWarn("install_dirs", "Install dirs", "unknown", "configuration unusable", err.Error(), true)
 	} else {
 		binDir, optDir := config.DefaultDestRoots(cfg.Defaults)
-		ui.OKField("Bin dir", binDir)
-		ui.OKField("Opt dir", optDir)
+		reportOK("bin_dir", "Bin dir", binDir)
+		reportOK("opt_dir", "Opt dir", optDir)
 
-		// Check whether bin dir is in PATH.
+		// Check whether bin dir is in PATH. Not a "label: value" row in the
+		// human report (a plain OK/Warn line instead), so it bypasses
+		// reportOK/reportWarn to keep that wording exactly as before --json.
 		resolvedBin, err := expandHome(binDir)
 		if err != nil {
 			return fmt.Errorf("resolve bin dir: %w", err)
@@ -146,34 +198,61 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 				break
 			}
 		}
-		if inPath {
-			ui.OK("Bin dir is in PATH")
-		} else if doctorFix {
+		switch {
+		case inPath:
+			if ui.Global.JSON {
+				checks = append(checks, doctorCheck{Name: "path", Status: "ok", Value: "bin dir is in PATH"})
+			} else {
+				ui.OK("Bin dir is in PATH")
+			}
+		case doctorFix:
 			added, err := pathenv.AddToUserPath(resolvedBin)
 			if err != nil {
 				return err
 			}
-			if added {
-				ui.OK("Added %s to the user PATH", resolvedBin)
+			if ui.Global.JSON {
+				value := fmt.Sprintf("bin dir %s is already in the user PATH", resolvedBin)
+				if added {
+					value = fmt.Sprintf("added %s to the user PATH", resolvedBin)
+				}
+				checks = append(checks, doctorCheck{Name: "path", Status: "ok", Value: value})
 			} else {
-				ui.OK("Bin dir %s is already in the user PATH", resolvedBin)
+				if added {
+					ui.OK("Added %s to the user PATH", resolvedBin)
+				} else {
+					ui.OK("Bin dir %s is already in the user PATH", resolvedBin)
+				}
+				ui.Hint("restart your terminal to pick up the new PATH")
 			}
-			ui.Hint("restart your terminal to pick up the new PATH")
-		} else {
-			ui.Warn("Bin dir %s is NOT in PATH", resolvedBin)
+		default:
+			hint := fmt.Sprintf("add `export PATH=\"%s:$PATH\"` to your shell profile", resolvedBin)
 			if runtime.GOOS == "windows" {
-				ui.Hint("run `paq doctor --fix` to add it to your user PATH")
+				hint = "run `paq doctor --fix` to add it to your user PATH"
+			}
+			// Advisory only: an app installed via `paq install` still runs by
+			// full path, so a bin dir outside PATH is not counted as a problem.
+			if ui.Global.JSON {
+				checks = append(checks, doctorCheck{
+					Name: "path", Status: "warn",
+					Value: fmt.Sprintf("bin dir %s is NOT in PATH", resolvedBin), Hint: hint,
+				})
 			} else {
-				ui.Hint("add `export PATH=\"%s:$PATH\"` to your shell profile", resolvedBin)
+				ui.Warn("Bin dir %s is NOT in PATH", resolvedBin)
+				ui.Hint("%s", hint)
 			}
 		}
 	}
 
 	if os.Getenv("GITHUB_TOKEN") != "" {
-		ui.OKField("GITHUB_TOKEN", "set")
+		reportOK("github_token", "GITHUB_TOKEN", "set")
 	} else {
-		ui.WarnField("GITHUB_TOKEN", "not set", "(GitHub API calls may be rate-limited)")
-		ui.Hint("set GITHUB_TOKEN to avoid rate-limiting when installing GitHub-backed tools")
+		reportWarn("github_token", "GITHUB_TOKEN", "not set", "GitHub API calls may be rate-limited",
+			"set GITHUB_TOKEN to avoid rate-limiting when installing GitHub-backed tools", false)
+	}
+
+	if ui.Global.JSON {
+		data, _ := json.MarshalIndent(doctorReport{Checks: checks, Problems: problems}, "", "  ")
+		fmt.Println(string(data))
 	}
 
 	if problems > 0 {

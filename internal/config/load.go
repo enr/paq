@@ -247,8 +247,18 @@ func decodePlatformOverride(v any) (PlatformOverride, error) {
 	return ov, nil
 }
 
+// PathOverride, when non-empty, is used verbatim as the user manifest path
+// instead of the XDG/APPDATA-derived default. Set once at startup from
+// --config or PAQ_CONFIG (see cmd/paq/root.go) so every load/write in this
+// package resolves to the same file without threading a path through every
+// call site.
+var PathOverride string
+
 // userConfigPath returns the path of the user configuration file.
 func userConfigPath() (string, error) {
+	if PathOverride != "" {
+		return PathOverride, nil
+	}
 	if runtime.GOOS == "windows" {
 		appdata := os.Getenv("APPDATA")
 		if appdata == "" {

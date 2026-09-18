@@ -33,6 +33,10 @@ type Hooks struct {
 	OnDebug func(msg string)
 	// Force bypasses the already-installed check and reinstalls unconditionally.
 	Force bool
+	// IgnoreLock skips paq.lock.toml when resolving a "latest"-tracking app,
+	// forcing a live resolution even if a lock entry exists. Set by `paq
+	// upgrade`, whose entire job is checking upstream for a newer release.
+	IgnoreLock bool
 }
 
 // shownError marks an error as already shown to the user via the OnFail hook,
@@ -47,6 +51,21 @@ func (e shownError) Unwrap() error { return e.err }
 func ErrAlreadyShown(err error) bool {
 	var se shownError
 	return errors.As(err, &se)
+}
+
+// lockedVersionFor returns the version paq.lock.toml pins for appName, if
+// the lockfile has an entry for it. Only consulted for an app that tracks
+// "latest" (config.AppEntry.TracksLatest): a fixed version or a curated
+// default_version is already deterministic and never needs one.
+func lockedVersionFor(cfg *config.Config, appName string) (string, bool) {
+	if cfg.Lock == nil {
+		return "", false
+	}
+	entry, ok := cfg.Lock.Apps[appName]
+	if !ok || entry.Version == "" {
+		return "", false
+	}
+	return entry.Version, true
 }
 
 // Run executes the complete pipeline to install a single app.
@@ -142,32 +161,41 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	//   - "latest"        → live resolution via strategy/backend (no fallback)
 	//   - "x.y.z"         → explicit pin
 	step(fmt.Sprintf("Resolving version for %s...", appName))
-	// Keep in sync with AppEntry.TracksLatest (internal/config/types.go), which
-	// upgrade/outdated use to decide which apps to consider.
 	var versionProvider version.Provider
+	// resolvedLive marks that this run actually performed a live "latest"
+	// resolution (as opposed to reusing a lock entry or a fixed/default
+	// version, both already deterministic): only then is there a new result
+	// worth pinning in paq.lock.toml once the install succeeds.
+	resolvedLive := false
 	switch {
 	case app.Version == "" && spec.DefaultVersion != "":
 		versionProvider = version.PinProvider{Version: spec.DefaultVersion, TagTemplate: spec.Tag}
-	case app.Version == "" || strings.EqualFold(app.Version, "latest"):
-		req := version.LatestRequest{
-			Strategy: spec.LatestStrategy,
-			Backend:  spec.Backend,
-			Repo:     spec.Repo,
-			Source:   spec.Source,
-			ArchPkg:  spec.ArchPkg,
-			URL:      spec.LatestURL,
-			Selector: spec.LatestJSON,
+	case app.TracksLatest(spec):
+		if locked, ok := lockedVersionFor(cfg, appName); ok && !hooks.IgnoreLock {
+			dbg("using version %s locked in paq.lock.toml for %q", locked, appName)
+			versionProvider = version.PinProvider{Version: locked, TagTemplate: spec.Tag}
+		} else {
+			req := version.LatestRequest{
+				Strategy: spec.LatestStrategy,
+				Backend:  spec.Backend,
+				Repo:     spec.Repo,
+				Source:   spec.Source,
+				ArchPkg:  spec.ArchPkg,
+				URL:      spec.LatestURL,
+				Selector: spec.LatestJSON,
+			}
+			minAge, explicitAge, aerr := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
+			if aerr != nil {
+				return fmt.Errorf("spec %q: invalid minimum_release_age: %w", specName, aerr)
+			}
+			if spec.LatestStrategy == "" && spec.Backend == "github" {
+				req.MinimumAge = minAge
+			} else if explicitAge {
+				warn(fmt.Sprintf("%q: minimum_release_age is not supported for backend %q, ignoring", specName, spec.Backend))
+			}
+			versionProvider = version.LatestProvider(req)
+			resolvedLive = true
 		}
-		minAge, explicitAge, aerr := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
-		if aerr != nil {
-			return fmt.Errorf("spec %q: invalid minimum_release_age: %w", specName, aerr)
-		}
-		if spec.LatestStrategy == "" && spec.Backend == "github" {
-			req.MinimumAge = minAge
-		} else if explicitAge {
-			warn(fmt.Sprintf("%q: minimum_release_age is not supported for backend %q, ignoring", specName, spec.Backend))
-		}
-		versionProvider = version.LatestProvider(req)
 	default:
 		versionProvider = version.PinProvider{Version: app.Version, TagTemplate: spec.Tag}
 	}
@@ -506,6 +534,19 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		return fmt.Errorf("save state: %w", err)
 	}
 	dbg("state record saved: name=%q version=%q kind=%q", appName, ver, kind)
+
+	// Pin the freshly-resolved version in paq.lock.toml, so a later `paq
+	// install` (this machine or another sharing the manifest+lockfile)
+	// reproduces it instead of re-resolving "latest" and possibly landing on
+	// a newer release. Only when this run actually did that live resolution:
+	// reusing an existing lock entry needs no rewrite.
+	if app.TracksLatest(spec) && resolvedLive {
+		if err := config.WriteLockEntry(appName, config.LockEntry{Version: ver, SHA256: artifactSHA256}); err != nil {
+			warn(fmt.Sprintf("could not update paq.lock.toml: %v", err))
+		} else {
+			dbg("lock entry updated: %s = %s", appName, ver)
+		}
+	}
 
 	return nil
 }

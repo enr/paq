@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +25,7 @@ var jsonCapableCommands = map[string]bool{
 	"paq search":          true,
 	"paq outdated":        true,
 	"paq which":           true,
+	"paq doctor":          true,
 }
 
 var (
@@ -32,6 +34,7 @@ var (
 	flagQuiet   bool
 	flagVerbose bool
 	flagDebug   bool
+	flagConfig  string
 )
 
 var rootCmd = &cobra.Command{
@@ -53,6 +56,9 @@ var rootCmd = &cobra.Command{
 		}
 		if flagJSON && cmd.Runnable() && !jsonCapableCommands[cmd.CommandPath()] {
 			return fmt.Errorf("--json is not supported by %q", cmd.CommandPath())
+		}
+		if err := applyConfigPathOverride(); err != nil {
+			return err
 		}
 		return nil
 	},
@@ -89,4 +95,27 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Print detailed debug output to stderr (implies --verbose)")
+	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "Path to the manifest file (default: ~/.config/paq/config.toml, or $PAQ_CONFIG)")
+}
+
+// applyConfigPathOverride sets config.PathOverride from --config, falling
+// back to PAQ_CONFIG when the flag is not set, so a manifest can live outside
+// the XDG-derived default (multiple profiles, CI, a dotfiles-managed path).
+// Always assigns (clearing the override when neither is set) so the package
+// global doesn't leak a stale value across commands within the same process.
+func applyConfigPathOverride() error {
+	path := flagConfig
+	if path == "" {
+		path = os.Getenv("PAQ_CONFIG")
+	}
+	if path == "" {
+		config.PathOverride = ""
+		return nil
+	}
+	resolved, err := expandHome(path)
+	if err != nil {
+		return fmt.Errorf("resolve --config: %w", err)
+	}
+	config.PathOverride = resolved
+	return nil
 }
