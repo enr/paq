@@ -168,6 +168,7 @@ func TestRunUninstallMultiAppFailsFastOnUnknownName(t *testing.T) {
 func TestRemoveRecordFilesRefusesHomeDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this one on Windows
 	marker := filepath.Join(home, "marker")
 	if err := os.WriteFile(marker, []byte("keep me"), 0644); err != nil {
 		t.Fatal(err)

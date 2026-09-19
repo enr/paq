@@ -7,7 +7,9 @@ This is a *quality* audit of the tests themselves, not a feature/coverage audit
 (that is `AUDIT.md`). It answers seven questions: which tests assert nothing
 useful, where the suite gives false safety, what is redundant, which edge cases
 are missing, how the suite scores against objective criteria, which code
-mutations survive it, and whether the overall test strategy is balanced.
+mutations survive it, and whether the overall test strategy is balanced. §8,
+added afterwards, covers a dimension the seven do not: the suite runs on one of
+the three operating systems `paq` ships for.
 
 Every claim below was verified by running something. Where a finding is an
 experiment, the command is given so it can be re-run.
@@ -18,10 +20,10 @@ experiment, the command is given so it can be re-run.
 
 | Measure | Value |
 |---|---|
-| Test files | 58 |
-| Lines of test code | 10,460 (vs 9,090 lines of production code — ratio 1.15:1) |
-| Top-level `Test*` functions | 330 |
-| `t.Run` sub-test call sites | 39 |
+| Test files | 61 (3 of them platform-constrained — see §8) |
+| Lines of test code | 10,551 (vs 9,090 lines of production code — ratio 1.16:1) |
+| Top-level `Test*` functions | 331 — 330 built on linux, 328 on darwin, 323 on windows (§8) |
+| `t.Run` sub-test call sites | 41 |
 | `Benchmark*` / `Fuzz*` functions | 0 / 0 |
 | `t.Parallel()` call sites | 0 |
 | Wall time, `go test ./...` | 2.7 s |
@@ -810,6 +812,12 @@ executes almost everything (74 % statements) and verifies noticeably less.
    first: it is the change that makes the other four cheaper next time, but it
    fixes no defect by itself.
 
+Platform coverage is tracked separately, in §8. Its step 1 — making the test
+isolation helpers platform-complete — is a prerequisite for enabling the CI
+matrix and should land before any Windows or macOS test is written, because
+today those helpers would make a Windows run write to the real user profile
+rather than to a temp dir.
+
 ---
 
 ## 6. Mutation testing — executed, not simulated
@@ -819,7 +827,9 @@ followed by a full `go test ./...`. **9 were killed, 17 survived.** A survivor
 means: that change to production code leaves the entire suite green.
 
 Harness: copy the tree, apply a single textual substitution, run `go test ./...`,
-revert. Every result below is reproducible.
+revert. Every result below is reproducible. All of it ran on Linux, so the
+platform-constrained tests of §8 were part of the suite the mutants faced;
+on windows five of them are not built, which can only make the score worse.
 
 ### Survivors (17)
 
@@ -879,7 +889,7 @@ random; they are exactly the branches no one wrote a test *for*.
 | **End-to-end** (real binary, real network) | `e2e/e2e_test.go` | 1 | 0.3 % |
 
 The shape is healthy — a broad unit base, a thick integration middle, a thin
-command layer — with two structural caveats:
+command layer — with three structural caveats:
 
 - **The "command level" is not the CLI.** Every test calls `runInstall`,
   `runDoctor`, etc. directly, bypassing `rootCmd.Execute`,
@@ -893,6 +903,9 @@ command layer — with two structural caveats:
   so in practice it runs when someone remembers. That is a defensible cost
   decision — it hits the real GitHub API — but it means the only test of the
   real binary is effectively not part of CI.
+- **The pyramid is one OS deep.** Every number above is a Linux number: CI runs
+  the suite on `ubuntu-latest` only, while releases cross-compile for darwin and
+  windows too. §8 treats that as its own dimension.
 
 ### 7.2 Over- and under-tested domains
 
@@ -1007,6 +1020,151 @@ under ~5 s.
 
 ---
 
+## 8. Platform coverage
+
+`paq` is cross-compiled for six targets (`.sdlc/cross`: linux, darwin and
+windows, each amd64 and arm64) and its test job runs on exactly one of them —
+`.github/workflows/ci.yml` pins `runs-on: ubuntu-latest`. Two of the three
+shipped operating systems have never run a single test.
+
+That has two consequences. Every platform-specific branch in production code is
+unverified on the platform that owns it (§8.4). And tests that quietly depend on
+Linux behaviour were indistinguishable from portable ones, because the
+dependency was expressed as a runtime `t.Skip` — which reports as a pass.
+
+### 8.1 Convention
+
+Platform-dependent tests carry a build constraint instead of a runtime skip:
+
+- a `_linux_test.go` / `_windows_test.go` / `_darwin_test.go` filename, whose
+  suffix Go already treats as a constraint, plus an explicit `//go:build` line
+  so the constraint is visible in the file and greppable across the tree;
+- `_unix_test.go` for the Unix-wide cases, where the explicit `//go:build
+  !windows` is load-bearing (`unix` is not a filename suffix Go recognises —
+  the same reason `internal/pathenv/pathenv_other.go` carries its tag while
+  `pathenv_windows.go` relies on its name).
+
+A file-level header comment states *what* about the platform the tests depend
+on, so the reader knows what an equivalent on another OS has to assert.
+
+One hazard of carrying both: a file renamed from `_linux_test.go` to
+`_windows_test.go` whose `//go:build linux` line is not updated silently stops
+building everywhere. When copying one of these files to another platform,
+change the tag and the name together.
+
+A runtime skip is never the right tool here. `go test` prints a skip as a pass,
+so the two env-mapping tests below spent their life reporting green on every
+platform while running on none but Linux.
+
+### 8.2 Tests constrained today, and what the other platforms owe
+
+| File | Constraint | Tests | Depends on | Owed elsewhere |
+|---|---|---|---|---|
+| `internal/install/env_mapping_linux_test.go` | `linux` | `TestPipelineAppliesEnvMapping`, `TestPipelineAppliesEnvArchMapping` | `platform.Detect` only ever sets `Env` on Linux (`"gnu"`); the whole point of `[x.env]` / `[x.env_arch]` is remapping that value | darwin and windows: `{{env}}` resolves to `""` there, so the equivalent asserts that an `[x.env]` map keyed for another platform is ignored and leaves no stray token in the URL |
+| `internal/install/binaries_unix_test.go` | `!windows` | `TestInstallBinariesAppliesChmod` | Unix permission bits: `os.Chmod` on Windows only toggles the read-only flag, so `Mode().Perm()` never reports the spec's `chmod` | windows: assert the installed file is executable in the sense Windows has — present, not read-only, named with `{{ext}}` = `.exe` — and that a `chmod` in the spec is a no-op rather than an error |
+| `internal/archive/symlink_unix_test.go` | `!windows` | `TestExtractTarGzSymlink`, `TestExtractTarGzSymlinkAbsoluteTargetRejected`, `TestExtractTarGzSymlinkChainEscapeRejected`, `TestExtractTarGzDanglingSymlinkAllowed` | creating a symlink needs a privilege the Windows runner does not have by default, and `/etc/passwd` is not an absolute path on Windows so the absolute-target refusal cannot be triggered the same way | windows: the absolute-target case with a `C:\…` target, and a decision on the unspecified behaviour below |
+
+The last row hides a product question, not just a test gap: on Windows
+`root.Symlink` fails without the privilege, so **an archive containing a symlink
+cannot be installed at all**, and nothing says so. `internal/archive/tar.go`
+materialises symlinks unconditionally; the `vscode` recipe already excludes
+darwin for a related reason (its `.app` bundle holds 14 symlinks the zip
+extractor refuses), documented in `embedded/registry/vscode.toml`. Whether
+Windows should skip symlink entries, fail with a clear message, or require the
+privilege is undecided — and it will stay undecided until a test on Windows
+forces the answer.
+
+The symlink tests that never touch the filesystem stay portable and run
+everywhere: the zip extractor's refusals (`TestExtractZipSymlink*`, decided from
+the zip header's mode bits), the lexically-escaping target
+(`TestExtractTarGzSymlinkEscapingTargetRejected`, refused by `securePath`
+before any write), and a wanted entry that turns out to be a symlink
+(`TestExtractTarGzExtractNamedSymlinkReported`).
+
+### 8.3 Two tests were made portable instead of constrained
+
+`os.UserHomeDir` reads `$HOME` on Unix and `%USERPROFILE%` on Windows, so a test
+that sets only `HOME` does not redirect the home directory on Windows — it would
+fail there for a reason that has nothing to do with what it asserts. Both now
+set `USERPROFILE` alongside `HOME`:
+
+- `cmd/paq/uninstall_test.go` `TestRemoveRecordFilesRefusesHomeDir` — the guard
+  it tests compares `dest` against the resolved home, so an unredirected home
+  makes the comparison miss and the refusal never fire.
+- `cmd/paq/root_test.go` `TestApplyConfigPathOverride` — asserts `~` expansion
+  lands inside the temp home.
+
+`TestCheckRemovableDirRefusesWithoutHome` (`uninstall_test.go`) and
+`TestExpandHomeFailsWithoutHome` (`internal/install/pipeline_test.go`) already
+cleared both variables and needed no change. Preferring a portability fix over a
+build constraint is the rule: constrain a test only when the *behaviour* it
+asserts is platform-specific, not when the fixture is.
+
+### 8.4 Blocker: the isolation helpers do not isolate on Windows
+
+This must be fixed **before** the CI matrix is switched on, because the failure
+mode is not a red build. `config.userConfigPath` reads `APPDATA` on Windows, and
+`state.StatePath`, `registry.Dir` and `updatecheck.Path` read `LOCALAPPDATA`;
+the helpers below set only the XDG variables, which Windows ignores. A Windows
+run would therefore read — and **write** — the real user's manifest, lockfile
+and state file.
+
+| Helper / test | Sets | Missing on Windows |
+|---|---|---|
+| `doctorEnv` (`cmd/paq/doctor_test.go:14`), used by ~20 tests | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | `APPDATA`, `LOCALAPPDATA` |
+| `isolateState` (`internal/install/pipeline_test.go:66`), used by ~25 tests | `XDG_STATE_HOME` | `LOCALAPPDATA` |
+| `internal/config/write_test.go` (4 tests) | `XDG_CONFIG_HOME` | `APPDATA` |
+| `cmd/paq/install_test.go`, `upgrade_test.go`, `init_test.go` | `XDG_CONFIG_HOME` | `APPDATA` |
+| `cmd/paq/update_notify_test.go` `openGate` | `XDG_CACHE_HOME`, `XDG_CONFIG_HOME` | `APPDATA`, `LOCALAPPDATA` |
+
+The pattern to copy already exists in the same tree: `setupEnv`
+(`cmd/paq/registry_update_test.go:122`) and `corruptCache`
+(`cmd/paq/registry_offline_test.go:12`) both set the Windows variables under a
+`runtime.GOOS == "windows"` check, and `internal/registry`'s `setCacheHome` and
+`internal/updatecheck`'s `TestPathPerOS` do the same. Where a helper only needs
+the manifest, `config.PathOverride` is better still: it is OS-independent, and
+`internal/config/lock_test.go`'s `isolateManifest` and
+`internal/install/lock_test.go`'s `isolateConfig` already use it.
+
+### 8.5 Production behaviour with no test on the platform that owns it
+
+| Code | Platform | State |
+|---|---|---|
+| `internal/pathenv/pathenv_windows.go` `AddToUserPath` | windows only | 0 %. Writes `HKCU\Environment` and broadcasts `WM_SETTINGCHANGE`. The **only** item in this table that genuinely cannot be tested from another OS |
+| `internal/pathenv/pathenv_other.go` `AddToUserPath` | !windows | 0 %. Returns the "only supported on Windows" error — one assertion away from covered |
+| `internal/pathenv/pathenv.go` `listContains` | shared, Windows semantics | Tested, but only ever executed on Linux: it parses `;`-separated, case-insensitive, quote- and backslash-tolerant Windows PATH entries |
+| `internal/state/process_windows.go` `processAlive` | windows only | Never runs. The Unix twin is covered by `TestUpdateReclaimsStaleLock` / `TestUpdateFailsWhenLockedByAnotherProcess`, which are the tests that decide whether a stale lock blocks every state write |
+| `cmd/paq/update_notify_windows.go` / `update_notify_unix.go` `spawnDetached` | per-OS | Both 0 % |
+| `StatePath`, `registry.Dir`, `updatecheck.Path`, `config.userConfigPath` — the `APPDATA`/`LOCALAPPDATA` arms | windows only | Only `updatecheck.Path` and `registry.Dir` have a Windows arm asserted (`TestPathPerOS`, `TestDir`), and only by building the expected string, never by running there |
+| `platform.Detect` darwin/windows arms | per-OS | `TestDetect` is written the right way — a `switch d.OS` with per-OS expectations, so it becomes meaningful the moment it runs elsewhere. Only the linux arm has ever executed |
+| `{{ext}}` → `.exe` through a real install | windows only | `TestResolveExt` covers the template substitution; no install test ever produces a `.exe` |
+| `[<tool>.windows]` recipe overrides (zip instead of tar.gz, `.exe` assets) | windows only | Asserted as *data* by `TestWindowsArchiveOverride`, `TestMicroSpec`, `TestVSCodeSpec` (§2.5); no install on Windows ever exercises the resulting zip path |
+
+### 8.6 Plan
+
+1. **Make the isolation helpers platform-complete** (§8.4). Mechanical, small,
+   and a hard prerequisite: without it the first Windows CI run writes to the
+   runner's real profile instead of a temp dir.
+2. **Add the OS matrix to the `test` job** —
+   `strategy.matrix.os: [ubuntu-latest, macos-latest, windows-latest]`, with
+   `runs-on: ${{ matrix.os }}`. Leave `cross-build` and the gated `e2e` job as
+   they are. The suite runs in ~4 s, so the matrix costs runner minutes, not
+   wall time.
+3. **Treat the first matrix run's failures as findings, not as tests to skip.**
+   Every red test is either a real platform bug or a fixture that assumed
+   Unix; both are worth knowing. Adding a `t.Skip` to get green would recreate
+   exactly the blind spot this section exists to remove.
+4. **Write the owed equivalents** from §8.2, and the two one-assertion gaps from
+   §8.5 (`pathenv_other.AddToUserPath`, and `listContains` is already fine).
+5. **Accept one permanent gap**: `AddToUserPath` on Windows touches the user's
+   registry and broadcasts a window message. It needs either a Windows CI job
+   willing to write to `HKCU` under a temp key, or a seam that lets the test
+   substitute the registry accessor. Until then it stays uncovered, knowingly.
+
+Steps 1–3 are worth more than steps 4–5: they turn "we do not know" into a list.
+
+---
+
 ## Appendix — verification log
 
 | Claim | How it was verified |
@@ -1019,3 +1177,6 @@ under ~5 s.
 | 0 benchmarks, 0 fuzz targets, 0 `t.Parallel()` | `grep -rn 'func Benchmark\|func Fuzz\|t.Parallel()' --include='*_test.go' .` |
 | Helper duplication counts | `grep -rn 'RoundTrip(req \*http.Request)\|^func make\|^func sha256\|^func newSigner' --include='*_test.go' .` |
 | Which pipeline guards are never entered | Per-block aggregation of the `-coverpkg` profile: `grep 'install/pipeline.go' cover.out \| awk '{c[$1]+=$3} END {for (k in c) print c[k], k}'` |
+| The platform-constrained files build for their target, and the rest still build for all three | `for os in linux darwin windows; do GOOS=$os go vet ./...; done` — `go vet` type-checks test files, so a wrong build tag shows up here |
+| Tests built per OS: 330 / 328 / 323 | `go test ./... -list '.*'` on linux, minus the `Test*` functions in the `linux`- and `!windows`-constrained files |
+| Which test files each OS compiles | `for os in linux darwin windows; do GOOS=$os go list -f '{{.ImportPath}}: {{.TestGoFiles}}' ./internal/install ./internal/archive; done` — `env_mapping_linux_test.go` appears only for linux, `*_unix_test.go` only for linux and darwin |

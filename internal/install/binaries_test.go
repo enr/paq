@@ -64,14 +64,9 @@ func TestInstallBinaries(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			t.Errorf("%s content = %q, want %q", name, got, want)
 		}
-		info, err := os.Stat(filepath.Join(destDir, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Mode().Perm() != 0755 {
-			t.Errorf("%s mode = %o, want 0755", name, info.Mode().Perm())
-		}
 	}
+	// The permissions applied to the installed files are Unix semantics:
+	// asserted by TestInstallBinariesAppliesChmod (binaries_unix_test.go).
 }
 
 // TestInstallBinariesBare verifies the case with no archive: the downloaded
@@ -101,13 +96,6 @@ func TestInstallBinariesBare(t *testing.T) {
 	}
 	if !bytes.Equal(got, content) {
 		t.Errorf("content = %q, want %q", got, content)
-	}
-	info, err := os.Stat(filepath.Join(destDir, "mytool"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0755 {
-		t.Errorf("mode = %o, want 0755", info.Mode().Perm())
 	}
 }
 
