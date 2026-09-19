@@ -19,7 +19,7 @@ experiment, the command is given so it can be re-run.
 | Measure | Value |
 |---|---|
 | Test files | 58 |
-| Lines of test code | 10,447 (vs 9,090 lines of production code — ratio 1.15:1) |
+| Lines of test code | 10,460 (vs 9,090 lines of production code — ratio 1.15:1) |
 | Top-level `Test*` functions | 330 |
 | `t.Run` sub-test call sites | 39 |
 | `Benchmark*` / `Fuzz*` functions | 0 / 0 |
@@ -37,7 +37,7 @@ Two measurement notes that matter for reading the rest of this document:
    reads as 2.1 % because its own package test only covers `colWidths`; under
    `-coverpkg=./...` its table and log renderers sit at 70–100 %, exercised
    indirectly by the `cmd/paq` tests. The opposite caveat applies too: that
-   coverage is *incidental execution*, not verification — see §2.4.
+   coverage is *incidental execution*, not verification — see §2.3.
 2. **Coverage is a poor proxy here.** The pipeline (`internal/install`) is at
    83 % of functions and 77.8 % of statements, yet deleting its entire
    signature-verification step leaves the suite green (§6, M13). The mutation
@@ -112,7 +112,7 @@ for name, run := range cmds {
 
 **Why it is weak.** The test's stated purpose is "read-only commands fall back
 to the embedded registry". It verifies the fallback happened only for
-`loadConfig` (line 36); for the three commands it verifies only that nothing
+`loadConfig` (line 40); for the three commands it verifies only that nothing
 blew up. Their *output* — the thing the user sees, and the thing a broken
 fallback would empty out — is never captured.
 
@@ -248,7 +248,7 @@ for _, want := range []string{"platform", "config", "registry", "state", "bin-di
 | `internal/verify/sha512_test.go:26` | Comment says "uppercase/spaces (normalization)" but the fixture is `"  "+expected+"\n"` — lowercase. The uppercase half of the claim is untested; the matching `CheckFile` normalization is a live survivor (§6, M5). |
 | `internal/version/latest_test.go:9,30` | Asserts the concrete provider *type* returned by the factory and one field. No behaviour. Acceptable as wiring tests, but they are the only thing standing behind `LatestProvider`. |
 | `internal/registry/registry_test.go:39` | `TestOpenAbsent` asserts `(nil, nil, nil)` — correct, but it is the only assertion, so "absent" and "present but empty" are the same to the suite. |
-| `cmd/paq/completion_test.go:87` | `TestCompleteRegistrySpecs` asserts `"ripgrep"` is among completions — by reading the **real embedded registry and the developer's real manifest** (§2.1). |
+| `cmd/paq/completion_test.go:87` | `TestCompleteRegistrySpecs` asserts that `"ripgrep"` is among the completions, i.e. against the embedded registry's contents rather than against the completion logic (§2.5). Retiring the `ripgrep` recipe would break a completion test. |
 
 ---
 
@@ -256,36 +256,7 @@ for _, want := range []string{"platform", "config", "registry", "state", "bin-di
 
 Severity is "how likely is this to hide a real defect", not "how ugly is it".
 
-### 2.1 HIGH — three tests read the developer's real `$HOME` config
-
-`cmd/paq/registry_offline_test.go:29`, `cmd/paq/json_empty_test.go:62`,
-`cmd/paq/completion_test.go:87`.
-
-All three call `loadConfig()` / `listDefinitions()` / `completeRegistrySpecs()`
-without setting `XDG_CONFIG_HOME`, so `config.LoadUserConfig` resolves
-`~/.config/paq/config.toml` — the machine's real file. Every other test in the
-package isolates via `doctorEnv` (`cmd/paq/doctor_test.go:14`).
-
-**Proven:**
-
-```sh
-mkdir -p /tmp/fakehome/.config/paq
-printf 'this is not = valid toml [[[\n' > /tmp/fakehome/.config/paq/config.toml
-HOME=/tmp/fakehome XDG_CONFIG_HOME= go test ./cmd/paq/ \
-  -run 'TestOfflineDegradation|TestListDefinitionsJSONNoMatchPrintsEmptyArray|TestCompleteRegistrySpecs'
-```
-
-All three fail. On a developer machine with a populated manifest they can also
-pass for the wrong reason: `TestCompleteRegistrySpecs` would find `ripgrep`
-from a user `[specs.ripgrep]` block even if the embedded registry stopped
-loading.
-
-**Refactor.** Add `doctorEnv(t, "")` (or an isolated-env helper shared by the
-whole package) as the first line of each. Consider a `TestMain` in `cmd/paq`
-that fails fast if `XDG_CONFIG_HOME` points outside `t.TempDir()`, so the
-next test written cannot reintroduce the leak.
-
-### 2.2 HIGH — `captureStdout` leaks `os.Stdout` when the captured function fails
+### 2.1 HIGH — `captureStdout` leaks `os.Stdout` when the captured function fails
 
 `cmd/paq/json_empty_test.go:14`
 
@@ -336,7 +307,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 `withJSON` (line 38) already uses `defer` for `ui.Global` and is fine.
 
-### 2.3 HIGH — `internal/install` monkey-patches `http.DefaultTransport`
+### 2.2 HIGH — `internal/install` monkey-patches `http.DefaultTransport`
 
 `internal/install/pipeline_test.go:668`, `:749`, `:891`
 
@@ -373,7 +344,7 @@ then `client := hooks.HTTPClient; if client == nil { client = download.NewClient
 and pass it into `backend.GitHubBackend{HTTPClient: client}`. The three tests
 then need no globals, and the seam is the same one the rest of the codebase uses.
 
-### 2.4 MEDIUM — the renderers are executed, never verified
+### 2.3 MEDIUM — the renderers are executed, never verified
 
 `internal/ui` has exactly one real test (`colWidths`, `table_test.go:8`). Under
 `-coverpkg=./...` its renderers report 70–100 % coverage because the `cmd/paq`
@@ -406,7 +377,7 @@ func TestPrintLsTableRows(t *testing.T) {
 Keep the `cmd/paq` tests asserting *behaviour* (JSON shape, exit codes, which
 entries appear) and stop asserting *formatting* there.
 
-### 2.5 MEDIUM — package-level flag globals are the test fixture
+### 2.4 MEDIUM — package-level flag globals are the test fixture
 
 `flagInstallForce`, `flagInstallNoSave`, `flagUninstallYes`, `flagUninstallDryRun`,
 `flagInitForce`, `flagJSON`, `flagQuiet`, `flagDebug`, `Version`, `ui.Global`,
@@ -441,7 +412,7 @@ func withFlag[T any](t *testing.T, p *T, v T) { t.Helper(); old := *p; t.Cleanup
 and never mutate `installCmd`/`upgradeCmd`/`uninstallCmd` — pass a throwaway
 command.
 
-### 2.6 MEDIUM — production registry data used as test fixture
+### 2.5 MEDIUM — production registry data used as test fixture
 
 `internal/config/load_test.go` asserts against `embedded/registry/*.toml`:
 
@@ -472,7 +443,7 @@ synthetic fixtures, by `internal/config/overlay_test.go` and
    override, meta-template expansion) onto synthetic specs in the test file, as
    `TestUserConfigSpecs` already does.
 
-### 2.7 LOW — `TestRegistryUpdateOversize` asserts on the shared temp dir
+### 2.6 LOW — `TestRegistryUpdateOversize` asserts on the shared temp dir
 
 `cmd/paq/registry_update_test.go:302`
 
@@ -489,7 +460,7 @@ package during this window makes this fail. `internal/download`'s own leftover
 check does it right (`download_test.go:88`): `t.Setenv("TMPDIR", t.TempDir())`,
 then the assertion is exact. Copy that.
 
-### 2.8 What is *not* over-mocked — worth preserving
+### 2.7 What is *not* over-mocked — worth preserving
 
 The suite's dominant style is a real `httptest.Server` plus a real filesystem
 under `t.TempDir()`, with no mocking framework and no hand-written fakes of the
@@ -805,12 +776,12 @@ func TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall(t *testing.T)
 
 | Criterion | Score | Justification |
 |---|---|---|
-| **Isolation** | **3 / 5** | The norm is excellent: `t.TempDir()` + `t.Setenv` + `httptest`, no network, no shared DB. Three deductions: three tests read the real `$HOME` manifest (§2.1, proven failing); `http.DefaultTransport` is monkey-patched by three pipeline tests (§2.3); `captureStdout` leaks `os.Stdout` across tests on failure (§2.2). One test asserts on the shared `os.TempDir()` (§2.7). |
+| **Isolation** | **3 / 5** | The norm is excellent: `t.TempDir()` + `t.Setenv` + `httptest`, no network, no shared DB, and every `cmd/paq` test that loads the manifest routes it through `doctorEnv`. Three deductions: `captureStdout` leaks `os.Stdout` across tests when the captured function fails (§2.1); `http.DefaultTransport` is monkey-patched by three pipeline tests (§2.2); one test asserts on the shared `os.TempDir()` (§2.6). |
 | **Determinism** | **4 / 5** | No `time.Sleep` anywhere in the suite; retry backoff is shrunk via `httpretry.BaseDelay`; `exitedPID` gets a guaranteed-dead PID by running the test binary with `-test.run=^$` instead of guessing; `TestExpandDeterministicCrossReferenceFails` loops 50× specifically to defeat Go's map-iteration randomisation. Deductions: `TestGitHubReleaseProvider*` build fixtures from `time.Now()` with ±1 h margins (fine, but a `clock` seam would be better than margins), `TestMaybeNotifyUpdateSpawnsWhenStale` compares against a wall-clock interval, and the `os.TempDir()` glob is order-dependent across packages. |
 | **Readability** | **4 / 5** | The standout strength. Most non-obvious tests carry a comment explaining *which regression* they guard, several citing `AUDIT-OBSERVABILITY.md` items; assertion messages consistently follow `got = X, want Y` with the reason. Deductions: 11 residual Italian comments in an English-only codebase (`install/pipeline_test.go:156,534`, `cmd/paq/errors_test.go:13`, `state/state_test.go:16,289`, `version/github_release_test.go:23,138,145`, `verify/minisign_test.go:82`, `config/write_test.go:92`, `archive/archive_test.go:151`); dead code at `github_release_test.go:24-25` (`origTransport := ...; _ = origTransport`); the 6× duplicated maven fixture (§3.2 Group F) makes those tests longer than their intent. |
-| **Order independence** | **4 / 5** | `.sdlc/test` runs `-shuffle=on -race` by default — a deliberate, correct choice, and 3 consecutive shuffled runs pass. Held back from 5 by the mutable-global surface (§2.5) and three restore idioms, two of which restore a hardcoded default rather than the saved value; the `os.Stdout` leak is a genuine cross-test coupling that shuffling cannot catch because it only triggers on failure. |
+| **Order independence** | **4 / 5** | `.sdlc/test` runs `-shuffle=on -race` by default — a deliberate, correct choice, and 3 consecutive shuffled runs pass. Held back from 5 by the mutable-global surface (§2.4) and three restore idioms, two of which restore a hardcoded default rather than the saved value; the `os.Stdout` leak is a genuine cross-test coupling that shuffling cannot catch because it only triggers on failure. |
 | **Execution time** | **5 / 5** | 2.7 s plain, ~4 s with `-race -shuffle=on`, no package above 1.6 s. Fast enough that the script can afford `-race` unconditionally and comment that "both are free". No sleeps, no real network, no container fixtures. Nothing to improve. |
-| **Signal-to-noise** | **3 / 5** | High signal where it counts: request-counting assertions, error-identity assertions instead of message matching, explicit "must not happen" checks. Noise: ~17 of 26 hand-built mutants survive (§6), so a large share of the suite's 330 tests does not discriminate; ~15 duplicated helpers and ~210 duplicated fixture lines; production registry data as fixtures means routine data commits produce red builds unrelated to the change (§2.6); `strings.Contains`-on-rendered-output as the standard assertion for command behaviour means a test can pass while the output is unusable. |
+| **Signal-to-noise** | **3 / 5** | High signal where it counts: request-counting assertions, error-identity assertions instead of message matching, explicit "must not happen" checks. Noise: ~17 of 26 hand-built mutants survive (§6), so a large share of the suite's 330 tests does not discriminate; ~15 duplicated helpers and ~210 duplicated fixture lines; production registry data as fixtures means routine data commits produce red builds unrelated to the change (§2.5); `strings.Contains`-on-rendered-output as the standard assertion for command behaviour means a test can pass while the output is unusable. |
 
 **Overall: 3.8 / 5.** This is a well-above-average Go test suite — fast,
 deterministic, honest about integration, unusually well-commented — whose main
@@ -822,12 +793,11 @@ executes almost everything (74 % statements) and verifies noticeably less.
 1. **Close the signature-verification hole** (§4.1). Three tests, one shared
    fixture. It is the single highest-severity gap: the security feature the
    README leads with can be deleted without turning the build red.
-2. **Fix `captureStdout` and the three unisolated tests** (§2.2, §2.1). ~15
-   lines of change across two helpers, and they remove a whole class of
-   "fails only on the maintainer's machine" / "later failures print nothing"
-   reports. Add a `TestMain` guard in `cmd/paq` so the leak cannot come back.
+2. **Fix `captureStdout`** (§2.1). ~10 lines in one helper, and it removes a
+   whole class of "later failures print nothing" reports — plus the latent
+   deadlock above the pipe buffer.
 3. **Give the pipeline an HTTP-client seam and delete the
-   `http.DefaultTransport` patching** (§2.3). Unblocks testing the GitHub
+   `http.DefaultTransport` patching** (§2.2). Unblocks testing the GitHub
    backend path properly, makes §4.1 easy, and is a prerequisite for ever
    adding `t.Parallel()`.
 4. **Test `cleanupOldVersions` and add the missing pre-flight rejections**
@@ -835,7 +805,7 @@ executes almost everything (74 % statements) and verifies noticeably less.
    between them, on the destructive path (`cleanupOldVersions` deletes files)
    and the guards that produce paq's *useful* error messages.
 5. **Extract `internal/testutil` and split data tests from loader tests**
-   (§3.1, §2.6). Removes ~15 duplicated helpers and stops routine
+   (§3.1, §2.5). Removes ~15 duplicated helpers and stops routine
    registry-data commits from breaking `internal/config`. Do this fifth, not
    first: it is the change that makes the other four cheaper next time, but it
    fixes no defect by itself.
@@ -943,7 +913,7 @@ mutation results:
 
 | Area | Evidence | Why it matters |
 |---|---|---|
-| `internal/ui` | 1 real test; renderers verified only by `strings.Contains` from `cmd/paq` (§2.4) | It is 100 % of what the user sees. `formatBinaries` at 22 % of statements. |
+| `internal/ui` | 1 real test; renderers verified only by `strings.Contains` from `cmd/paq` (§2.3) | It is 100 % of what the user sees. `formatBinaries` at 22 % of statements. |
 | Destructive paths | `cleanupOldVersions` 0 %, `removeRecordFiles` 40 %, `printUninstallTargets` 0 % | These delete user files. `uninstall` has good guard tests; `upgrade`'s cleanup has none (M20). |
 | `self-update` | `replaceExecutable` 0 %, `runSelfUpdate` 56 % | It overwrites the running binary. The download/verify half is tested; the replace half is not. |
 | `import` | `runImport` 0 % (only helpers tested) | It writes the user's manifest. |
@@ -1004,11 +974,11 @@ of redundant/data-coupled tests (§3) and spend the same budget here.
    §7.1 gap (exit codes, `reportError`, `Execute`) with one file and no network.
    Use `testing.M` + `go build -o` once, so the cost is ~1 s.
 2. **Move rendering assertions down into `internal/ui`** as golden-output tests
-   (§2.4), and reduce the `cmd/paq` output tests to behaviour: which entries,
+   (§2.3), and reduce the `cmd/paq` output tests to behaviour: which entries,
    which JSON keys, which exit code. This *lowers* maintenance — a column-width
    tweak then touches one package instead of six test files.
 3. **Introduce two seams and stop patching globals**: an `HTTPClient` on the
-   install pipeline (§2.3) and a `clock func() time.Time` on
+   install pipeline (§2.2) and a `clock func() time.Time` on
    `GitHubReleaseProvider` (killing M19's fixture-margin problem). Two struct
    fields; they unlock §4.1 and make the age tests exact instead of
    approximate.
@@ -1043,7 +1013,6 @@ under ~5 s.
 |---|---|
 | 74.0 % statement coverage; 19 functions at 0 % | `go test ./... -coverpkg=./... -coverprofile=...` + `go tool cover -func` |
 | Suite runs in 2.7 s / ~4 s with `-race -shuffle=on`, stable | `time go test ./...`; `./.sdlc/test` equivalent run 3× |
-| 3 tests read the real `$HOME` manifest | Ran `cmd/paq` tests with `HOME` pointing at a fixture holding an unparsable `config.toml`; all 3 fail |
 | `captureStdout` leaks `os.Stdout` on in-capture `t.Fatal` | Standalone reproduction of the helper; the following test observes `os.Stdout.Fd() == 9` |
 | `captureStdout` deadlocks above the pipe buffer | Same reproduction with a 200 KiB write; test binary hits its timeout inside `os.File.Write` |
 | 26 mutants, 9 killed, 17 survived | Each mutant applied to a scratch copy of the tree, followed by a full `go test ./...`, then reverted |

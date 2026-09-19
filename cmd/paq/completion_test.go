@@ -85,6 +85,11 @@ func TestCompleteInstalledApps(t *testing.T) {
 }
 
 func TestCompleteRegistrySpecs(t *testing.T) {
+	// The expected candidate comes from the embedded registry: isolate config
+	// and cache so a user manifest or registry snapshot cannot supply it (nor
+	// break the load).
+	doctorEnv(t, "")
+
 	got, directive := completeRegistrySpecs(registryShowCmd, nil, "ripg")
 	if directive != cobra.ShellCompDirectiveNoFileComp {
 		t.Errorf("directive = %v, want ShellCompDirectiveNoFileComp", directive)

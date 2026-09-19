@@ -60,6 +60,10 @@ func TestRunLsJSONEmptyPrintsEmptyArray(t *testing.T) {
 }
 
 func TestListDefinitionsJSONNoMatchPrintsEmptyArray(t *testing.T) {
+	// listDefinitions goes through loadConfig: without this the user's real
+	// manifest and registry cache decide the result.
+	doctorEnv(t, "")
+
 	out := withJSON(t, func() {
 		if err := listDefinitions("no-such-tool-xyz"); err != nil {
 			t.Fatalf("listDefinitions: %v", err)
