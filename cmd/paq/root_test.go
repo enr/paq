@@ -83,6 +83,7 @@ func TestApplyConfigPathOverride(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this one on Windows
 
 	flagConfig = filepath.Join(home, "from-flag.toml")
 	if err := applyConfigPathOverride(); err != nil {

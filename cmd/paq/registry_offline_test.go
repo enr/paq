@@ -27,6 +27,10 @@ func corruptCache(t *testing.T) {
 // TestOfflineDegradation verifies that a corrupt external registry cache never
 // breaks read-only commands: they fall back to the embedded registry.
 func TestOfflineDegradation(t *testing.T) {
+	// Isolate config and state first: loadConfig reads the user manifest, and
+	// an unparsable one on the developer's machine would fail this test for a
+	// reason that has nothing to do with the corrupt cache under test.
+	doctorEnv(t, "")
 	corruptCache(t)
 
 	cfg, err := loadConfig()
