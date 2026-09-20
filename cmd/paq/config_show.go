@@ -40,6 +40,5 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	}
 	_, registryMeta, registryOpenErr := registry.Open()
 
-	ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps, cfg.Registry, registryDir, registryMeta, registryOpenErr)
-	return nil
+	return ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps, cfg.Registry, registryDir, registryMeta, registryOpenErr)
 }

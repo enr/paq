@@ -41,11 +41,14 @@ type LsEntry struct {
 }
 
 // PrintLsTable prints the table of installed packages.
-func PrintLsTable(entries []LsEntry) {
+func PrintLsTable(entries []LsEntry) error {
 	if Global.JSON {
-		data, _ := json.MarshalIndent(entries, "", "  ")
+		data, err := json.MarshalIndent(entries, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal entries: %w", err)
+		}
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	packages := make([]state.InstalledApp, len(entries))
@@ -69,7 +72,7 @@ func PrintLsTable(entries []LsEntry) {
 		for _, rec := range pkgs {
 			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, rec.Dest)
 		}
-		return
+		return nil
 	}
 
 	header := fmt.Sprintf("%s  %s  %s  %s",
@@ -89,6 +92,7 @@ func PrintLsTable(entries []LsEntry) {
 		)
 		fmt.Println(row)
 	}
+	return nil
 }
 
 // RegistryEntry is a row of the table of specs available in the registry.
@@ -100,11 +104,14 @@ type RegistryEntry struct {
 }
 
 // PrintAvailableTable prints the table of specs available in the embedded registry.
-func PrintAvailableTable(entries []RegistryEntry) {
+func PrintAvailableTable(entries []RegistryEntry) error {
 	if Global.JSON {
-		data, _ := json.MarshalIndent(entries, "", "  ")
+		data, err := json.MarshalIndent(entries, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal entries: %w", err)
+		}
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	cell := func(s string) string {
@@ -128,7 +135,7 @@ func PrintAvailableTable(entries []RegistryEntry) {
 		for _, r := range entries {
 			fmt.Printf(fmtStr, r.Name, cell(r.Backend), cell(r.Source), cell(r.Repo))
 		}
-		return
+		return nil
 	}
 
 	header := fmt.Sprintf("%s  %s  %s  %s",
@@ -148,6 +155,7 @@ func PrintAvailableTable(entries []RegistryEntry) {
 		)
 		fmt.Println(row)
 	}
+	return nil
 }
 
 // OutdatedEntry is a row of the "paq outdated" table: an app pinned to
@@ -159,16 +167,19 @@ type OutdatedEntry struct {
 }
 
 // PrintOutdatedTable prints the apps that have a newer upstream version available.
-func PrintOutdatedTable(entries []OutdatedEntry) {
+func PrintOutdatedTable(entries []OutdatedEntry) error {
 	if Global.JSON {
-		data, _ := json.MarshalIndent(entries, "", "  ")
+		data, err := json.MarshalIndent(entries, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal entries: %w", err)
+		}
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	if len(entries) == 0 {
 		fmt.Println("All tools are up to date.")
-		return
+		return nil
 	}
 
 	headers := []string{"APP", "INSTALLED"}
@@ -185,7 +196,7 @@ func PrintOutdatedTable(entries []OutdatedEntry) {
 		for _, e := range entries {
 			fmt.Printf(fmtStr, e.Name, e.Installed, e.Latest)
 		}
-		return
+		return nil
 	}
 
 	header := fmt.Sprintf("%s  %s  %s",
@@ -204,12 +215,13 @@ func PrintOutdatedTable(entries []OutdatedEntry) {
 		)
 		fmt.Println(row)
 	}
+	return nil
 }
 
 // PrintConfigShow prints the evaluated user configuration path and its data:
 // the effective defaults (configured or built-in), the registry cache
 // location and installed snapshot (if any), and the declared apps.
-func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry, registryCfg config.RegistrySettings, registryDir string, registryMeta *registry.Meta, registryOpenErr error) {
+func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry, registryCfg config.RegistrySettings, registryDir string, registryMeta *registry.Meta, registryOpenErr error) error {
 	if Global.JSON {
 		cache := map[string]any{"dir": registryDir}
 		switch {
@@ -231,9 +243,12 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 			"registry_cache":     cache,
 			"apps":               apps,
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal config: %w", err)
+		}
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	// Key in bold blue, value in green, annotations in gray, so labels and
@@ -304,7 +319,7 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 	if len(apps) == 0 {
 		section("Apps")
 		fmt.Println(dim("(none configured)"))
-		return
+		return nil
 	}
 	section(fmt.Sprintf("Apps (%d)", len(apps)))
 
@@ -364,6 +379,7 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 			fmt.Printf(fmtStr, k, row.use, row.ver, row.dest)
 		}
 	}
+	return nil
 }
 
 // PrintInfoDetail prints an app's details (recipe + installed versions).
@@ -373,7 +389,7 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 // offline-resolved template placeholders (platform, arch/os/env overrides,
 // meta-templates, and the version when pinned); fields that still contain an
 // unresolved {{version}}-family placeholder are shown raw instead of resolved.
-func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp, lockedVersion string, vars template.Vars) {
+func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, installed []state.InstalledApp, lockedVersion string, vars template.Vars) error {
 	if Global.JSON {
 		out := map[string]any{
 			"name":      name,
@@ -384,9 +400,12 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 		if lockedVersion != "" {
 			out["locked_version"] = lockedVersion
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal info: %w", err)
+		}
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	render := func(label, value string) {
@@ -436,7 +455,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 	if len(installed) == 0 {
 		fmt.Println()
 		fmt.Println("(not installed)")
-		return
+		return nil
 	}
 
 	for _, rec := range sortedPackages(installed) {
@@ -448,6 +467,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 		render("Source URL", rec.Source)
 		render("SHA256", rec.SHA256)
 	}
+	return nil
 }
 
 // resolveOrRaw resolves raw's {{placeholder}}s against vars, falling back to
@@ -468,15 +488,18 @@ func resolveOrRaw(raw string, vars template.Vars) string {
 }
 
 // PrintSpecDetail prints the details of a single registry spec.
-func PrintSpecDetail(name string, spec config.Spec) {
+func PrintSpecDetail(name string, spec config.Spec) error {
 	if Global.JSON {
 		out := map[string]any{
 			"name": name,
 			"spec": spec,
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal spec: %w", err)
+		}
 		fmt.Println(string(data))
-		return
+		return nil
 	}
 
 	render := func(label, value string) {
@@ -547,6 +570,7 @@ func PrintSpecDetail(name string, spec config.Spec) {
 	render("SHA256Asset", spec.Verify.SHA256Asset)
 	render("Minisign key", spec.Verify.Minisign.PublicKey)
 	render("Minisign sig", spec.Verify.Minisign.SignedAsset)
+	return nil
 }
 
 // formatBinaries renders each Binary as "from → to" (or just "from"/"to" when

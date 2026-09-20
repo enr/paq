@@ -95,7 +95,10 @@ func runImport(cmd *cobra.Command, args []string) error {
 
 	if !flagImportWrite {
 		if ui.Global.JSON {
-			data, _ := json.MarshalIndent(map[string]any{"app": key, "entry": entry}, "", "  ")
+			data, err := json.MarshalIndent(map[string]any{"app": key, "entry": entry}, "", "  ")
+			if err != nil {
+				return fmt.Errorf("marshal entry: %w", err)
+			}
 			fmt.Println(string(data))
 		} else {
 			fmt.Print(block)

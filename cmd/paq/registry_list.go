@@ -65,6 +65,5 @@ func listDefinitions(query string) error {
 		return rows[i].Name < rows[j].Name
 	})
 
-	ui.PrintAvailableTable(rows)
-	return nil
+	return ui.PrintAvailableTable(rows)
 }

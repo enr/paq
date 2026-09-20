@@ -36,8 +36,7 @@ func runRegistryShow(cmd *cobra.Command, args []string) error {
 		return hintError{msg: fmt.Sprintf("spec %q not found in registry", name), hint: hint}
 	}
 
-	ui.PrintSpecDetail(name, spec)
-	return nil
+	return ui.PrintSpecDetail(name, spec)
 }
 
 // similarSpecs returns the definition names that contain the query as a substring.

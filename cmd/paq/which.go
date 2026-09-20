@@ -79,7 +79,10 @@ func runWhich(cmd *cobra.Command, args []string) error {
 	matches = present
 
 	if ui.Global.JSON {
-		data, _ := json.MarshalIndent(matches, "", "  ")
+		data, err := json.MarshalIndent(matches, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal matches: %w", err)
+		}
 		fmt.Println(string(data))
 		return nil
 	}

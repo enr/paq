@@ -45,7 +45,9 @@ func runLs(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	ui.PrintLsTable(entries)
+	if err := ui.PrintLsTable(entries); err != nil {
+		return err
+	}
 
 	// The table keeps its shape; the drift is reported next to it. In --json
 	// mode each entry already carries "missing", so the warning would be noise.

@@ -95,7 +95,10 @@ func runRegistryStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if ui.Global.JSON {
-		data, _ := json.MarshalIndent(st, "", "  ")
+		data, err := json.MarshalIndent(st, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal status: %w", err)
+		}
 		fmt.Println(string(data))
 		return nil
 	}

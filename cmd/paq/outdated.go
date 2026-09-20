@@ -41,8 +41,7 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 			fmt.Println("No apps configured in manifest (~/.config/paq/config.toml).")
 			return nil
 		}
-		ui.PrintOutdatedTable([]ui.OutdatedEntry{})
-		return nil
+		return ui.PrintOutdatedTable([]ui.OutdatedEntry{})
 	}
 
 	st, err := state.Load()
@@ -84,8 +83,7 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 	}
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
-	ui.PrintOutdatedTable(results)
-	return nil
+	return ui.PrintOutdatedTable(results)
 }
 
 // checkOutdated resolves the latest upstream version for a single app and

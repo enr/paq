@@ -95,6 +95,5 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		vars.VersionMajor, vars.VersionMinor, vars.VersionPatch = version.Parse(vars.Version)
 	}
 
-	ui.PrintInfoDetail(appName, spec, app, installed, lockedVersion, vars)
-	return nil
+	return ui.PrintInfoDetail(appName, spec, app, installed, lockedVersion, vars)
 }
