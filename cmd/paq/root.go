@@ -104,6 +104,9 @@ func init() {
 	// time (set once here, evaluated on every retry), so a slow or flaky
 	// network no longer looks like paq just going quiet for a while.
 	httpretry.OnRetry = func(attempt int, resp *http.Response, err error, delay time.Duration) {
+		if resp != nil && resp.StatusCode == http.StatusTooManyRequests && os.Getenv("GITHUB_TOKEN") == "" {
+			ui.Warn("rate-limited (attempt %d) — retrying in %s; set GITHUB_TOKEN to avoid this", attempt, delay)
+		}
 		if !ui.Global.Debug {
 			return
 		}

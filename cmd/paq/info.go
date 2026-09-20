@@ -77,8 +77,12 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	// lock entry would require a network call, which `info` doesn't make, so
 	// its {{version}}-derived placeholders are left unresolved.
 	plat := platform.Detect()
-	resolvedSpec, vars, _ := install.ResolveVars(cfg, plat, spec, app)
-	spec = resolvedSpec
+	resolvedSpec, vars, err := install.ResolveVars(cfg, plat, spec, app)
+	if err != nil {
+		ui.Warn("placeholder resolution failed (%v): showing the raw spec", err)
+	} else {
+		spec = resolvedSpec
+	}
 	switch {
 	case app.Version != "" && !strings.EqualFold(app.Version, "latest"):
 		vars.Version = app.Version

@@ -14,9 +14,9 @@ Ordered by severity. "Swallowed" means the error value exists and is discarded.
 
 | # | Location | What is lost | Severity |
 |---|---|---|---|
-| M2 | `internal/httpretry/httpretry.go:29` | retries are invisible, even under `--debug` | **Media** |
-| M3 | `internal/install/pipeline.go:490` | "Installed ✓" printed *before* the state save that can fail | **Media** |
-| M4 | `cmd/paq/info.go:64` | `ResolveVars` error dropped in a diagnostic command | **Media** |
+| M2 | `internal/httpretry/httpretry.go:29` | retries are invisible, even under `--debug` | **Media** — **[fixed]** |
+| M3 | `internal/install/pipeline.go:490` | "Installed ✓" printed *before* the state save that can fail | **Media** — **[fixed]** |
+| M4 | `cmd/paq/info.go:64` | `ResolveVars` error dropped in a diagnostic command | **Media** — **[fixed]** |
 | B1 | `internal/ui/table.go` ×6, `which.go:58`, `import.go:98`, `registry_status.go:98` | `json.MarshalIndent` error → empty output, exit 0 | **Bassa** |
 | B2 | `cmd/paq/update_check.go:32,39` | background check failure is undiagnosable by design | **Bassa** |
 | B3 | `cmd/paq/registry_update.go:150` | dropped error silently skips downgrade protection | **Bassa** |
@@ -25,7 +25,12 @@ Ordered by severity. "Swallowed" means the error value exists and is discarded.
 
 ## 2. Risks, in detail
 
-### M2 — Retries are completely invisible
+### M2 — Retries are completely invisible **[fixed]**
+
+`httpretry.OnRetry` is now wired in `cmd/paq/root.go`: every retry logs via
+`ui.Debug` under `--debug`, and a 429 additionally emits `ui.Warn` with the
+`GITHUB_TOKEN` hint (skipped when the token is already set), regardless of
+`--debug`. Original finding kept below for reference.
 
 `httpretry.Do` retries up to 3 times with backoff and honours `Retry-After`,
 emitting nothing: no hook, no callback, no output even under `--debug` (the
@@ -36,7 +41,11 @@ Sustained 429s — the signal that you are being rate-limited and should set
 `GITHUB_TOKEN` — are invisible until the final failure. A degrading condition
 is unobservable right up to the point where it breaks.
 
-### M3 — Success is announced before the operation that can still fail
+### M3 — Success is announced before the operation that can still fail **[fixed]**
+
+`internal/install/pipeline.go` now records the state update before printing
+`ok("Installed ...")`, so a save failure is reported without a contradictory
+success line first. Original finding kept below for reference.
 
 ```go
 ok(fmt.Sprintf("Installed %s %s → %s", appName, ver, dest))   // :490
@@ -52,7 +61,11 @@ messages contradict each other, and the real outcome is the confusing one: the
 binary **is** on disk and **is not** tracked, so `ls`, `upgrade` and
 `uninstall` will not see it. That is M1's drift, created by paq itself.
 
-### M4 — `info` discards its own resolution error
+### M4 — `info` discards its own resolution error **[fixed]**
+
+`cmd/paq/info.go` now checks the `ResolveVars` error and reports it via
+`ui.Warn`, falling back to the raw (unresolved) spec instead of silently
+using it. Original finding kept below for reference.
 
 ```go
 resolvedSpec, vars, _ := install.ResolveVars(cfg, plat, spec, app)   // :64
