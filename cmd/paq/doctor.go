@@ -16,6 +16,7 @@ import (
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
+	"github.com/enr/paq/internal/updatecheck"
 	"github.com/spf13/cobra"
 )
 
@@ -241,6 +242,14 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 				ui.Hint("%s", hint)
 			}
 		}
+	}
+
+	if ucSt, ucErr := updatecheck.Load(); ucErr == nil && ucSt.LastError != "" {
+		// Not counted as a problem: the nag is non-essential and paq keeps
+		// working without it — but a stuck failure (e.g. a read-only cache
+		// dir) should not stay invisible forever.
+		reportWarn("update_check", "Update check", "background lookup failing", ucSt.LastError,
+			fmt.Sprintf("last attempted %s", humanAge(ucSt.LastAttempt)), false)
 	}
 
 	if os.Getenv("GITHUB_TOKEN") != "" {

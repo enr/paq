@@ -21,6 +21,12 @@ type State struct {
 	LastChecked   time.Time `json:"last_checked"`
 	LatestVersion string    `json:"latest_version"`
 	LatestTag     string    `json:"latest_tag"`
+	// LastAttempt and LastError record the outcome of the most recent
+	// background lookup, successful or not, so a persistently failing check
+	// (e.g. a read-only cache dir) is diagnosable instead of silently never
+	// working again. LastError is cleared on the next successful lookup.
+	LastAttempt time.Time `json:"last_attempt,omitempty"`
+	LastError   string    `json:"last_error,omitempty"`
 }
 
 // Path returns the path of the update-check.json file.

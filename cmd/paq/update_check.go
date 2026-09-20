@@ -25,17 +25,24 @@ var updateCheckCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(cmd.Context(), bgUpdateCheckTimeout)
 		defer cancel()
 
+		st, _ := updatecheck.Load()
+		st.LastAttempt = time.Now()
+
 		latest, tag, err := version.GitHubReleaseProvider{Repo: selfUpdateRepo}.Resolve(ctx)
 		if err != nil {
-			// Stay silent: the parent already bumped LastChecked, so the
-			// 24h back-off holds even when the lookup fails (e.g. offline).
+			// Stay silent to the user: the parent already bumped LastChecked,
+			// so the 24h back-off holds even when the lookup fails (e.g.
+			// offline). The error itself is recorded so a persistent failure
+			// (e.g. a read-only cache dir) is diagnosable via `paq doctor`.
+			st.LastError = err.Error()
+			_ = st.Save()
 			return nil
 		}
 
-		st, _ := updatecheck.Load()
 		st.LastChecked = time.Now()
 		st.LatestVersion = latest
 		st.LatestTag = tag
+		st.LastError = ""
 		_ = st.Save()
 		return nil
 	},
