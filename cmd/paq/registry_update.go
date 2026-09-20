@@ -147,7 +147,11 @@ func updateRegistry(ctx context.Context, force bool) error {
 	}
 
 	// Best-effort downgrade / no-op protection against the cached snapshot.
-	if _, cur, _ := registry.Open(); cur != nil && !force {
+	_, cur, openErr := registry.Open()
+	if openErr != nil {
+		ui.Debug("registry cache unreadable, skipping downgrade check: %v", openErr)
+	}
+	if cur != nil && !force {
 		cmp := version.Compare(version.Clean(newVersion), version.Clean(cur.Version))
 		if cmp == 0 {
 			ui.OK("registry already up to date (%s) in %s", newVersion, dir)
