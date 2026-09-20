@@ -256,6 +256,15 @@ the `--json` output shape of `config show`, `info`, `outdated` and
 `registry show` is unverified, despite being the documented contract for
 scripting (`README.md:185`).
 
+**Resolved:** `internal/ui` is now at 86.3%. Every table/detail printer is
+covered for both its `--json` and plain-text branches (including the
+zero-value fallbacks — empty registry cache, no apps configured, not
+installed, unresolved `{{version}}` placeholders), all of `log.go`'s
+level/quiet/`--json`-redirect gating, and `NewProgressFn`'s known/unknown-size
+and percentage-dedup paths. Not covered: the color-enabled rendering branches
+(`IsColorEnabled` requires a TTY, which `go test` never provides), left alone
+per the audit's own principle of not chasing green over meaningful cases.
+
 **M5 — CI tests one platform; three files are Windows-only.**
 `.github/workflows/ci.yml` runs `./.sdlc/test` on `ubuntu-latest` only.
 `internal/pathenv/pathenv_windows.go`, `internal/state/process_windows.go` and
