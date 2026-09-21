@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -41,14 +43,45 @@ func TestOfflineDegradation(t *testing.T) {
 		t.Error("embedded ripgrep should be available despite the corrupt cache")
 	}
 
-	cmds := map[string]func() error{
-		"registry list":   func() error { return runRegistryList(nil, nil) },
-		"registry status": func() error { return runRegistryStatus(nil, nil) },
-		"doctor":          func() error { return runDoctor(nil, nil) },
-	}
-	for name, run := range cmds {
-		if err := run(); err != nil {
-			t.Errorf("%s failed on corrupt cache: %v", name, err)
+	listOut := captureStdout(t, func() {
+		if err := runRegistryList(nil, nil); err != nil {
+			t.Fatalf("registry list failed on corrupt cache: %v", err)
 		}
+	})
+	if !strings.Contains(listOut, "ripgrep") {
+		t.Errorf("registry list fell back to an empty registry:\n%s", listOut)
+	}
+
+	statusOut := captureStdout(t, func() {
+		if err := runRegistryStatus(nil, nil); err != nil {
+			t.Fatalf("registry status failed on corrupt cache: %v", err)
+		}
+	})
+	if strings.Contains(statusOut, "Active recipes: 0") {
+		t.Errorf("registry status reports zero active recipes despite the embedded fallback:\n%s", statusOut)
+	}
+
+	var runErr error
+	doctorOut := withJSON(t, func() {
+		runErr = runDoctor(nil, nil)
+	})
+	if runErr != nil {
+		t.Fatalf("doctor failed on corrupt cache: %v", runErr)
+	}
+	var report doctorReport
+	if err := json.Unmarshal([]byte(doctorOut), &report); err != nil {
+		t.Fatalf("doctor stdout is not valid JSON: %v\noutput:\n%s", err, doctorOut)
+	}
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "registry" {
+			found = true
+			if c.Problem {
+				t.Errorf("registry check is a problem despite the embedded fallback: %+v", c)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("doctor report is missing the registry check: %+v", report.Checks)
 	}
 }
