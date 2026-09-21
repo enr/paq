@@ -301,7 +301,12 @@ func TestRegistryUpdateOversize(t *testing.T) {
 	registryMaxBytes = 16
 	t.Cleanup(func() { registryMaxBytes = prev })
 
-	before, _ := filepath.Glob(filepath.Join(os.TempDir(), "paq-download-*"))
+	// A dedicated TMPDIR makes the leftover check exact and keeps the test
+	// independent of anything else writing to the shared temp dir (go test
+	// runs packages concurrently, and internal/download writes into the same
+	// os.TempDir() this test would otherwise glob).
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
 
 	s := newSigner(t)
 	url := serve(t, validFixture(t, s, "1.0.0", "[t]\nbackend = \"github\"\n"))
@@ -314,9 +319,9 @@ func TestRegistryUpdateOversize(t *testing.T) {
 		t.Errorf("error = %v, want it to mention the byte limit (16)", err)
 	}
 
-	after, _ := filepath.Glob(filepath.Join(os.TempDir(), "paq-download-*"))
-	if len(after) > len(before) {
-		t.Errorf("leftover paq-download temp files: before=%d after=%d", len(before), len(after))
+	leftover, _ := filepath.Glob(filepath.Join(tmp, "paq-download-*"))
+	if len(leftover) > 0 {
+		t.Errorf("leftover paq-download temp files: %v", leftover)
 	}
 }
 
