@@ -20,8 +20,8 @@ import (
 // any upgrade is attempted, regardless of its position in the argument list.
 func TestRunUpgradeMultiArgFailsFastOnUnknownName(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withConfigHome(t, dir)
+	withStateHome(t, t.TempDir())
 
 	block := renderAppEntryTOML("rg", config.AppEntry{Use: "ripgrep", Version: "14.1.1"})
 	if _, err := config.WriteManifestEntry("rg", block, false); err != nil {
@@ -68,8 +68,8 @@ func TestRunUpgradeMultiArgFailsFastOnUnknownName(t *testing.T) {
 // call, since they're not "latest") and the command succeeds.
 func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withConfigHome(t, dir)
+	withStateHome(t, t.TempDir())
 
 	for name, use := range map[string]string{"rg": "ripgrep", "bat": "bat"} {
 		block := renderAppEntryTOML(name, config.AppEntry{Use: use, Version: "1.0.0"})
@@ -94,7 +94,7 @@ func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 // can't actually resolve "latest", so it reaches the "no upstream strategy"
 // skip instead of the (buggy) "pinned to , skipping" path.
 func TestUpgradeAppEmptyVersionNoDefaultTracksLatest(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	cfg := &config.Config{
 		Apps: map[string]config.AppEntry{
@@ -132,7 +132,7 @@ func TestUpgradeAppEmptyVersionNoDefaultTracksLatest(t *testing.T) {
 // pinned, and the skip message names the default version rather than
 // printing an empty string ("pinned to , skipping").
 func TestUpgradeAppEmptyVersionWithDefaultSkipsWithDefaultInMessage(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	cfg := &config.Config{
 		Apps: map[string]config.AppEntry{
@@ -267,7 +267,7 @@ func TestResolveLatestVersionInvalidMinimumAge(t *testing.T) {
 // keep-set can be replaced with an empty map with the suite staying green
 // (AUDIT-TESTS.md §4.8, mutation M20).
 func TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	destDir := filepath.Join(t.TempDir(), "tool")
 	if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -315,7 +315,7 @@ func TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall(t *testing.T) {
 // versions with distinct, version-specific dests. Cleanup must delete the
 // old one's files, unlike the shared-dest case above.
 func TestCleanupOldVersionsRemovesVersionSpecificDest(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	oldDest := filepath.Join(t.TempDir(), "tool-1.0.0")
 	newDest := filepath.Join(t.TempDir(), "tool-2.0.0")

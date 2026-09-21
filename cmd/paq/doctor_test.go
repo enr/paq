@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/enr/paq/internal/state"
@@ -14,9 +15,15 @@ import (
 func doctorEnv(t *testing.T, manifest string) {
 	t.Helper()
 	cfgHome := t.TempDir()
+	stateHome := t.TempDir()
+	cacheHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", cfgHome)
+		t.Setenv("LOCALAPPDATA", stateHome)
+	}
 
 	if manifest == "" {
 		return

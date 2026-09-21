@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -55,6 +56,26 @@ func withFlag[T any](t *testing.T, p *T, v T) {
 	old := *p
 	t.Cleanup(func() { *p = old })
 	*p = v
+}
+
+// withConfigHome points userConfigPath at dir, on Linux/macOS (XDG_CONFIG_HOME)
+// and Windows (APPDATA) alike.
+func withConfigHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", dir)
+	}
+}
+
+// withStateHome points state.StatePath at dir, on Linux/macOS (XDG_STATE_HOME)
+// and Windows (LOCALAPPDATA) alike.
+func withStateHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", dir)
+	}
 }
 
 func TestRunLsJSONEmptyPrintsEmptyArray(t *testing.T) {

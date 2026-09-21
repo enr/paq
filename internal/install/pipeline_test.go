@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -68,7 +69,11 @@ func makeFakeZip(topDir, name string, content []byte) []byte {
 // running Run() don't write to the user's real state.
 func isolateState(t *testing.T) {
 	t.Helper()
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", dir)
+	}
 }
 
 // TestPipelineSHA512URLBackend verifies installation via the "url" backend

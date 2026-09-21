@@ -58,7 +58,7 @@ func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
 
 func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
 	path, err := ensureManifestEntry(cfg, "ripgrep", true)
@@ -83,7 +83,7 @@ func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 
 func TestEnsureManifestEntryNoSave(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
 	path, err := ensureManifestEntry(cfg, "ripgrep", false)
@@ -103,7 +103,7 @@ func TestEnsureManifestEntryNoSave(t *testing.T) {
 
 func TestEnsureManifestEntryExistingApp(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
 	cfg.Apps["ripgrep"] = config.AppEntry{Use: "ripgrep", Version: "1.2.3"}
@@ -170,8 +170,8 @@ func TestValidateAppName(t *testing.T) {
 // name that would otherwise have been auto-imported successfully.
 func TestRunInstallMultiArgFailsFastOnUnknownName(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withConfigHome(t, dir)
+	withStateHome(t, t.TempDir())
 
 	withFlag(t, &flagInstallForce, false)
 	withFlag(t, &flagInstallNoSave, false)

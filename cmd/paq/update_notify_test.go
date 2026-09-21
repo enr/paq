@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -32,8 +33,12 @@ func TestNewerVersionAvailable(t *testing.T) {
 // quiet/json, and no opt-out env.
 func openGate(t *testing.T) {
 	t.Helper()
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cacheHome := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	withConfigHome(t, t.TempDir())
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", cacheHome)
+	}
 	t.Setenv(updateCheckEnv, "")
 
 	oldVersion := Version
