@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/enr/paq/internal/state"
@@ -14,9 +15,15 @@ import (
 func doctorEnv(t *testing.T, manifest string) {
 	t.Helper()
 	cfgHome := t.TempDir()
+	stateHome := t.TempDir()
+	cacheHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", cfgHome)
+		t.Setenv("LOCALAPPDATA", stateHome)
+	}
 
 	if manifest == "" {
 		return
@@ -60,8 +67,27 @@ func TestRunDoctorSucceedsWhenNothingIsBroken(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			doctorEnv(t, tc.manifest)
-			if err := runDoctor(doctorCmd, nil); err != nil {
-				t.Errorf("runDoctor: %v, want nil", err)
+
+			var runErr error
+			out := withJSON(t, func() {
+				runErr = runDoctor(doctorCmd, nil)
+			})
+			if runErr != nil {
+				t.Fatalf("runDoctor: %v, want nil", runErr)
+			}
+
+			var report doctorReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v\noutput:\n%s", err, out)
+			}
+			got := map[string]bool{}
+			for _, c := range report.Checks {
+				got[c.Name] = true
+			}
+			for _, want := range []string{"platform", "config", "registry", "state", "bin_dir"} {
+				if !got[want] {
+					t.Errorf("doctor report is missing the %q check: %+v", want, report.Checks)
+				}
 			}
 		})
 	}

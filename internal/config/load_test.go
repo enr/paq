@@ -10,110 +10,90 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// TestLoadEmbeddedRegistry verifies that the embedded registry parses into a
+// non-empty set of specs. This is deliberately the only assertion here: it
+// catches real registry breakage (a syntax error, an empty registry) and
+// never needs updating when a routine data commit (a version bump, a new
+// recipe) touches the registry but not the loader. Loader *behaviour* — per-OS
+// overrides, per-OS-arch overrides, arch mapping, multi-binary parsing,
+// template expansion — is covered on synthetic fixtures below and in
+// overlay_test.go, so it survives registry data changes untouched.
 func TestLoadEmbeddedRegistry(t *testing.T) {
 	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// ripgrep deve essere presente
-	rg, ok := specs["ripgrep"]
-	if !ok {
-		t.Fatal("ripgrep spec not found")
-	}
-	if rg.Backend != "github" {
-		t.Errorf("ripgrep.Backend = %q, want github", rg.Backend)
-	}
-	if rg.Repo != "BurntSushi/ripgrep" {
-		t.Errorf("ripgrep.Repo = %q, want BurntSushi/ripgrep", rg.Repo)
-	}
-	if rg.Archive != "tar.gz" {
-		t.Errorf("ripgrep.Archive = %q, want tar.gz", rg.Archive)
-	}
-	if rg.Arch["amd64"] != "x86_64" {
-		t.Errorf("ripgrep.Arch[amd64] = %q, want x86_64", rg.Arch["amd64"])
-	}
-
-	// jdk deve essere presente
-	jdk, ok := specs["jdk"]
-	if !ok {
-		t.Fatal("jdk spec not found")
-	}
-	if jdk.Backend != "url" {
-		t.Errorf("jdk.Backend = %q, want url", jdk.Backend)
-	}
-	if jdk.StripComponents != 1 {
-		t.Errorf("jdk.StripComponents = %d, want 1", jdk.StripComponents)
-	}
-	if jdk.OS["darwin"] != "macos" {
-		t.Errorf("jdk.OS[darwin] = %q, want macos", jdk.OS["darwin"])
-	}
-
-	// override per-OS darwin
-	darwinOv, ok := jdk.OSOverrides["darwin"]
-	if !ok {
-		t.Fatal("jdk darwin override not found")
-	}
-	if darwinOv.StripComponents == nil || *darwinOv.StripComponents != 0 {
-		t.Errorf("jdk darwin StripComponents override = %v, want 0", darwinOv.StripComponents)
-	}
-	if darwinOv.Subdir != "*/Contents/Home" {
-		t.Errorf("jdk darwin Subdir = %q, want */Contents/Home", darwinOv.Subdir)
-	}
-
-	// zipp should use multi-binary mode.
-	zipp, ok := specs["zipp"]
-	if !ok {
-		t.Fatal("zipp spec not found")
-	}
-	if len(zipp.Binaries) != 3 {
-		t.Fatalf("zipp.Binaries len = %d, want 3", len(zipp.Binaries))
-	}
-	if zipp.Binaries[0].From != "zipts{{ext}}" {
-		t.Errorf("zipp.Binaries[0].From = %q, want zipts{{ext}}", zipp.Binaries[0].From)
+	if len(specs) == 0 {
+		t.Fatal("embedded registry parsed to zero specs")
 	}
 }
 
-// TestRunpSpec verifies the runp spec (github backend, multi-platform zip asset).
-func TestRunpSpec(t *testing.T) {
+// TestEmbeddedRegistrySpecsAreStructurallyValid is a structural validity pass
+// over every embedded spec: catches real registry-authoring mistakes (a
+// backend typo, a github spec with no repo, extract+binaries both set) without
+// ever asserting on any spec's actual data, so it never needs updating for a
+// routine registry commit.
+func TestEmbeddedRegistrySpecsAreStructurallyValid(t *testing.T) {
 	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
 	if err != nil {
 		t.Fatal(err)
 	}
+	for name, s := range specs {
+		if s.Backend == "" {
+			t.Errorf("%s: no backend", name)
+			continue
+		}
+		switch s.Backend {
+		case "github":
+			if s.Repo == "" {
+				t.Errorf("%s: github backend with no repo", name)
+			}
+		case "url":
+			if s.Source == "" {
+				t.Errorf("%s: url backend with no source", name)
+			}
+		default:
+			t.Errorf("%s: unknown backend %q", name, s.Backend)
+		}
+		if s.Extract != "" && len(s.Binaries) > 0 {
+			t.Errorf("%s: sets both extract and binaries (mutually exclusive)", name)
+		}
+	}
+}
 
-	runp, ok := specs["runp"]
-	if !ok {
-		t.Fatal("runp spec not found")
+// TestRunpSpec verifies, on a synthetic github-backend spec with a
+// multi-platform zip asset, that SupportsPlatform matches exactly the
+// platforms listed — not tied to any real recipe's data, so retiring or
+// changing a registry recipe cannot break it.
+func TestRunpSpec(t *testing.T) {
+	data := []byte(`
+[tool]
+backend = "github"
+repo = "owner/tool"
+asset = "tool-{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+extract = "tool{{ext}}"
+platforms = ["linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"]
+
+[tool.verify]
+sha256_asset = "tool-{{version}}_checksums.txt"
+`)
+	specs, err := parseSpecFile(data)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if runp.Backend != "github" {
-		t.Errorf("runp.Backend = %q, want github", runp.Backend)
-	}
-	if runp.Repo != "enr/runp" {
-		t.Errorf("runp.Repo = %q, want enr/runp", runp.Repo)
-	}
-	if runp.Asset != "runp-{{version}}_{{os}}_{{arch}}.zip" {
-		t.Errorf("runp.Asset = %q, want runp-{{version}}_{{os}}_{{arch}}.zip", runp.Asset)
-	}
-	if runp.Archive != "zip" {
-		t.Errorf("runp.Archive = %q, want zip", runp.Archive)
-	}
-	if runp.Extract != "runp{{ext}}" {
-		t.Errorf("runp.Extract = %q, want runp{{ext}}", runp.Extract)
-	}
-	if runp.Verify.SHA256Asset != "runp-{{version}}_checksums.txt" {
-		t.Errorf("runp.Verify.SHA256Asset = %q, want runp-{{version}}_checksums.txt", runp.Verify.SHA256Asset)
-	}
+	tool := specs["tool"]
 
 	wantPlatforms := []string{"linux/amd64", "linux/arm64", "darwin/arm64", "windows/amd64"}
 	for _, p := range wantPlatforms {
 		os, arch, _ := strings.Cut(p, "/")
-		if !runp.SupportsPlatform(os, arch) {
-			t.Errorf("runp should support %s", p)
+		if !tool.SupportsPlatform(os, arch) {
+			t.Errorf("tool should support %s", p)
 		}
 	}
-	// A platform not distributed must not be supported.
-	if runp.SupportsPlatform("darwin", "amd64") {
-		t.Error("runp should not support darwin/amd64")
+	// A platform not listed must not be supported.
+	if tool.SupportsPlatform("darwin", "amd64") {
+		t.Error("tool should not support darwin/amd64")
 	}
 }
 
@@ -148,20 +128,46 @@ func TestWindowsArchiveOverride(t *testing.T) {
 	}
 }
 
-// TestMicroSpec verifies the micro recipe: the asset name depends on the
-// (os, arch) pair, so darwin/amd64 (which keeps the legacy "osx" name) is
-// covered by the [micro.darwin.amd64] sub-section.
+// TestMicroSpec verifies, on a synthetic spec shaped like a recipe whose
+// asset name depends on the (os, arch) pair, that a per-OS override combined
+// with a nested per-OS-arch sub-section (a legacy asset name for one
+// specific pair, here darwin/amd64) resolves correctly through
+// ApplyPlatformOverride + template.Resolve. Built from a fabricated spec
+// rather than a real recipe, so a routine registry data change cannot break it.
 func TestMicroSpec(t *testing.T) {
-	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
+	data := []byte(`
+[tool]
+backend = "url"
+source = "https://example.invalid/tool-{{version}}-{{os}}-{{arch}}"
+asset = "tool-{{version}}-linux64.tar.gz"
+archive = "tar.gz"
+
+[tool.verify]
+sha256_asset = "{{asset}}.sha"
+
+[tool.linux.arm64]
+asset = "tool-{{version}}-linux-arm64.tar.gz"
+
+[tool.darwin]
+asset = "tool-{{version}}-macos-arm64.tar.gz"
+
+[tool.darwin.amd64]
+asset = "tool-{{version}}-osx.tar.gz"
+
+[tool.windows]
+archive = "zip"
+asset = "tool-{{version}}-win64.zip"
+
+[tool.windows.arm64]
+asset = "tool-{{version}}-win-arm64.zip"
+`)
+	specs, err := parseSpecFile(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	micro, ok := specs["micro"]
-	if !ok {
-		t.Fatal("micro spec not found")
-	}
-	if micro.Verify.SHA256Asset != "{{asset}}.sha" {
-		t.Errorf("micro.Verify.SHA256Asset = %q, want {{asset}}.sha", micro.Verify.SHA256Asset)
+	tool := specs["tool"]
+	if tool.Verify.SHA256Asset != "{{asset}}.sha" {
+		t.Errorf("Verify.SHA256Asset = %q, want {{asset}}.sha", tool.Verify.SHA256Asset)
 	}
 
 	cases := []struct {
@@ -169,19 +175,19 @@ func TestMicroSpec(t *testing.T) {
 		wantAsset   string
 		wantArchive string
 	}{
-		{"linux", "amd64", "micro-2.0.15-linux64.tar.gz", "tar.gz"},
-		{"linux", "arm64", "micro-2.0.15-linux-arm64.tar.gz", "tar.gz"},
-		{"darwin", "amd64", "micro-2.0.15-osx.tar.gz", "tar.gz"},
-		{"darwin", "arm64", "micro-2.0.15-macos-arm64.tar.gz", "tar.gz"},
-		{"windows", "amd64", "micro-2.0.15-win64.zip", "zip"},
-		{"windows", "arm64", "micro-2.0.15-win-arm64.zip", "zip"},
+		{"linux", "amd64", "tool-2.0.15-linux64.tar.gz", "tar.gz"},
+		{"linux", "arm64", "tool-2.0.15-linux-arm64.tar.gz", "tar.gz"},
+		{"darwin", "amd64", "tool-2.0.15-osx.tar.gz", "tar.gz"},
+		{"darwin", "arm64", "tool-2.0.15-macos-arm64.tar.gz", "tar.gz"},
+		{"windows", "amd64", "tool-2.0.15-win64.zip", "zip"},
+		{"windows", "arm64", "tool-2.0.15-win-arm64.zip", "zip"},
 	}
 
 	for _, tc := range cases {
-		if !micro.SupportsPlatform(tc.os, tc.arch) {
-			t.Errorf("micro should support %s/%s", tc.os, tc.arch)
+		if !tool.SupportsPlatform(tc.os, tc.arch) {
+			t.Errorf("tool should support %s/%s", tc.os, tc.arch)
 		}
-		s := micro.ApplyPlatformOverride(tc.os, tc.arch)
+		s := tool.ApplyPlatformOverride(tc.os, tc.arch)
 		vars := template.Vars{
 			OS:      platform.ApplyMap(s.OS, tc.os, tc.os),
 			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
@@ -200,37 +206,56 @@ func TestMicroSpec(t *testing.T) {
 	}
 }
 
-// TestVSCodeSpec verifies the vscode recipe: the update service encodes the
-// platform in the URL path, and Windows needs both the "-archive" suffix (to
-// get the portable zip instead of the installer) and strip_components = 0.
+// TestVSCodeSpec verifies, on a synthetic spec shaped like a recipe whose
+// download URL and checksum URL both embed a meta-template value that
+// differs on one OS (Windows needs an "-archive" suffix), that
+// ApplyPlatformOverride + template.Expand + template.Resolve produce the
+// right URL and archive settings per (os, arch), and that SupportsPlatform
+// correctly excludes a platform the spec doesn't list. Built from a
+// fabricated spec rather than the real vscode recipe, so a routine registry
+// data change cannot break it.
 func TestVSCodeSpec(t *testing.T) {
-	specs, err := LoadEmbeddedRegistry(embedded.RegistryFS)
+	data := []byte(`
+[tool]
+backend = "url"
+source = "https://update.example.invalid/{{version}}/{{tool_platform}}/stable"
+archive = "tar.gz"
+strip_components = 1
+latest_strategy = "json"
+latest_url = "https://update.example.invalid/api/update/linux-x64/stable/latest"
+latest_json = "productVersion"
+platforms = ["linux/amd64", "linux/arm64", "windows/amd64", "windows/arm64"]
+
+[tool.templates]
+tool_platform = "{{os}}-{{arch}}"
+
+[tool.templates_os.windows]
+tool_platform = "{{os}}-{{arch}}-archive"
+
+[tool.arch]
+amd64 = "x64"
+
+[tool.os]
+windows = "win32"
+
+[tool.windows]
+archive = "zip"
+strip_components = 0
+
+[tool.verify]
+sha256_url = "https://update.example.invalid/api/update/{{tool_platform}}/stable/latest"
+sha256_json = "sha256hash"
+`)
+	specs, err := parseSpecFile(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vscode, ok := specs["vscode"]
-	if !ok {
-		t.Fatal("vscode spec not found")
+	tool := specs["tool"]
+	if tool.LatestStrategy != "json" {
+		t.Errorf("LatestStrategy = %q, want json", tool.LatestStrategy)
 	}
-	if vscode.Backend != "url" {
-		t.Errorf("vscode.Backend = %q, want url", vscode.Backend)
-	}
-	// The recipe tracks the current stable release: version and checksum both
-	// come from the update API, the only build whose sha256 is published.
-	if vscode.LatestStrategy != "json" {
-		t.Errorf("vscode.LatestStrategy = %q, want json", vscode.LatestStrategy)
-	}
-	if vscode.LatestURL == "" || vscode.LatestJSON != "productVersion" {
-		t.Errorf("vscode latest document = %q/%q, want a URL and productVersion", vscode.LatestURL, vscode.LatestJSON)
-	}
-	if vscode.DefaultVersion != "" {
-		t.Errorf("vscode.DefaultVersion = %q, want empty: a pinned version cannot be verified", vscode.DefaultVersion)
-	}
-	if vscode.Verify.SHA256JSON != "sha256hash" {
-		t.Errorf("vscode.Verify.SHA256JSON = %q, want sha256hash", vscode.Verify.SHA256JSON)
-	}
-	if !vscode.Verify.Enabled() {
-		t.Error("vscode must configure verification")
+	if !tool.Verify.Enabled() {
+		t.Error("tool must configure verification")
 	}
 
 	cases := []struct {
@@ -239,17 +264,17 @@ func TestVSCodeSpec(t *testing.T) {
 		wantArchive string
 		wantStrip   int
 	}{
-		{"linux", "amd64", "https://update.code.visualstudio.com/1.99.0/linux-x64/stable", "tar.gz", 1},
-		{"linux", "arm64", "https://update.code.visualstudio.com/1.99.0/linux-arm64/stable", "tar.gz", 1},
-		{"windows", "amd64", "https://update.code.visualstudio.com/1.99.0/win32-x64-archive/stable", "zip", 0},
-		{"windows", "arm64", "https://update.code.visualstudio.com/1.99.0/win32-arm64-archive/stable", "zip", 0},
+		{"linux", "amd64", "https://update.example.invalid/1.99.0/linux-x64/stable", "tar.gz", 1},
+		{"linux", "arm64", "https://update.example.invalid/1.99.0/linux-arm64/stable", "tar.gz", 1},
+		{"windows", "amd64", "https://update.example.invalid/1.99.0/win32-x64-archive/stable", "zip", 0},
+		{"windows", "arm64", "https://update.example.invalid/1.99.0/win32-arm64-archive/stable", "zip", 0},
 	}
 
 	for _, tc := range cases {
-		if !vscode.SupportsPlatform(tc.os, tc.arch) {
-			t.Errorf("vscode should support %s/%s", tc.os, tc.arch)
+		if !tool.SupportsPlatform(tc.os, tc.arch) {
+			t.Errorf("tool should support %s/%s", tc.os, tc.arch)
 		}
-		s := vscode.ApplyPlatformOverride(tc.os, tc.arch)
+		s := tool.ApplyPlatformOverride(tc.os, tc.arch)
 		vars := template.Vars{
 			OS:      platform.ApplyMap(s.OS, tc.os, tc.os),
 			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
@@ -275,7 +300,7 @@ func TestVSCodeSpec(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s/%s: resolve sha256_url: %v", tc.os, tc.arch, err)
 		}
-		if want := "/api/update/" + vars.Extra["vscode_platform"] + "/stable/latest"; !strings.HasSuffix(checksumURL, want) {
+		if want := "/api/update/" + vars.Extra["tool_platform"] + "/stable/latest"; !strings.HasSuffix(checksumURL, want) {
 			t.Errorf("%s/%s checksum URL = %q, want suffix %q", tc.os, tc.arch, checksumURL, want)
 		}
 		if s.Archive != tc.wantArchive {
@@ -286,9 +311,9 @@ func TestVSCodeSpec(t *testing.T) {
 		}
 	}
 
-	// macOS ships a .app bundle with symlinks, which the zip extractor rejects.
-	if vscode.SupportsPlatform("darwin", "arm64") {
-		t.Error("vscode should not support darwin/arm64")
+	// A platform not listed in "platforms" must not be supported.
+	if tool.SupportsPlatform("darwin", "arm64") {
+		t.Error("tool should not support darwin/arm64")
 	}
 }
 

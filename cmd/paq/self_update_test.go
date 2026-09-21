@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -182,15 +183,16 @@ func TestRunSelfUpdateCheckOnlyReportsAvailability(t *testing.T) {
 // TestRunSelfUpdateForceProceedsWhenUpToDate verifies --force bypasses the
 // up-to-date short-circuit: it must reach the real update path (asset
 // resolution) rather than silently no-opping like a plain `self-update` would.
-// The fixture has no asset endpoints, so the attempt fails past that point —
-// the failure itself is the proof --force did not take the early return.
+// The fixture has no asset endpoints, so the attempt fails past that point
+// with a 404 from the release-asset endpoint; otherRequest is the proof
+// --force actually reached it rather than taking the early return.
 func TestRunSelfUpdateForceProceedsWhenUpToDate(t *testing.T) {
 	withVersion(t, "1.0.0")
 	otherRequest := serveSelfUpdateLatest(t, "v1.0.0")
 
 	err := runSelfUpdate(selfUpdateCmdWithFlags(t, false, true), nil)
-	if err == nil {
-		t.Fatal("expected an error once --force proceeds to a real (unfixtured) download, got nil")
+	if err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("err = %v, want a 404 for the unfixtured release-asset endpoint", err)
 	}
 	if !otherRequest.Load() {
 		t.Error("--force did not attempt to resolve/download release assets")

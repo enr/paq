@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -17,19 +20,46 @@ import (
 // any upgrade is attempted, regardless of its position in the argument list.
 func TestRunUpgradeMultiArgFailsFastOnUnknownName(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withConfigHome(t, dir)
+	withStateHome(t, t.TempDir())
 
 	block := renderAppEntryTOML("rg", config.AppEntry{Use: "ripgrep", Version: "14.1.1"})
 	if _, err := config.WriteManifestEntry("rg", block, false); err != nil {
 		t.Fatalf("write manifest entry: %v", err)
 	}
 
-	if err := runUpgrade(upgradeCmd, []string{"rg", "typo-xyz-does-not-exist"}); err == nil {
-		t.Error("expected an error when the second argument is unknown")
+	// "Fails fast" means nothing is attempted for the valid name either: no
+	// per-app step is printed for "rg" (which would happen the moment
+	// runParallel started processing it), and its state record is untouched.
+	before, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := runUpgrade(upgradeCmd, []string{"typo-xyz-does-not-exist", "rg"}); err == nil {
-		t.Error("expected an error when the first argument is unknown")
+
+	out := captureStdout(t, func() {
+		if err := runUpgrade(upgradeCmd, []string{"rg", "typo-xyz-does-not-exist"}); err == nil {
+			t.Error("expected an error when the second argument is unknown")
+		}
+	})
+	if out != "" {
+		t.Errorf("an invalid later argument must prevent every upgrade, got output: %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		if err := runUpgrade(upgradeCmd, []string{"typo-xyz-does-not-exist", "rg"}); err == nil {
+			t.Error("expected an error when the first argument is unknown")
+		}
+	})
+	if out != "" {
+		t.Errorf("an invalid earlier argument must prevent every upgrade, got output: %q", out)
+	}
+
+	after, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Packages, after.Packages) {
+		t.Error("state changed despite the batch failing fast on an unknown name")
 	}
 }
 
@@ -38,8 +68,8 @@ func TestRunUpgradeMultiArgFailsFastOnUnknownName(t *testing.T) {
 // call, since they're not "latest") and the command succeeds.
 func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withConfigHome(t, dir)
+	withStateHome(t, t.TempDir())
 
 	for name, use := range map[string]string{"rg": "ripgrep", "bat": "bat"} {
 		block := renderAppEntryTOML(name, config.AppEntry{Use: use, Version: "1.0.0"})
@@ -48,13 +78,11 @@ func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 		}
 	}
 
-	// cobra only sets Command.Context() during Execute(); set it explicitly
-	// since this test calls runUpgrade directly and it reaches the
-	// errgroup.WithContext call for these (valid, pinned) apps.
-	upgradeCmd.SetContext(context.Background())
-	t.Cleanup(func() { upgradeCmd.SetContext(nil) })
-
-	if err := runUpgrade(upgradeCmd, []string{"rg", "bat"}); err != nil {
+	// cobra only sets Command.Context() during Execute(); this test calls
+	// runUpgrade directly and it reaches the errgroup.WithContext call for
+	// these (valid, pinned) apps, so use a throwaway command carrying a
+	// context rather than mutating the shared global upgradeCmd.
+	if err := runUpgrade(cmdWithContext(), []string{"rg", "bat"}); err != nil {
 		t.Errorf("expected pinned apps to be skipped without error, got: %v", err)
 	}
 }
@@ -66,7 +94,7 @@ func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 // can't actually resolve "latest", so it reaches the "no upstream strategy"
 // skip instead of the (buggy) "pinned to , skipping" path.
 func TestUpgradeAppEmptyVersionNoDefaultTracksLatest(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	cfg := &config.Config{
 		Apps: map[string]config.AppEntry{
@@ -104,7 +132,7 @@ func TestUpgradeAppEmptyVersionNoDefaultTracksLatest(t *testing.T) {
 // pinned, and the skip message names the default version rather than
 // printing an empty string ("pinned to , skipping").
 func TestUpgradeAppEmptyVersionWithDefaultSkipsWithDefaultInMessage(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	cfg := &config.Config{
 		Apps: map[string]config.AppEntry{
@@ -228,5 +256,89 @@ func TestResolveLatestVersionInvalidMinimumAge(t *testing.T) {
 	_, err := resolveLatestVersion(context.Background(), &cfg, spec, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid minimum_release_age") {
 		t.Fatalf("expected an invalid minimum_release_age error, got %v", err)
+	}
+}
+
+// TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall reproduces the legacy
+// case cleanupOldVersions' keep-set exists for: two versions of an app
+// sharing one version-independent dest (the pipeline overwrote in place).
+// Cleaning up the old version must not delete the dest the new version still
+// owns. cleanupOldVersions was at 0% coverage before this test, and its
+// keep-set can be replaced with an empty map with the suite staying green
+// (AUDIT-TESTS.md §4.8, mutation M20).
+func TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall(t *testing.T) {
+	withStateHome(t, t.TempDir())
+
+	destDir := filepath.Join(t.TempDir(), "tool")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(destDir, "bin")
+	if err := os.WriteFile(marker, []byte("payload"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// State already reflects the post-install world: both versions recorded,
+	// sharing the same dest (as install.Run, called before cleanup, leaves it).
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: destDir})
+	st.Set(state.InstalledApp{Name: "tool", Version: "2.0.0", Kind: "dir", Dest: destDir})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	// old is what upgradeApp captured before installing 2.0.0: just 1.0.0.
+	old := []state.InstalledApp{{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: destDir}}
+	if err := cleanupOldVersions("tool", "2.0.0", old, func(string, ...any) {}); err != nil {
+		t.Fatalf("cleanupOldVersions: %v", err)
+	}
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("shared dest was deleted while 2.0.0 still owns it: %v", err)
+	}
+	st2, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st2.Get("tool", "2.0.0"); !ok {
+		t.Error("surviving version 2.0.0 should remain in state")
+	}
+	if _, ok := st2.Get("tool", "1.0.0"); ok {
+		t.Error("cleaned-up version 1.0.0 should be gone from state")
+	}
+}
+
+// TestCleanupOldVersionsRemovesVersionSpecificDest is the mirror case: two
+// versions with distinct, version-specific dests. Cleanup must delete the
+// old one's files, unlike the shared-dest case above.
+func TestCleanupOldVersionsRemovesVersionSpecificDest(t *testing.T) {
+	withStateHome(t, t.TempDir())
+
+	oldDest := filepath.Join(t.TempDir(), "tool-1.0.0")
+	newDest := filepath.Join(t.TempDir(), "tool-2.0.0")
+	if err := os.MkdirAll(oldDest, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: oldDest})
+	st.Set(state.InstalledApp{Name: "tool", Version: "2.0.0", Kind: "dir", Dest: newDest})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	old := []state.InstalledApp{{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: oldDest}}
+	if err := cleanupOldVersions("tool", "2.0.0", old, func(string, ...any) {}); err != nil {
+		t.Fatalf("cleanupOldVersions: %v", err)
+	}
+
+	if _, err := os.Stat(oldDest); !os.IsNotExist(err) {
+		t.Errorf("old version-specific dest should have been removed, stat err = %v", err)
 	}
 }

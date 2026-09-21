@@ -58,12 +58,8 @@ func TestRunUninstallNonTTYRequiresYes(t *testing.T) {
 		t.Fatalf("save state: %v", err)
 	}
 
-	flagUninstallYes = false
-	flagUninstallDryRun = false
-	t.Cleanup(func() {
-		flagUninstallYes = false
-		flagUninstallDryRun = false
-	})
+	withFlag(t, &flagUninstallYes, false)
+	withFlag(t, &flagUninstallDryRun, false)
 
 	if err := runUninstall(uninstallCmd, []string{"rg"}); err == nil {
 		t.Fatal("expected an error without --yes in a non-interactive session")
@@ -106,12 +102,8 @@ func TestRunUninstallMultiApp(t *testing.T) {
 	}
 
 	// --yes: this test is about multi-app removal, not the confirmation flow.
-	flagUninstallYes = true
-	flagUninstallDryRun = false
-	t.Cleanup(func() {
-		flagUninstallYes = false
-		flagUninstallDryRun = false
-	})
+	withFlag(t, &flagUninstallYes, true)
+	withFlag(t, &flagUninstallDryRun, false)
 
 	if err := runUninstall(uninstallCmd, []string{"rg", "bat"}); err != nil {
 		t.Fatalf("runUninstall: %v", err)
@@ -145,12 +137,8 @@ func TestRunUninstallMultiAppFailsFastOnUnknownName(t *testing.T) {
 		t.Fatalf("save state: %v", err)
 	}
 
-	flagUninstallYes = false
-	flagUninstallDryRun = false
-	t.Cleanup(func() {
-		flagUninstallYes = false
-		flagUninstallDryRun = false
-	})
+	withFlag(t, &flagUninstallYes, false)
+	withFlag(t, &flagUninstallDryRun, false)
 
 	err = runUninstall(uninstallCmd, []string{"rg", "not-installed-xyz"})
 	if err == nil {
@@ -224,8 +212,7 @@ func TestRunUninstallKeepsSharedDest(t *testing.T) {
 	prevIsTTY := uninstallIsTTY
 	uninstallIsTTY = func() bool { return false }
 	t.Cleanup(func() { uninstallIsTTY = prevIsTTY })
-	flagUninstallYes = true
-	t.Cleanup(func() { flagUninstallYes = false })
+	withFlag(t, &flagUninstallYes, true)
 
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 

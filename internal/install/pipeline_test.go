@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,6 +19,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -25,6 +29,7 @@ import (
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/version"
+	minisign "github.com/jedisct1/go-minisign"
 )
 
 // makeFakeTarGz creates an in-memory .tar.gz with a single "rg" file containing content.
@@ -64,7 +69,11 @@ func makeFakeZip(topDir, name string, content []byte) []byte {
 // running Run() don't write to the user's real state.
 func isolateState(t *testing.T) {
 	t.Helper()
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", dir)
+	}
 }
 
 // TestPipelineSHA512URLBackend verifies installation via the "url" backend
@@ -235,6 +244,35 @@ func TestPipelineLatestNoStrategyErrors(t *testing.T) {
 	err := Run(context.Background(), cfg, "tool", nil, nil)
 	if !errors.Is(err, version.ErrLatestNotImplemented) {
 		t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
+	}
+}
+
+// TestPipelineLatestWithDefaultVersionSuggestsOmittingIt verifies the other
+// side of TestPipelineLatestNoStrategyErrors: when the spec DOES have a
+// default_version, version="latest" on a no-strategy backend gets the
+// friendlier, teaching error instead of the bare ErrLatestNotImplemented.
+func TestPipelineLatestWithDefaultVersionSuggestsOmittingIt(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:        "url",
+				Source:         "https://example.com/{{version}}.zip",
+				Archive:        "zip",
+				DefaultVersion: "1.2.3",
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "latest", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "1.2.3") {
+		t.Fatalf("error = %v, want it to suggest the default version 1.2.3", err)
+	}
+	if !strings.Contains(err.Error(), "omit the version") {
+		t.Errorf("error = %v, want it to suggest omitting the version", err)
 	}
 }
 
@@ -564,16 +602,11 @@ func TestPipelineInstallFile(t *testing.T) {
 		},
 	}
 
-	// Patch: the GitHub API must point to the test server.
-	// For simplicity, we modify the spec using the "url" backend
-	// and test the pipeline with a GitHub API mock via transport.
-	// We use a more direct approach: monkey-patch the HTTP client.
-	// The test uses a custom transport that redirects to the test server.
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
-	defer func() { http.DefaultTransport = origTransport }()
+	// Redirect the GitHub API and asset requests to the test server without
+	// touching any process-global state.
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
 
-	err := Run(context.Background(), cfg, "rg", nil, nil)
+	err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client})
 	if err != nil {
 		t.Fatalf("install failed: %v", err)
 	}
@@ -650,11 +683,9 @@ func TestPipelineMinimumReleaseAgeDefaultAppliesToGitHub(t *testing.T) {
 		},
 	}
 
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
-	defer func() { http.DefaultTransport = origTransport }()
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
 
-	if err := Run(context.Background(), cfg, "rg", nil, nil); err != nil {
+	if err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client}); err != nil {
 		t.Fatalf("install failed: %v", err)
 	}
 
@@ -792,11 +823,9 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 		},
 	}
 
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
-	defer func() { http.DefaultTransport = origTransport }()
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
 
-	err := Run(context.Background(), cfg, "rg", nil, nil)
+	err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client})
 	if err == nil {
 		t.Error("expected error for checksum mismatch, got nil")
 	}
@@ -1116,6 +1145,82 @@ func TestPipelineDoesNotAnnounceSuccessBeforeStateSaveSucceeds(t *testing.T) {
 	}
 }
 
+// TestPipelineLockWriteFailureOnlyWarns verifies that a paq.lock.toml write
+// failure only warns: the install has already succeeded and the state is
+// recorded, so a read-only config directory must not turn that into a failed
+// install. (The mirror bug — changing warn to a hard failure — would mean a
+// user with a root-owned ~/.config/paq can no longer install anything.)
+func TestPipelineLockWriteFailureOnlyWarns(t *testing.T) {
+	isolateState(t)
+
+	// Point the manifest (and thus paq.lock.toml, which lives next to it) at
+	// a path whose directory is a regular file: MkdirAll then fails
+	// deterministically, mirroring the state-save-failure trick above.
+	blocker := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	savedPathOverride := config.PathOverride
+	config.PathOverride = filepath.Join(blocker, "config.toml")
+	t.Cleanup(func() { config.PathOverride = savedPathOverride })
+
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	assetName := "ripgrep-1.0.0-x86_64-unknown-linux-gnu.tar.gz"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "releases/latest"):
+			json.NewEncoder(w).Encode(map[string]string{"tag_name": "v1.0.0"})
+		case strings.Contains(r.URL.Path, "releases/tags"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"assets": []map[string]string{
+					{"name": assetName, "url": "http://" + r.Host + "/download/" + assetName},
+				},
+			})
+		default:
+			w.Write(tgzData)
+		}
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
+	dest := filepath.Join(t.TempDir(), "rg")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"ripgrep": {
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				Asset:             assetName,
+				Archive:           "tar.gz",
+				Extract:           "rg",
+				MinimumReleaseAge: "0h", // take the fast /releases/latest path
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"rg": {Use: "ripgrep", Version: "latest", Dest: dest},
+		},
+	}
+
+	var warnings []string
+	hooks := &Hooks{HTTPClient: client, OnWarn: func(msg string) { warnings = append(warnings, msg) }}
+	if err := Run(context.Background(), cfg, "rg", nil, hooks); err != nil {
+		t.Fatalf("Run failed despite a lock-write-only failure: %v", err)
+	}
+
+	if _, err := os.Stat(dest); err != nil {
+		t.Errorf("install did not complete: %v", err)
+	}
+
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "paq.lock.toml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no warning mentioned paq.lock.toml, got: %v", warnings)
+	}
+}
+
 // TestPipelineSkipsWhenAlreadyInstalled verifies that a second install of the
 // same version does no work at all, and that Force overrides the skip. Without
 // this, a broken skip check makes every `paq install` re-download and
@@ -1399,5 +1504,357 @@ func TestPipelineRejectsIncoherentSHA256Config(t *testing.T) {
 				t.Errorf("error = %q, want mention of %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestPipelineUsesAppNameWhenUseOmitted verifies that an app entry with no
+// `use` field resolves the spec by the app's own name — the fallback used by
+// a hand-written manifest entry (auto-import always sets Use, but a
+// hand-written [apps.ripgrep] with no `use` is a documented, real case).
+func TestPipelineUsesAppNameWhenUseOmitted(t *testing.T) {
+	isolateState(t)
+	fileContent := []byte("fake-mvn-binary")
+	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", fileContent)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".zip") {
+			w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "maven")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			// The spec is registered under the app's own name, "maven".
+			"maven": {
+				Backend:         "url",
+				Source:          srv.URL + "/apache-maven-{{version}}-bin.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"maven": {Version: "1.0.0", Dest: dest}, // no Use
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "maven", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "mvn")); err != nil {
+		t.Errorf("installed file not found: %v", err)
+	}
+}
+
+// TestPipelineUnknownSpecNamesIt verifies that an app whose (resolved) spec
+// name isn't in the registry fails with an error naming that spec, rather
+// than a generic lookup failure.
+func TestPipelineUnknownSpecNamesIt(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "no-such-spec", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `spec "no-such-spec" not found in registry`) {
+		t.Fatalf("error = %v, want it to name the unknown spec", err)
+	}
+}
+
+// TestPipelineUnknownBackendErrors verifies that a spec with a typo'd
+// `backend` (e.g. "gihub" instead of "github") fails with an error naming
+// the unknown value, rather than a confusing failure further down the
+// pipeline.
+func TestPipelineUnknownBackendErrors(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "gihub", Repo: "test/tool"},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `unknown backend: "gihub"`) {
+		t.Fatalf("error = %v, want it to name the unknown backend", err)
+	}
+}
+
+// TestPipelineRejectsUnsupportedPlatformWithoutNetwork verifies the
+// pre-flight platform check (pipeline.go, before any network access): a spec
+// that does not list the running platform fails before any request is made,
+// and the error names the supported list.
+func TestPipelineRejectsUnsupportedPlatformWithoutNetwork(t *testing.T) {
+	isolateState(t)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			// plan9/mips can never match the platform running this test.
+			"tool": {
+				Backend:   "url",
+				Source:    srv.URL + "/tool-{{version}}.tar.gz",
+				Archive:   "tar.gz",
+				Platforms: []string{"plan9/mips"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "is not available for") {
+		t.Fatalf("error = %v, want it to name the unsupported platform", err)
+	}
+	if !strings.Contains(err.Error(), "plan9/mips") {
+		t.Errorf("error = %v, want it to name the supported list", err)
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("server received %d requests, want 0 (must fail before any network access)", n)
+	}
+}
+
+// TestPipelineRejectsExtractWithBinaries verifies that a spec setting both
+// 'extract' and 'binaries' is rejected: without this guard, len(Binaries) > 0
+// loses to Extract != "" in the install-kind switch, so a spec setting both
+// would silently install one file and ignore the binaries list.
+func TestPipelineRejectsExtractWithBinaries(t *testing.T) {
+	isolateState(t)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:  "url",
+				Source:   srv.URL + "/tool-{{version}}.tar.gz",
+				Archive:  "tar.gz",
+				Extract:  "tool",
+				Binaries: []config.Binary{{From: "bin/tool", To: "tool"}},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("error = %v, want it to mention extract/binaries being mutually exclusive", err)
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("server received %d requests, want 0 (must fail before any network access)", n)
+	}
+}
+
+// newTestMinisignKey generates a throwaway minisign keypair for signing test
+// fixtures, and returns the private key plus the base64-encoded public key
+// (the string form a [config.MinisignConfig.PublicKey] field holds).
+func newTestMinisignKey(t *testing.T) (minisign.PrivateKey, string) {
+	t.Helper()
+	_, edPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ed25519 key: %v", err)
+	}
+	var sk minisign.PrivateKey
+	sk.SignatureAlgorithm = [2]byte{'E', 'd'}
+	copy(sk.SecretKey[:], edPriv)
+
+	pk := sk.PublicKey()
+	raw := make([]byte, 0, 42)
+	raw = append(raw, pk.SignatureAlgorithm[:]...)
+	raw = append(raw, pk.KeyId[:]...)
+	raw = append(raw, pk.PublicKey[:]...)
+	return sk, base64.StdEncoding.EncodeToString(raw)
+}
+
+// signMinisig signs data with sk and returns the encoded .minisig contents.
+func signMinisig(t *testing.T, sk minisign.PrivateKey, data []byte) []byte {
+	t.Helper()
+	sig, err := sk.Sign(data, minisign.SignOptions{Hashed: true})
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return sig.Encode()
+}
+
+// minisignFixtureSpec returns a "url"-backend spec configured with sha256 +
+// minisign verification, for the TestPipelineVerifiesMinisignSignatureOfChecksum
+// family of tests below. The served asset is named "tool-1.0.0.tar.gz".
+func minisignFixtureSpec(srvURL, pubKey string) config.Spec {
+	return config.Spec{
+		Backend: "url",
+		Source:  srvURL + "/tool-{{version}}.tar.gz",
+		Archive: "tar.gz",
+		Extract: "rg", // basename inside makeFakeTarGz's fixture entry
+		Verify: config.VerifyConfig{
+			SHA256Asset: "{{asset}}.sha256",
+			Minisign: config.MinisignConfig{
+				PublicKey:   pubKey,
+				SignedAsset: "{{asset}}.sha256.minisig",
+			},
+		},
+	}
+}
+
+// TestPipelineVerifiesMinisignSignatureOfChecksum verifies the end-to-end
+// happy path: a correctly signed checksum file lets a minisign-configured
+// install succeed. Before this test, no pipeline test ever configured a
+// valid [verify.minisign] spec end-to-end (AUDIT-TESTS.md §4.1): the
+// verify.CheckMinisign call at pipeline.go's signature-verification step was
+// never exercised, so deleting it left the suite green.
+func TestPipelineVerifiesMinisignSignatureOfChecksum(t *testing.T) {
+	isolateState(t)
+	sk, pubKey := newTestMinisignKey(t)
+
+	binaryContent := []byte("fake-rg-binary")
+	tgzData := makeFakeTarGz(binaryContent)
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		checksumFile := fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData))
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sha256.minisig"):
+			w.Write(signMinisig(t, sk, []byte(checksumFile)))
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(checksumFile))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	spec := minisignFixtureSpec(srv.URL, pubKey)
+	dest := filepath.Join(t.TempDir(), "rg")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("dest not found: %v", err)
+	}
+	if !bytes.Equal(data, binaryContent) {
+		t.Errorf("dest content = %q, want %q", data, binaryContent)
+	}
+}
+
+// TestPipelineRejectsBadMinisignSignature verifies that a checksum file
+// signed by a different key fails the install, names the signature in the
+// error, and never reaches the artifact endpoint: the signature is checked
+// before the artifact is downloaded (pipeline.go step 8, before step 9).
+func TestPipelineRejectsBadMinisignSignature(t *testing.T) {
+	isolateState(t)
+	_, pubKey := newTestMinisignKey(t)
+	other, _ := newTestMinisignKey(t)
+
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	var artifactRequests atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		checksumFile := fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData))
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sha256.minisig"):
+			w.Write(signMinisig(t, other, []byte(checksumFile))) // signed by a different key
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(checksumFile))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			artifactRequests.Add(1)
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	spec := minisignFixtureSpec(srv.URL, pubKey)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "rg")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for a signature made by a different key")
+	}
+	if !strings.Contains(err.Error(), "signature") {
+		t.Errorf("error = %q, want it to mention the signature", err)
+	}
+	if n := artifactRequests.Load(); n != 0 {
+		t.Errorf("artifact endpoint was requested %d times, want 0 (signature must be checked before download)", n)
+	}
+}
+
+// TestPipelineRejectsTamperedChecksumWithValidSignature verifies that a
+// signature valid for the original checksum body does not validate a
+// checksum file whose content has since been altered: the install must fail
+// at the signature step, not treat the tampered checksum as trusted.
+func TestPipelineRejectsTamperedChecksumWithValidSignature(t *testing.T) {
+	isolateState(t)
+	sk, pubKey := newTestMinisignKey(t)
+
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	originalChecksum := fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData))
+	signature := signMinisig(t, sk, []byte(originalChecksum))
+	// Tampered: a different (still well-formed) checksum line, e.g. pointing
+	// at an attacker-controlled hash, served in place of the signed one.
+	tamperedChecksum := "0000000000000000000000000000000000000000000000000000000000000000  tool-1.0.0.tar.gz\n"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sha256.minisig"):
+			w.Write(signature)
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(tamperedChecksum))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	spec := minisignFixtureSpec(srv.URL, pubKey)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "rg")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for a tampered checksum file")
+	}
+	if !strings.Contains(err.Error(), "signature") {
+		t.Errorf("error = %q, want it to mention the signature", err)
 	}
 }

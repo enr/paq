@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/enr/paq/internal/state"
-	"github.com/enr/paq/internal/ui"
 )
 
 // lsState seeds the state DB with one present and one missing record and
@@ -67,10 +66,7 @@ func TestRunLsKeepsTableShapeWithDrift(t *testing.T) {
 func TestRunLsJSONMarksMissingEntries(t *testing.T) {
 	lsState(t)
 
-	ui.Global.JSON = true
-	t.Cleanup(func() { ui.Global = ui.Config{} })
-
-	out := captureStdout(t, func() {
+	out := withJSON(t, func() {
 		if err := runLs(lsCmd, nil); err != nil {
 			t.Fatalf("runLs: %v", err)
 		}

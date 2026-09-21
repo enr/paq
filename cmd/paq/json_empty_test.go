@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,17 +21,21 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	orig := os.Stdout
 	os.Stdout = w
+	// Restore even if fn calls t.Fatal, which unwinds via runtime.Goexit.
+	defer func() { os.Stdout = orig }()
+
+	// Drain concurrently so a capture larger than the pipe buffer cannot
+	// deadlock fn's write.
+	done := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- b
+	}()
 
 	fn()
 
 	w.Close()
-	os.Stdout = orig
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read pipe: %v", err)
-	}
-	return string(out)
+	return string(<-done)
 }
 
 // withJSON runs fn with ui.Global.JSON set to true, restoring the previous
@@ -42,6 +47,35 @@ func withJSON(t *testing.T, fn func()) string {
 	defer func() { ui.Global = saved }()
 
 	return captureStdout(t, fn)
+}
+
+// withFlag sets *p to v for the duration of the test, restoring whatever
+// value *p held before — not a hardcoded default — once the test ends.
+func withFlag[T any](t *testing.T, p *T, v T) {
+	t.Helper()
+	old := *p
+	t.Cleanup(func() { *p = old })
+	*p = v
+}
+
+// withConfigHome points userConfigPath at dir, on Linux/macOS (XDG_CONFIG_HOME)
+// and Windows (APPDATA) alike.
+func withConfigHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("APPDATA", dir)
+	}
+}
+
+// withStateHome points state.StatePath at dir, on Linux/macOS (XDG_STATE_HOME)
+// and Windows (LOCALAPPDATA) alike.
+func withStateHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", dir)
+	}
 }
 
 func TestRunLsJSONEmptyPrintsEmptyArray(t *testing.T) {

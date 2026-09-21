@@ -16,7 +16,7 @@ func resetInitFlag(t *testing.T) {
 
 func TestRunInitCreatesManifest(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	withConfigHome(t, dir)
 	resetInitFlag(t)
 
 	if err := runInit(initCmd, nil); err != nil {
@@ -41,7 +41,7 @@ func TestRunInitCreatesManifest(t *testing.T) {
 
 func TestRunInitRefusesToOverwriteWithoutForce(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	withConfigHome(t, dir)
 	resetInitFlag(t)
 
 	if err := runInit(initCmd, nil); err != nil {
@@ -68,7 +68,7 @@ func TestRunInitRefusesToOverwriteWithoutForce(t *testing.T) {
 
 func TestRunInitForceOverwrites(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	withConfigHome(t, dir)
 	resetInitFlag(t)
 
 	path := filepath.Join(dir, "paq", "config.toml")
