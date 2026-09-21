@@ -60,8 +60,27 @@ func TestRunDoctorSucceedsWhenNothingIsBroken(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			doctorEnv(t, tc.manifest)
-			if err := runDoctor(doctorCmd, nil); err != nil {
-				t.Errorf("runDoctor: %v, want nil", err)
+
+			var runErr error
+			out := withJSON(t, func() {
+				runErr = runDoctor(doctorCmd, nil)
+			})
+			if runErr != nil {
+				t.Fatalf("runDoctor: %v, want nil", runErr)
+			}
+
+			var report doctorReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v\noutput:\n%s", err, out)
+			}
+			got := map[string]bool{}
+			for _, c := range report.Checks {
+				got[c.Name] = true
+			}
+			for _, want := range []string{"platform", "config", "registry", "state", "bin_dir"} {
+				if !got[want] {
+					t.Errorf("doctor report is missing the %q check: %+v", want, report.Checks)
+				}
 			}
 		})
 	}
