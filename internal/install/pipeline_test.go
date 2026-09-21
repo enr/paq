@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,6 +28,7 @@ import (
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/version"
+	minisign "github.com/jedisct1/go-minisign"
 )
 
 // makeFakeTarGz creates an in-memory .tar.gz with a single "rg" file containing content.
@@ -1390,5 +1394,199 @@ func TestPipelineRejectsIncoherentSHA256Config(t *testing.T) {
 				t.Errorf("error = %q, want mention of %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// newTestMinisignKey generates a throwaway minisign keypair for signing test
+// fixtures, and returns the private key plus the base64-encoded public key
+// (the string form a [config.MinisignConfig.PublicKey] field holds).
+func newTestMinisignKey(t *testing.T) (minisign.PrivateKey, string) {
+	t.Helper()
+	_, edPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ed25519 key: %v", err)
+	}
+	var sk minisign.PrivateKey
+	sk.SignatureAlgorithm = [2]byte{'E', 'd'}
+	copy(sk.SecretKey[:], edPriv)
+
+	pk := sk.PublicKey()
+	raw := make([]byte, 0, 42)
+	raw = append(raw, pk.SignatureAlgorithm[:]...)
+	raw = append(raw, pk.KeyId[:]...)
+	raw = append(raw, pk.PublicKey[:]...)
+	return sk, base64.StdEncoding.EncodeToString(raw)
+}
+
+// signMinisig signs data with sk and returns the encoded .minisig contents.
+func signMinisig(t *testing.T, sk minisign.PrivateKey, data []byte) []byte {
+	t.Helper()
+	sig, err := sk.Sign(data, minisign.SignOptions{Hashed: true})
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return sig.Encode()
+}
+
+// minisignFixtureSpec returns a "url"-backend spec configured with sha256 +
+// minisign verification, for the TestPipelineVerifiesMinisignSignatureOfChecksum
+// family of tests below. The served asset is named "tool-1.0.0.tar.gz".
+func minisignFixtureSpec(srvURL, pubKey string) config.Spec {
+	return config.Spec{
+		Backend: "url",
+		Source:  srvURL + "/tool-{{version}}.tar.gz",
+		Archive: "tar.gz",
+		Extract: "rg", // basename inside makeFakeTarGz's fixture entry
+		Verify: config.VerifyConfig{
+			SHA256Asset: "{{asset}}.sha256",
+			Minisign: config.MinisignConfig{
+				PublicKey:   pubKey,
+				SignedAsset: "{{asset}}.sha256.minisig",
+			},
+		},
+	}
+}
+
+// TestPipelineVerifiesMinisignSignatureOfChecksum verifies the end-to-end
+// happy path: a correctly signed checksum file lets a minisign-configured
+// install succeed. Before this test, no pipeline test ever configured a
+// valid [verify.minisign] spec end-to-end (AUDIT-TESTS.md §4.1): the
+// verify.CheckMinisign call at pipeline.go's signature-verification step was
+// never exercised, so deleting it left the suite green.
+func TestPipelineVerifiesMinisignSignatureOfChecksum(t *testing.T) {
+	isolateState(t)
+	sk, pubKey := newTestMinisignKey(t)
+
+	binaryContent := []byte("fake-rg-binary")
+	tgzData := makeFakeTarGz(binaryContent)
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		checksumFile := fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData))
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sha256.minisig"):
+			w.Write(signMinisig(t, sk, []byte(checksumFile)))
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(checksumFile))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	spec := minisignFixtureSpec(srv.URL, pubKey)
+	dest := filepath.Join(t.TempDir(), "rg")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("dest not found: %v", err)
+	}
+	if !bytes.Equal(data, binaryContent) {
+		t.Errorf("dest content = %q, want %q", data, binaryContent)
+	}
+}
+
+// TestPipelineRejectsBadMinisignSignature verifies that a checksum file
+// signed by a different key fails the install, names the signature in the
+// error, and never reaches the artifact endpoint: the signature is checked
+// before the artifact is downloaded (pipeline.go step 8, before step 9).
+func TestPipelineRejectsBadMinisignSignature(t *testing.T) {
+	isolateState(t)
+	_, pubKey := newTestMinisignKey(t)
+	other, _ := newTestMinisignKey(t)
+
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	var artifactRequests atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		checksumFile := fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData))
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sha256.minisig"):
+			w.Write(signMinisig(t, other, []byte(checksumFile))) // signed by a different key
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(checksumFile))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			artifactRequests.Add(1)
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	spec := minisignFixtureSpec(srv.URL, pubKey)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "rg")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for a signature made by a different key")
+	}
+	if !strings.Contains(err.Error(), "signature") {
+		t.Errorf("error = %q, want it to mention the signature", err)
+	}
+	if n := artifactRequests.Load(); n != 0 {
+		t.Errorf("artifact endpoint was requested %d times, want 0 (signature must be checked before download)", n)
+	}
+}
+
+// TestPipelineRejectsTamperedChecksumWithValidSignature verifies that a
+// signature valid for the original checksum body does not validate a
+// checksum file whose content has since been altered: the install must fail
+// at the signature step, not treat the tampered checksum as trusted.
+func TestPipelineRejectsTamperedChecksumWithValidSignature(t *testing.T) {
+	isolateState(t)
+	sk, pubKey := newTestMinisignKey(t)
+
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	originalChecksum := fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData))
+	signature := signMinisig(t, sk, []byte(originalChecksum))
+	// Tampered: a different (still well-formed) checksum line, e.g. pointing
+	// at an attacker-controlled hash, served in place of the signed one.
+	tamperedChecksum := "0000000000000000000000000000000000000000000000000000000000000000  tool-1.0.0.tar.gz\n"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sha256.minisig"):
+			w.Write(signature)
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(tamperedChecksum))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	spec := minisignFixtureSpec(srv.URL, pubKey)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "rg")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for a tampered checksum file")
+	}
+	if !strings.Contains(err.Error(), "signature") {
+		t.Errorf("error = %q, want it to mention the signature", err)
 	}
 }
