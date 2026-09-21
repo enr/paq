@@ -1397,6 +1397,27 @@ func TestPipelineRejectsIncoherentSHA256Config(t *testing.T) {
 	}
 }
 
+// TestPipelineUnknownBackendErrors verifies that a spec with a typo'd
+// `backend` (e.g. "gihub" instead of "github") fails with an error naming
+// the unknown value, rather than a confusing failure further down the
+// pipeline.
+func TestPipelineUnknownBackendErrors(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "gihub", Repo: "test/tool"},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `unknown backend: "gihub"`) {
+		t.Fatalf("error = %v, want it to name the unknown backend", err)
+	}
+}
+
 // TestPipelineRejectsUnsupportedPlatformWithoutNetwork verifies the
 // pre-flight platform check (pipeline.go, before any network access): a spec
 // that does not list the running platform fails before any request is made,

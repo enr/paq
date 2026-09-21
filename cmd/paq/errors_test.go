@@ -17,6 +17,7 @@ func TestHintFor(t *testing.T) {
 		{"signature", errors.New("signature verification failed: minisign signature is invalid"), "signature could not be verified"},
 		{"manifest", errors.New(`app "rg" not found in manifest`), "~/.config/paq/config.toml"},
 		{"registry", errors.New(`spec "rg" not found in registry`), "paq registry"},
+		{"unknown backend", errors.New(`resolve download URL: unknown backend: "gihub"`), "backend"},
 		{"unsupported platform", errors.New(`"bat" is not available for linux/arm64 (supported: linux/amd64)`), "no build for your OS/architecture"},
 		{"github 404", errors.New("GitHub API returned 404 for https://..."), "GITHUB_TOKEN"},
 		{"download 404", errors.New("download https://...: HTTP 404"), "build exists for your platform"},

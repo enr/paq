@@ -67,6 +67,9 @@ func hintFor(err error) string {
 	case strings.Contains(msg, "not found in registry"):
 		return "list available specs with `paq registry`, and check the `use` field of the app in your manifest."
 
+	case strings.Contains(msg, "unknown backend"):
+		return "check the spec's `backend` field — supported values are \"github\" and \"url\"."
+
 	// Version resolution / GitHub API.
 	case strings.Contains(msg, "github api returned 404"),
 		strings.Contains(msg, "github api returned"):
