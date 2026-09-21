@@ -236,15 +236,17 @@ func TestRegistryUpdateTamperedTarball(t *testing.T) {
 
 func TestRegistryUpdateRejectsHTTP(t *testing.T) {
 	setupEnv(t, "http://example.com/registry.tar.gz", "somekey")
-	if err := runUpdate(t, false); err == nil {
-		t.Fatal("update should reject a non-https custom url")
+	err := runUpdate(t, false)
+	if err == nil || !strings.Contains(err.Error(), "must use https://") {
+		t.Fatalf("update error = %v, want it to name the non-https url", err)
 	}
 }
 
 func TestRegistryUpdateRequiresPublicKey(t *testing.T) {
 	setupEnv(t, "https://example.com/registry.tar.gz", "")
-	if err := runUpdate(t, false); err == nil {
-		t.Fatal("update should require public_key for a custom url")
+	err := runUpdate(t, false)
+	if err == nil || !strings.Contains(err.Error(), "requires public_key") {
+		t.Fatalf("update error = %v, want it to name the missing public_key", err)
 	}
 }
 
