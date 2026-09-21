@@ -20,17 +20,21 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	orig := os.Stdout
 	os.Stdout = w
+	// Restore even if fn calls t.Fatal, which unwinds via runtime.Goexit.
+	defer func() { os.Stdout = orig }()
+
+	// Drain concurrently so a capture larger than the pipe buffer cannot
+	// deadlock fn's write.
+	done := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- b
+	}()
 
 	fn()
 
 	w.Close()
-	os.Stdout = orig
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read pipe: %v", err)
-	}
-	return string(out)
+	return string(<-done)
 }
 
 // withJSON runs fn with ui.Global.JSON set to true, restoring the previous
