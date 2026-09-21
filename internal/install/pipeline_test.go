@@ -1140,6 +1140,82 @@ func TestPipelineDoesNotAnnounceSuccessBeforeStateSaveSucceeds(t *testing.T) {
 	}
 }
 
+// TestPipelineLockWriteFailureOnlyWarns verifies that a paq.lock.toml write
+// failure only warns: the install has already succeeded and the state is
+// recorded, so a read-only config directory must not turn that into a failed
+// install. (The mirror bug — changing warn to a hard failure — would mean a
+// user with a root-owned ~/.config/paq can no longer install anything.)
+func TestPipelineLockWriteFailureOnlyWarns(t *testing.T) {
+	isolateState(t)
+
+	// Point the manifest (and thus paq.lock.toml, which lives next to it) at
+	// a path whose directory is a regular file: MkdirAll then fails
+	// deterministically, mirroring the state-save-failure trick above.
+	blocker := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	savedPathOverride := config.PathOverride
+	config.PathOverride = filepath.Join(blocker, "config.toml")
+	t.Cleanup(func() { config.PathOverride = savedPathOverride })
+
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	assetName := "ripgrep-1.0.0-x86_64-unknown-linux-gnu.tar.gz"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "releases/latest"):
+			json.NewEncoder(w).Encode(map[string]string{"tag_name": "v1.0.0"})
+		case strings.Contains(r.URL.Path, "releases/tags"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"assets": []map[string]string{
+					{"name": assetName, "url": "http://" + r.Host + "/download/" + assetName},
+				},
+			})
+		default:
+			w.Write(tgzData)
+		}
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
+	dest := filepath.Join(t.TempDir(), "rg")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"ripgrep": {
+				Backend:           "github",
+				Repo:              "test/ripgrep",
+				Asset:             assetName,
+				Archive:           "tar.gz",
+				Extract:           "rg",
+				MinimumReleaseAge: "0h", // take the fast /releases/latest path
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"rg": {Use: "ripgrep", Version: "latest", Dest: dest},
+		},
+	}
+
+	var warnings []string
+	hooks := &Hooks{HTTPClient: client, OnWarn: func(msg string) { warnings = append(warnings, msg) }}
+	if err := Run(context.Background(), cfg, "rg", nil, hooks); err != nil {
+		t.Fatalf("Run failed despite a lock-write-only failure: %v", err)
+	}
+
+	if _, err := os.Stat(dest); err != nil {
+		t.Errorf("install did not complete: %v", err)
+	}
+
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "paq.lock.toml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no warning mentioned paq.lock.toml, got: %v", warnings)
+	}
+}
+
 // TestPipelineSkipsWhenAlreadyInstalled verifies that a second install of the
 // same version does no work at all, and that Force overrides the skip. Without
 // this, a broken skip check makes every `paq install` re-download and
