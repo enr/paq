@@ -48,6 +48,15 @@ func withJSON(t *testing.T, fn func()) string {
 	return captureStdout(t, fn)
 }
 
+// withFlag sets *p to v for the duration of the test, restoring whatever
+// value *p held before — not a hardcoded default — once the test ends.
+func withFlag[T any](t *testing.T, p *T, v T) {
+	t.Helper()
+	old := *p
+	t.Cleanup(func() { *p = old })
+	*p = v
+}
+
 func TestRunLsJSONEmptyPrintsEmptyArray(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)

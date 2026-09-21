@@ -76,13 +76,11 @@ func TestRunUpgradeMultiArgPinnedSkipsWithoutError(t *testing.T) {
 		}
 	}
 
-	// cobra only sets Command.Context() during Execute(); set it explicitly
-	// since this test calls runUpgrade directly and it reaches the
-	// errgroup.WithContext call for these (valid, pinned) apps.
-	upgradeCmd.SetContext(context.Background())
-	t.Cleanup(func() { upgradeCmd.SetContext(nil) })
-
-	if err := runUpgrade(upgradeCmd, []string{"rg", "bat"}); err != nil {
+	// cobra only sets Command.Context() during Execute(); this test calls
+	// runUpgrade directly and it reaches the errgroup.WithContext call for
+	// these (valid, pinned) apps, so use a throwaway command carrying a
+	// context rather than mutating the shared global upgradeCmd.
+	if err := runUpgrade(cmdWithContext(), []string{"rg", "bat"}); err != nil {
 		t.Errorf("expected pinned apps to be skipped without error, got: %v", err)
 	}
 }

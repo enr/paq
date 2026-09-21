@@ -173,12 +173,8 @@ func TestRunInstallMultiArgFailsFastOnUnknownName(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	flagInstallForce = false
-	flagInstallNoSave = false
-	t.Cleanup(func() {
-		flagInstallForce = false
-		flagInstallNoSave = false
-	})
+	withFlag(t, &flagInstallForce, false)
+	withFlag(t, &flagInstallNoSave, false)
 
 	err := runInstall(installCmd, []string{"ripgrep", "typo-xyz-does-not-exist"})
 	if err == nil {
