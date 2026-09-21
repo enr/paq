@@ -242,6 +242,35 @@ func TestPipelineLatestNoStrategyErrors(t *testing.T) {
 	}
 }
 
+// TestPipelineLatestWithDefaultVersionSuggestsOmittingIt verifies the other
+// side of TestPipelineLatestNoStrategyErrors: when the spec DOES have a
+// default_version, version="latest" on a no-strategy backend gets the
+// friendlier, teaching error instead of the bare ErrLatestNotImplemented.
+func TestPipelineLatestWithDefaultVersionSuggestsOmittingIt(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:        "url",
+				Source:         "https://example.com/{{version}}.zip",
+				Archive:        "zip",
+				DefaultVersion: "1.2.3",
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "latest", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "1.2.3") {
+		t.Fatalf("error = %v, want it to suggest the default version 1.2.3", err)
+	}
+	if !strings.Contains(err.Error(), "omit the version") {
+		t.Errorf("error = %v, want it to suggest omitting the version", err)
+	}
+}
+
 // TestPipelineAssetTemplateErrorSurfaces verifies that a spec.Asset template
 // referencing an unknown placeholder fails the install instead of silently
 // falling back to the URL's basename.
