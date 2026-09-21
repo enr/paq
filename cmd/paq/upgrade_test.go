@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -254,5 +256,89 @@ func TestResolveLatestVersionInvalidMinimumAge(t *testing.T) {
 	_, err := resolveLatestVersion(context.Background(), &cfg, spec, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid minimum_release_age") {
 		t.Fatalf("expected an invalid minimum_release_age error, got %v", err)
+	}
+}
+
+// TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall reproduces the legacy
+// case cleanupOldVersions' keep-set exists for: two versions of an app
+// sharing one version-independent dest (the pipeline overwrote in place).
+// Cleaning up the old version must not delete the dest the new version still
+// owns. cleanupOldVersions was at 0% coverage before this test, and its
+// keep-set can be replaced with an empty map with the suite staying green
+// (AUDIT-TESTS.md §4.8, mutation M20).
+func TestCleanupOldVersionsKeepsPathsOwnedByTheNewInstall(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	destDir := filepath.Join(t.TempDir(), "tool")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(destDir, "bin")
+	if err := os.WriteFile(marker, []byte("payload"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// State already reflects the post-install world: both versions recorded,
+	// sharing the same dest (as install.Run, called before cleanup, leaves it).
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: destDir})
+	st.Set(state.InstalledApp{Name: "tool", Version: "2.0.0", Kind: "dir", Dest: destDir})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	// old is what upgradeApp captured before installing 2.0.0: just 1.0.0.
+	old := []state.InstalledApp{{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: destDir}}
+	if err := cleanupOldVersions("tool", "2.0.0", old, func(string, ...any) {}); err != nil {
+		t.Fatalf("cleanupOldVersions: %v", err)
+	}
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("shared dest was deleted while 2.0.0 still owns it: %v", err)
+	}
+	st2, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st2.Get("tool", "2.0.0"); !ok {
+		t.Error("surviving version 2.0.0 should remain in state")
+	}
+	if _, ok := st2.Get("tool", "1.0.0"); ok {
+		t.Error("cleaned-up version 1.0.0 should be gone from state")
+	}
+}
+
+// TestCleanupOldVersionsRemovesVersionSpecificDest is the mirror case: two
+// versions with distinct, version-specific dests. Cleanup must delete the
+// old one's files, unlike the shared-dest case above.
+func TestCleanupOldVersionsRemovesVersionSpecificDest(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	oldDest := filepath.Join(t.TempDir(), "tool-1.0.0")
+	newDest := filepath.Join(t.TempDir(), "tool-2.0.0")
+	if err := os.MkdirAll(oldDest, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: oldDest})
+	st.Set(state.InstalledApp{Name: "tool", Version: "2.0.0", Kind: "dir", Dest: newDest})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	old := []state.InstalledApp{{Name: "tool", Version: "1.0.0", Kind: "dir", Dest: oldDest}}
+	if err := cleanupOldVersions("tool", "2.0.0", old, func(string, ...any) {}); err != nil {
+		t.Fatalf("cleanupOldVersions: %v", err)
+	}
+
+	if _, err := os.Stat(oldDest); !os.IsNotExist(err) {
+		t.Errorf("old version-specific dest should have been removed, stat err = %v", err)
 	}
 }
