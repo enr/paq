@@ -564,16 +564,11 @@ func TestPipelineInstallFile(t *testing.T) {
 		},
 	}
 
-	// Patch: the GitHub API must point to the test server.
-	// For simplicity, we modify the spec using the "url" backend
-	// and test the pipeline with a GitHub API mock via transport.
-	// We use a more direct approach: monkey-patch the HTTP client.
-	// The test uses a custom transport that redirects to the test server.
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
-	defer func() { http.DefaultTransport = origTransport }()
+	// Redirect the GitHub API and asset requests to the test server without
+	// touching any process-global state.
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
 
-	err := Run(context.Background(), cfg, "rg", nil, nil)
+	err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client})
 	if err != nil {
 		t.Fatalf("install failed: %v", err)
 	}
@@ -650,11 +645,9 @@ func TestPipelineMinimumReleaseAgeDefaultAppliesToGitHub(t *testing.T) {
 		},
 	}
 
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
-	defer func() { http.DefaultTransport = origTransport }()
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
 
-	if err := Run(context.Background(), cfg, "rg", nil, nil); err != nil {
+	if err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client}); err != nil {
 		t.Fatalf("install failed: %v", err)
 	}
 
@@ -792,11 +785,9 @@ func TestPipelineChecksumMismatch(t *testing.T) {
 		},
 	}
 
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &redirectTransport{base: srv.URL, inner: origTransport}
-	defer func() { http.DefaultTransport = origTransport }()
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
 
-	err := Run(context.Background(), cfg, "rg", nil, nil)
+	err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client})
 	if err == nil {
 		t.Error("expected error for checksum mismatch, got nil")
 	}

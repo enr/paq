@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,10 @@ type Hooks struct {
 	// forcing a live resolution even if a lock entry exists. Set by `paq
 	// upgrade`, whose entire job is checking upstream for a newer release.
 	IgnoreLock bool
+	// HTTPClient overrides the client used for the GitHub backend and all
+	// downloads (tests inject one pointed at an httptest server); nil uses
+	// download.NewClient().
+	HTTPClient *http.Client
 }
 
 // shownError marks an error as already shown to the user via the OnFail hook,
@@ -156,6 +161,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		warn(fmt.Sprintf("%q has no verification configured: integrity and signature cannot be checked", specName))
 	}
 
+	client := hooks.HTTPClient
+	if client == nil {
+		client = download.NewClient()
+	}
+
 	// 2. Resolve the version
 	//   - version omitted → the spec's default_version; if absent, "latest"
 	//   - "latest"        → live resolution via strategy/backend (no fallback)
@@ -176,13 +186,14 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			versionProvider = version.PinProvider{Version: locked, TagTemplate: spec.Tag}
 		} else {
 			req := version.LatestRequest{
-				Strategy: spec.LatestStrategy,
-				Backend:  spec.Backend,
-				Repo:     spec.Repo,
-				Source:   spec.Source,
-				ArchPkg:  spec.ArchPkg,
-				URL:      spec.LatestURL,
-				Selector: spec.LatestJSON,
+				Strategy:   spec.LatestStrategy,
+				Backend:    spec.Backend,
+				Repo:       spec.Repo,
+				Source:     spec.Source,
+				ArchPkg:    spec.ArchPkg,
+				URL:        spec.LatestURL,
+				Selector:   spec.LatestJSON,
+				HTTPClient: client,
 			}
 			minAge, explicitAge, aerr := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
 			if aerr != nil {
@@ -255,10 +266,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 
 	// 6. Resolve the artifact URL.
 	step(fmt.Sprintf("Resolving download URL for %s...", appName))
+
 	var downloadURL string
 	switch spec.Backend {
 	case "github":
-		gb := backend.GitHubBackend{Repo: spec.Repo, Asset: spec.Asset}
+		gb := backend.GitHubBackend{Repo: spec.Repo, Asset: spec.Asset, HTTPClient: client}
 		downloadURL, err = gb.Resolve(ctx, tag, vars)
 	case "url":
 		ub := backend.URLBackend{Source: spec.Source}
@@ -300,13 +312,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// to substitute it.
 	resolveAuxURL := func(auxName string) (string, error) {
 		if spec.Backend == "github" {
-			gb := backend.GitHubBackend{Repo: spec.Repo, Asset: auxName}
+			gb := backend.GitHubBackend{Repo: spec.Repo, Asset: auxName, HTTPClient: client}
 			return gb.Resolve(ctx, tag, vars)
 		}
 		return buildAuxURL(downloadURL, assetName, auxName)
 	}
-
-	client := download.NewClient()
 
 	// 7. Download checksum/signature files (if configured).
 	var checksumPath, checksum512Path, sigPath string

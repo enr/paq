@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -28,6 +29,9 @@ type LatestRequest struct {
 	// honored by the "github" backend (with no explicit strategy), the only
 	// one that exposes per-release publish dates; ignored otherwise.
 	MinimumAge time.Duration
+	// HTTPClient overrides the client used by the resulting Provider; nil
+	// uses that Provider's own default.
+	HTTPClient *http.Client
 }
 
 // Resolvable indicates whether "latest" is resolvable by a real strategy/backend.
@@ -60,9 +64,9 @@ func LatestProvider(req LatestRequest) Provider {
 	if req.Strategy != "" {
 		switch req.Strategy {
 		case "arch-linux":
-			return ArchLinuxProvider{Pkg: req.ArchPkg}
+			return ArchLinuxProvider{Pkg: req.ArchPkg, HTTPClient: req.HTTPClient}
 		case "json":
-			return JSONProvider{URL: req.URL, Selector: req.Selector}
+			return JSONProvider{URL: req.URL, Selector: req.Selector, HTTPClient: req.HTTPClient}
 		default:
 			return notImplementedProvider{backend: req.Strategy}
 		}
@@ -70,7 +74,7 @@ func LatestProvider(req LatestRequest) Provider {
 
 	switch req.Backend {
 	case "github":
-		return GitHubReleaseProvider{Repo: req.Repo, MinimumAge: req.MinimumAge}
+		return GitHubReleaseProvider{Repo: req.Repo, MinimumAge: req.MinimumAge, HTTPClient: req.HTTPClient}
 	default:
 		return notImplementedProvider{backend: req.Backend}
 	}
