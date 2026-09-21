@@ -1397,6 +1397,66 @@ func TestPipelineRejectsIncoherentSHA256Config(t *testing.T) {
 	}
 }
 
+// TestPipelineUsesAppNameWhenUseOmitted verifies that an app entry with no
+// `use` field resolves the spec by the app's own name — the fallback used by
+// a hand-written manifest entry (auto-import always sets Use, but a
+// hand-written [apps.ripgrep] with no `use` is a documented, real case).
+func TestPipelineUsesAppNameWhenUseOmitted(t *testing.T) {
+	isolateState(t)
+	fileContent := []byte("fake-mvn-binary")
+	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", fileContent)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".zip") {
+			w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "maven")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			// The spec is registered under the app's own name, "maven".
+			"maven": {
+				Backend:         "url",
+				Source:          srv.URL + "/apache-maven-{{version}}-bin.zip",
+				Archive:         "zip",
+				StripComponents: 1,
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"maven": {Version: "1.0.0", Dest: dest}, // no Use
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "maven", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "mvn")); err != nil {
+		t.Errorf("installed file not found: %v", err)
+	}
+}
+
+// TestPipelineUnknownSpecNamesIt verifies that an app whose (resolved) spec
+// name isn't in the registry fails with an error naming that spec, rather
+// than a generic lookup failure.
+func TestPipelineUnknownSpecNamesIt(t *testing.T) {
+	isolateState(t)
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "no-such-spec", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `spec "no-such-spec" not found in registry`) {
+		t.Fatalf("error = %v, want it to name the unknown spec", err)
+	}
+}
+
 // TestPipelineUnknownBackendErrors verifies that a spec with a typo'd
 // `backend` (e.g. "gihub" instead of "github") fails with an error naming
 // the unknown value, rather than a confusing failure further down the
