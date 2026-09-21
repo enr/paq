@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -25,11 +26,38 @@ func TestRunUpgradeMultiArgFailsFastOnUnknownName(t *testing.T) {
 		t.Fatalf("write manifest entry: %v", err)
 	}
 
-	if err := runUpgrade(upgradeCmd, []string{"rg", "typo-xyz-does-not-exist"}); err == nil {
-		t.Error("expected an error when the second argument is unknown")
+	// "Fails fast" means nothing is attempted for the valid name either: no
+	// per-app step is printed for "rg" (which would happen the moment
+	// runParallel started processing it), and its state record is untouched.
+	before, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := runUpgrade(upgradeCmd, []string{"typo-xyz-does-not-exist", "rg"}); err == nil {
-		t.Error("expected an error when the first argument is unknown")
+
+	out := captureStdout(t, func() {
+		if err := runUpgrade(upgradeCmd, []string{"rg", "typo-xyz-does-not-exist"}); err == nil {
+			t.Error("expected an error when the second argument is unknown")
+		}
+	})
+	if out != "" {
+		t.Errorf("an invalid later argument must prevent every upgrade, got output: %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		if err := runUpgrade(upgradeCmd, []string{"typo-xyz-does-not-exist", "rg"}); err == nil {
+			t.Error("expected an error when the first argument is unknown")
+		}
+	})
+	if out != "" {
+		t.Errorf("an invalid earlier argument must prevent every upgrade, got output: %q", out)
+	}
+
+	after, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Packages, after.Packages) {
+		t.Error("state changed despite the batch failing fast on an unknown name")
 	}
 }
 
