@@ -1397,6 +1397,46 @@ func TestPipelineRejectsIncoherentSHA256Config(t *testing.T) {
 	}
 }
 
+// TestPipelineRejectsUnsupportedPlatformWithoutNetwork verifies the
+// pre-flight platform check (pipeline.go, before any network access): a spec
+// that does not list the running platform fails before any request is made,
+// and the error names the supported list.
+func TestPipelineRejectsUnsupportedPlatformWithoutNetwork(t *testing.T) {
+	isolateState(t)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			// plan9/mips can never match the platform running this test.
+			"tool": {
+				Backend:   "url",
+				Source:    srv.URL + "/tool-{{version}}.tar.gz",
+				Archive:   "tar.gz",
+				Platforms: []string{"plan9/mips"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "is not available for") {
+		t.Fatalf("error = %v, want it to name the unsupported platform", err)
+	}
+	if !strings.Contains(err.Error(), "plan9/mips") {
+		t.Errorf("error = %v, want it to name the supported list", err)
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("server received %d requests, want 0 (must fail before any network access)", n)
+	}
+}
+
 // newTestMinisignKey generates a throwaway minisign keypair for signing test
 // fixtures, and returns the private key plus the base64-encoded public key
 // (the string form a [config.MinisignConfig.PublicKey] field holds).
