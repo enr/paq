@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -22,13 +23,19 @@ func TestCheckFileSHA512(t *testing.T) {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
-	// correct hash but with uppercase/spaces (normalization)
+	// correct hash but with spaces (normalization)
 	if err := CheckFileSHA512(tmp.Name(), "  "+expected+"\n"); err != nil {
 		t.Errorf("expected no error for padded hash, got: %v", err)
 	}
 
-	// wrong hash
-	if err := CheckFileSHA512(tmp.Name(), "deadbeef"); err == nil {
+	// correct hash but uppercase (normalization)
+	if err := CheckFileSHA512(tmp.Name(), strings.ToUpper(expected)); err != nil {
+		t.Errorf("expected no error for uppercase hash, got: %v", err)
+	}
+
+	// wrong hash (a well-formed but incorrect digest, not a malformed one)
+	wrong := strings.Repeat("0", 127) + "1"
+	if err := CheckFileSHA512(tmp.Name(), wrong); err == nil {
 		t.Error("expected error for wrong hash, got nil")
 	}
 }

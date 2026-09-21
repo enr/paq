@@ -23,9 +23,24 @@ func TestCheckFile(t *testing.T) {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
-	// wrong hash
-	if err := CheckFile(tmp.Name(), "deadbeef"); err == nil {
+	// wrong hash (a well-formed but incorrect digest, not a malformed one)
+	wrong := strings.Repeat("0", 63) + "1"
+	if err := CheckFile(tmp.Name(), wrong); err == nil {
 		t.Error("expected error for wrong hash, got nil")
+	}
+}
+
+func TestCheckFileAcceptsUppercaseDigest(t *testing.T) {
+	content := []byte("hello paq")
+	sum := sha256.Sum256(content)
+	expected := hex.EncodeToString(sum[:])
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "check-*")
+	tmp.Write(content)
+	tmp.Close()
+
+	if err := CheckFile(tmp.Name(), strings.ToUpper(expected)); err != nil {
+		t.Errorf("expected uppercase digest to be normalized and accepted, got: %v", err)
 	}
 }
 
