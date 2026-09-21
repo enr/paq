@@ -7,11 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enr/paq/embedded"
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/install"
+	"github.com/enr/paq/internal/state"
 )
 
 func loadE2ECfg(t *testing.T, apps map[string]config.AppEntry) *config.Config {
@@ -55,9 +57,23 @@ func TestInstallRipgrep(t *testing.T) {
 		t.Fatalf("rg not found at %s: %v", dest, err)
 	}
 
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := st.ByName("rg")
+	if len(recs) != 1 {
+		t.Fatalf("state has %d records for rg, want 1", len(recs))
+	}
+
 	out, err := exec.Command(dest, "--version").Output()
 	if err != nil {
 		t.Fatalf("rg --version failed: %v", err)
 	}
-	t.Logf("rg --version: %s", out)
+	if !strings.Contains(string(out), recs[0].Version) {
+		t.Errorf("rg --version = %q, want it to report the installed version %s", out, recs[0].Version)
+	}
+	if !strings.HasPrefix(string(out), "ripgrep ") {
+		t.Errorf("rg --version = %q, want a ripgrep banner", out)
+	}
 }
