@@ -1437,6 +1437,43 @@ func TestPipelineRejectsUnsupportedPlatformWithoutNetwork(t *testing.T) {
 	}
 }
 
+// TestPipelineRejectsExtractWithBinaries verifies that a spec setting both
+// 'extract' and 'binaries' is rejected: without this guard, len(Binaries) > 0
+// loses to Extract != "" in the install-kind switch, so a spec setting both
+// would silently install one file and ignore the binaries list.
+func TestPipelineRejectsExtractWithBinaries(t *testing.T) {
+	isolateState(t)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:  "url",
+				Source:   srv.URL + "/tool-{{version}}.tar.gz",
+				Archive:  "tar.gz",
+				Extract:  "tool",
+				Binaries: []config.Binary{{From: "bin/tool", To: "tool"}},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: t.TempDir()},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("error = %v, want it to mention extract/binaries being mutually exclusive", err)
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("server received %d requests, want 0 (must fail before any network access)", n)
+	}
+}
+
 // newTestMinisignKey generates a throwaway minisign keypair for signing test
 // fixtures, and returns the private key plus the base64-encoded public key
 // (the string form a [config.MinisignConfig.PublicKey] field holds).
