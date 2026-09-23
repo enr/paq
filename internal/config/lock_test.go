@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -103,6 +105,39 @@ func TestWriteLockEntryPreservesOtherApps(t *testing.T) {
 	}
 	if lock.Apps["rg"].Version != "14.1.1" || lock.Apps["bat"].Version != "0.24.0" {
 		t.Errorf("Apps = %+v, want rg=14.1.1 and bat=0.24.0 both present", lock.Apps)
+	}
+}
+
+// TestWriteLockEntryConcurrentWritersKeepEveryEntry guards the parallel
+// install/upgrade path, where several goroutines pin their app at once: an
+// unserialized load-modify-save lets the last writer drop the others' entries.
+func TestWriteLockEntryConcurrentWritersKeepEveryEntry(t *testing.T) {
+	isolateManifest(t)
+
+	const writers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs <- WriteLockEntry(fmt.Sprintf("app%d", i), LockEntry{Version: "1.0.0"})
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("WriteLockEntry: %v", err)
+		}
+	}
+
+	lock, err := LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	if len(lock.Apps) != writers {
+		t.Errorf("Apps = %v, want %d entries", lock.Apps, writers)
 	}
 }
 

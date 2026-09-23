@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -60,12 +61,19 @@ func LoadLock() (*Lock, error) {
 	return &lock, nil
 }
 
+// lockMu serializes the lockfile's load-modify-save sequences: a parallel
+// install/upgrade pins several apps concurrently, and unserialized writers
+// would each overwrite the others' entries (and race on the shared temp file).
+var lockMu sync.Mutex
+
 // WriteLockEntry sets (or overwrites) appName's lock entry and rewrites the
 // lockfile. Used after a live "latest" resolution, so a later `paq install`
 // (on this machine or another sharing the manifest+lockfile) reproduces the
 // same version instead of resolving "latest" again and possibly landing on a
 // newer release.
 func WriteLockEntry(appName string, entry LockEntry) error {
+	lockMu.Lock()
+	defer lockMu.Unlock()
 	lock, err := LoadLock()
 	if err != nil {
 		return err
@@ -77,6 +85,8 @@ func WriteLockEntry(appName string, entry LockEntry) error {
 // DeleteLockEntry removes appName's lock entry, if any. A no-op (no error)
 // when the lockfile doesn't exist or has no entry for it.
 func DeleteLockEntry(appName string) error {
+	lockMu.Lock()
+	defer lockMu.Unlock()
 	lock, err := LoadLock()
 	if err != nil {
 		return err
