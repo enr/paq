@@ -49,12 +49,16 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 
+	// A failure on one app (e.g. a spec missing from the registry) must not
+	// hide the results for the others: errors are collected per app and
+	// returned after the table is printed.
 	ctx := cmd.Context()
-	g, ctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	g.SetLimit(maxParallel)
 
 	var mu sync.Mutex
 	results := []ui.OutdatedEntry{}
+	var errs []error
 	skip := func(format string, a ...any) {
 		mu.Lock()
 		ui.Info(format, a...)
@@ -66,7 +70,10 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 		g.Go(func() error {
 			entry, checked, err := checkOutdated(ctx, cfg, st, name, skip)
 			if err != nil {
-				return fmt.Errorf("%s: %w", name, err)
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("%s: %w", name, err))
+				mu.Unlock()
+				return nil
 			}
 			if !checked {
 				return nil
@@ -78,12 +85,14 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	if err := g.Wait(); err != nil {
-		return err
-	}
+	_ = g.Wait()
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
-	return ui.PrintOutdatedTable(results)
+	if err := ui.PrintOutdatedTable(results); err != nil {
+		return err
+	}
+	sort.Slice(errs, func(i, j int) bool { return errs[i].Error() < errs[j].Error() })
+	return errors.Join(errs...)
 }
 
 // checkOutdated resolves the latest upstream version for a single app and

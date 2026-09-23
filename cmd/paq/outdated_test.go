@@ -231,6 +231,40 @@ func TestRunOutdatedReportsOutdatedApp(t *testing.T) {
 	}
 }
 
+func TestRunOutdatedMissingSpecDoesNotHideOtherApps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"version":"2.0.0"}`))
+	}))
+	defer srv.Close()
+	doctorEnv(t, outdatedManifest(srv.URL)+`
+[apps.broken]
+use = "no-such-spec"
+version = "latest"
+`)
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0"})
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runOutdated(cmdWithContext(), nil)
+	})
+	if runErr == nil || !strings.Contains(runErr.Error(), `broken: spec "no-such-spec" not found in registry`) {
+		t.Errorf("err = %v, want the missing-spec error for broken", runErr)
+	}
+	for _, want := range []string{"tool", "1.0.0", "2.0.0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRunOutdatedAllUpToDate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"version":"1.0.0"}`))
