@@ -150,6 +150,9 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	// IgnoreLock: upgrade's entire job is installing the latest version just
 	// resolved above; without it the pipeline would re-consult paq.lock.toml,
 	// find the old pinned version still installed, and no-op.
+	if hooks == nil {
+		hooks = &install.Hooks{}
+	}
 	hooks.IgnoreLock = true
 	if err := install.Run(ctx, cfg, name, progress, hooks); err != nil {
 		return err
