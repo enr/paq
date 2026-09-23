@@ -153,6 +153,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if !spec.SupportsPlatform(plat.OS, plat.Arch) {
 		return fmt.Errorf("%q is not available for %s/%s (supported: %s)", specName, plat.OS, plat.Arch, strings.Join(spec.Platforms, ", "))
 	}
+	// Checked on the platform-overridden spec: an [x.<os>] block can set
+	// 'extract' on a spec whose base declares 'binaries'.
+	if ov := spec.ApplyPlatformOverride(plat.OS, plat.Arch); ov.Extract != "" && len(ov.Binaries) > 0 {
+		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
+	}
 
 	// Warn if the spec configures no verification: the download cannot be
 	// validated (integrity/signature). Verification is the main security
@@ -234,10 +239,6 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// 3. Build the template variables.
 	versionMajor, versionMinor, versionPatch := version.Parse(ver)
 	versionBuild := version.Build(tag)
-
-	if spec.Extract != "" && len(spec.Binaries) > 0 {
-		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
-	}
 
 	spec, vars, err := ResolveVars(cfg, plat, spec, app)
 	if err != nil {

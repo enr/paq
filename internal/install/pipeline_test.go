@@ -301,6 +301,47 @@ func TestPipelineAssetTemplateErrorSurfaces(t *testing.T) {
 	}
 }
 
+// TestPipelineRejectsExtractWithBinariesFromPlatformOverride verifies the
+// same guard sees an [x.<os>] block that sets 'extract' on a spec whose base
+// declares 'binaries', and that it fires before the live version resolution.
+func TestPipelineRejectsExtractWithBinariesFromPlatformOverride(t *testing.T) {
+	isolateState(t)
+	var requests int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.Write([]byte(`{"version":"1.0.0"}`))
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:        "url",
+				Source:         srv.URL + "/tool-{{version}}.tar.gz",
+				LatestStrategy: "json",
+				LatestURL:      srv.URL + "/latest.json",
+				LatestJSON:     "version",
+				Archive:        "tar.gz",
+				Binaries:       []config.Binary{{From: "a"}, {From: "b"}},
+				OSOverrides: map[string]config.PlatformOverride{
+					runtime.GOOS: {Extract: "tool"},
+				},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "latest", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
+	}
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected a mutually-exclusive error, got %v", err)
+	}
+	if got := atomic.LoadInt32(&requests); got != 0 {
+		t.Errorf("extract+binaries conflict made %d requests, want 0", got)
+	}
+}
+
 // TestPipelineRefusesToReplaceUnownedDest verifies that installing a "dir"
 // kind spec over a pre-existing, non-empty directory that paq didn't create
 // fails instead of silently wiping it out, and that Force overrides the guard.
