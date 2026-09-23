@@ -13,7 +13,7 @@ import (
 )
 
 func TestStateLoadSaveRoundtrip(t *testing.T) {
-	// Override del path usando XDG_STATE_HOME
+	// Override the path using XDG_STATE_HOME
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)
 
@@ -286,7 +286,7 @@ func TestMultipleVersionsCoexist(t *testing.T) {
 		t.Errorf("ByName(jdk) = %d, want 2", len(byName))
 	}
 
-	// Upsert: reinstallare la stessa versione non duplica
+	// Upsert: reinstalling the same version does not duplicate
 	s.Set(InstalledApp{Name: "jdk", Version: "21.0.2", Kind: "dir", Dest: "/opt/jdk-21.0.2", SHA256: "new"})
 	if len(s.Packages) != 2 {
 		t.Errorf("after upsert: expected 2 packages, got %d", len(s.Packages))

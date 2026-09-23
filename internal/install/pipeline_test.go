@@ -161,7 +161,7 @@ func TestPipelineOmittedVersionUsesDefault(t *testing.T) {
 			},
 		},
 		Apps: map[string]config.AppEntry{
-			"maven": {Use: "maven", Dest: dest}, // version omessa → default_version
+			"maven": {Use: "maven", Dest: dest}, // version omitted → default_version
 		},
 	}
 
@@ -452,92 +452,69 @@ func TestPipelineSHA512Mismatch(t *testing.T) {
 
 // TestPipelineWarnsWhenNoVerify verifies that the pipeline emits a warning
 // (OnWarn hook) when the spec configures no verification.
-func TestPipelineWarnsWhenNoVerify(t *testing.T) {
-	isolateState(t)
-	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
+// TestPipelineNoVerifyWarning covers both sides of the "no verification
+// configured" warning: it must fire when the spec has no Verify block, and
+// must not fire when one is configured.
+func TestPipelineNoVerifyWarning(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		verify     config.VerifyConfig
+		wantWarn   bool
+		wantSuffix string
+	}{
+		{name: "no verify block configured", wantWarn: true},
+		{name: "verify configured", verify: config.VerifyConfig{SHA512Asset: "{{asset}}.sha512"}, wantWarn: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateState(t)
+			zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
+			checksum := sha512hex(zipData)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, ".zip") {
-			w.Write(zipData)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasSuffix(r.URL.Path, ".zip.sha512"):
+					w.Write([]byte(checksum + "\n"))
+				case strings.HasSuffix(r.URL.Path, ".zip"):
+					w.Write(zipData)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
 
-	dest := filepath.Join(t.TempDir(), "maven")
-	cfg := &config.Config{
-		Specs: map[string]config.Spec{
-			"maven": {
-				Backend:         "url",
-				Source:          srv.URL + "/maven-{{version_major}}/{{version}}/binaries/apache-maven-{{version}}-bin.zip",
-				Archive:         "zip",
-				StripComponents: 1,
-				// Nessun blocco Verify.
-			},
-		},
-		Apps: map[string]config.AppEntry{
-			"maven": {Use: "maven", Version: "1.0.0", Dest: dest},
-		},
-	}
+			dest := filepath.Join(t.TempDir(), "maven")
+			cfg := &config.Config{
+				Specs: map[string]config.Spec{
+					"maven": {
+						Backend:         "url",
+						Source:          srv.URL + "/maven-{{version_major}}/{{version}}/binaries/apache-maven-{{version}}-bin.zip",
+						Archive:         "zip",
+						StripComponents: 1,
+						Verify:          tc.verify,
+					},
+				},
+				Apps: map[string]config.AppEntry{
+					"maven": {Use: "maven", Version: "1.0.0", Dest: dest},
+				},
+			}
 
-	var warnings []string
-	hooks := &Hooks{OnWarn: func(msg string) { warnings = append(warnings, msg) }}
+			var warnings []string
+			hooks := &Hooks{OnWarn: func(msg string) { warnings = append(warnings, msg) }}
 
-	if err := Run(context.Background(), cfg, "maven", nil, hooks); err != nil {
-		t.Fatalf("install failed: %v", err)
-	}
-	if len(warnings) == 0 {
-		t.Fatal("expected a warning when no verification is configured, got none")
-	}
-	if !strings.Contains(warnings[0], "no verification") {
-		t.Errorf("unexpected warning message: %q", warnings[0])
-	}
-}
-
-// TestPipelineNoWarnWhenVerifyConfigured verifies that the warning is NOT
-// emitted when verification is configured.
-func TestPipelineNoWarnWhenVerifyConfigured(t *testing.T) {
-	isolateState(t)
-	zipData := makeFakeZip("apache-maven-1.0.0", "bin/mvn", []byte("payload"))
-	checksum := sha512hex(zipData)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, ".zip.sha512"):
-			w.Write([]byte(checksum + "\n"))
-		case strings.HasSuffix(r.URL.Path, ".zip"):
-			w.Write(zipData)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	dest := filepath.Join(t.TempDir(), "maven")
-	cfg := &config.Config{
-		Specs: map[string]config.Spec{
-			"maven": {
-				Backend:         "url",
-				Source:          srv.URL + "/maven-{{version_major}}/{{version}}/binaries/apache-maven-{{version}}-bin.zip",
-				Archive:         "zip",
-				StripComponents: 1,
-				Verify:          config.VerifyConfig{SHA512Asset: "{{asset}}.sha512"},
-			},
-		},
-		Apps: map[string]config.AppEntry{
-			"maven": {Use: "maven", Version: "1.0.0", Dest: dest},
-		},
-	}
-
-	var warnings []string
-	hooks := &Hooks{OnWarn: func(msg string) { warnings = append(warnings, msg) }}
-
-	if err := Run(context.Background(), cfg, "maven", nil, hooks); err != nil {
-		t.Fatalf("install failed: %v", err)
-	}
-	if len(warnings) != 0 {
-		t.Errorf("expected no warning when verification is configured, got: %v", warnings)
+			if err := Run(context.Background(), cfg, "maven", nil, hooks); err != nil {
+				t.Fatalf("install failed: %v", err)
+			}
+			if tc.wantWarn {
+				if len(warnings) == 0 {
+					t.Fatal("expected a warning when no verification is configured, got none")
+				}
+				if !strings.Contains(warnings[0], "no verification") {
+					t.Errorf("unexpected warning message: %q", warnings[0])
+				}
+			} else if len(warnings) != 0 {
+				t.Errorf("expected no warning when verification is configured, got: %v", warnings)
+			}
+		})
 	}
 }
 

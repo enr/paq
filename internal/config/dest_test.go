@@ -36,22 +36,25 @@ func TestDefaultDestUserDefaults(t *testing.T) {
 }
 
 func TestDefaultDestRootsPartialOverride(t *testing.T) {
-	// Only bin configured: opt stays on the built-in.
 	builtinBin, builtinOpt := DefaultDestRoots(Defaults{})
-	bin, opt := DefaultDestRoots(Defaults{Bin: "~/custom/bin"})
-	if bin != "~/custom/bin" {
-		t.Errorf("bin = %q, want ~/custom/bin", bin)
-	}
-	if opt != builtinOpt {
-		t.Errorf("opt = %q, want built-in %q", opt, builtinOpt)
-	}
 
-	// Only opt configured: bin stays on the built-in.
-	bin2, opt2 := DefaultDestRoots(Defaults{Opt: "~/custom/opt"})
-	if opt2 != "~/custom/opt" {
-		t.Errorf("opt = %q, want ~/custom/opt", opt2)
-	}
-	if bin2 != builtinBin {
-		t.Errorf("bin = %q, want built-in %q", bin2, builtinBin)
+	for _, tc := range []struct {
+		name    string
+		d       Defaults
+		wantBin string
+		wantOpt string
+	}{
+		{"only bin configured", Defaults{Bin: "~/custom/bin"}, "~/custom/bin", builtinOpt},
+		{"only opt configured", Defaults{Opt: "~/custom/opt"}, builtinBin, "~/custom/opt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin, opt := DefaultDestRoots(tc.d)
+			if bin != tc.wantBin {
+				t.Errorf("bin = %q, want %q", bin, tc.wantBin)
+			}
+			if opt != tc.wantOpt {
+				t.Errorf("opt = %q, want %q", opt, tc.wantOpt)
+			}
+		})
 	}
 }

@@ -63,6 +63,14 @@ func TestPipelineUsesLockedVersionInsteadOfLatest(t *testing.T) {
 	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "1.0.0"}); err != nil {
 		t.Fatalf("WriteLockEntry: %v", err)
 	}
+	lockPath, err := config.LockPath()
+	if err != nil {
+		t.Fatalf("LockPath: %v", err)
+	}
+	lockBefore, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
 
 	dest := filepath.Join(t.TempDir(), "tool")
 	cfg := &config.Config{
@@ -93,6 +101,14 @@ func TestPipelineUsesLockedVersionInsteadOfLatest(t *testing.T) {
 	}
 	if string(data) != "old" {
 		t.Errorf("installed content = %q, want %q (the locked version 1.0.0)", data, "old")
+	}
+
+	lockAfter, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
+	if string(lockAfter) != string(lockBefore) {
+		t.Errorf("lockfile changed after reusing a locked version:\nbefore:\n%s\nafter:\n%s", lockBefore, lockAfter)
 	}
 }
 

@@ -10,7 +10,7 @@ func TestHintFor(t *testing.T) {
 	cases := []struct {
 		name    string
 		err     error
-		wantSub string // sottostringa attesa nel suggerimento
+		wantSub string // substring expected in the hint
 	}{
 		{"sha256 mismatch", errors.New("integrity check failed: sha256 mismatch for x"), "corrupted or tampered"},
 		{"sha512 mismatch", errors.New("integrity check failed: sha512 mismatch for x"), "corrupted or tampered"},

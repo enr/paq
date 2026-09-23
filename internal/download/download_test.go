@@ -134,6 +134,11 @@ func TestToTempLimitedRejectsOversizeWithContentLength(t *testing.T) {
 		os.Remove(path)
 		t.Fatal("expected an error for a response exceeding maxBytes (declared via Content-Length)")
 	}
+	// The upfront rejection (before reading a byte) has its own message,
+	// distinct from the streaming check's; pin it so the fast path stays covered.
+	if !strings.Contains(err.Error(), "(Content-Length 100)") {
+		t.Errorf("error = %v, want it to name the declared Content-Length", err)
+	}
 }
 
 func TestToTempLimitedRejectsOversizeWithoutContentLength(t *testing.T) {

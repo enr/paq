@@ -79,7 +79,7 @@ func TestCheckMinisignValid(t *testing.T) {
 func TestCheckMinisignTamperedFile(t *testing.T) {
 	sk, pub := newTestMinisignKey(t)
 	sigPath := signToFile(t, sk, []byte("original content"))
-	// File diverso da quello firmato.
+	// File different from the one that was signed.
 	filePath := writeTempFile(t, "artifact.bin", []byte("tampered content"))
 
 	if err := CheckMinisign(filePath, sigPath, pub); err == nil {

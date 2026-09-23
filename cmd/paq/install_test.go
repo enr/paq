@@ -56,6 +56,25 @@ func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
 	}
 }
 
+// TestRunParallelSortsFailuresAlphabetically verifies that the summary lists
+// multiple failures in a deterministic (alphabetical) order rather than
+// whatever order the goroutines happened to finish in.
+func TestRunParallelSortsFailuresAlphabetically(t *testing.T) {
+	err := runParallel(context.Background(), []string{"zeta", "alpha"}, "installed",
+		func(ctx context.Context, name string, hooks *install.Hooks) error {
+			return errors.New("HTTP 404")
+		})
+
+	if err == nil {
+		t.Fatal("expected an error reporting the failed apps")
+	}
+	wantAlpha := strings.Index(err.Error(), "alpha")
+	wantZeta := strings.Index(err.Error(), "zeta")
+	if wantAlpha == -1 || wantZeta == -1 || wantAlpha > wantZeta {
+		t.Errorf("error = %q, want %q before %q", err, "alpha", "zeta")
+	}
+}
+
 func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	dir := t.TempDir()
 	withConfigHome(t, dir)

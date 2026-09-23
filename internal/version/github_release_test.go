@@ -20,10 +20,6 @@ func TestGitHubReleaseProvider(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Sostituiamo l'URL dell'API con il server di test
-	origTransport := http.DefaultTransport
-	_ = origTransport
-
 	client := &http.Client{
 		Transport: &prefixRoundTripper{base: srv.URL, inner: http.DefaultTransport},
 	}
@@ -135,14 +131,14 @@ func TestGitHubReleaseProviderMinimumAgeNoneEligible(t *testing.T) {
 	}
 }
 
-// prefixRoundTripper redirige tutte le richieste verso un server di test.
+// prefixRoundTripper redirects every request to a test server.
 type prefixRoundTripper struct {
 	base  string
 	inner http.RoundTripper
 }
 
 func (rt *prefixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Sostituisci host con il server di test, mantenendo path e query
+	// Replace the host with the test server, keeping the path and query.
 	req2 := req.Clone(req.Context())
 	req2.URL.Scheme = "http"
 	req2.URL.Host = rt.base[len("http://"):]

@@ -100,7 +100,7 @@ func TestWriteManifestEntryOverwrite(t *testing.T) {
 	if got := cfg.Apps["rg"]; got.Version != "14.1.0" || got.Dest != "~/bin/rg" {
 		t.Errorf("entry not overwritten: %+v", got)
 	}
-	// Non devono restare due tabelle [apps.rg].
+	// There must not be two [apps.rg] tables left.
 	data, _ := os.ReadFile(filepath.Join(dir, "paq", "config.toml"))
 	if n := strings.Count(string(data), "[apps.rg]"); n != 1 {
 		t.Errorf("expected exactly one [apps.rg], got %d:\n%s", n, data)

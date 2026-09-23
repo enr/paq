@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -44,6 +45,32 @@ func TestOpenAbsent(t *testing.T) {
 	}
 	if fsys != nil || meta != nil {
 		t.Errorf("Open() on absent cache = (%v, %v), want (nil, nil)", fsys, meta)
+	}
+}
+
+// TestOpenPresentButEmpty distinguishes "absent" (Open returns nil, nil, nil)
+// from "present, with metadata, but zero specs" (Open must return a real
+// fs.FS and Meta, not the same nil/nil/nil result as an absent cache).
+func TestOpenPresentButEmpty(t *testing.T) {
+	setCacheHome(t)
+	dir, _ := Dir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(Meta{Schema: 1, Tag: "v1.0.0", Version: "1.0.0", SpecCount: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, metaFile), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys, meta, err := Open()
+	if err != nil {
+		t.Fatalf("Open() on a present, empty snapshot returned an error: %v", err)
+	}
+	if fsys == nil || meta == nil {
+		t.Errorf("Open() on a present, empty snapshot = (%v, %v), want a non-nil fs.FS and Meta", fsys, meta)
 	}
 }
 

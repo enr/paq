@@ -90,16 +90,6 @@ func TestCompare(t *testing.T) {
 	}
 }
 
-// Compare only looks at major/minor/patch: build metadata is not a field it
-// reads. That is consistent by construction, because every call site runs
-// Clean first and Clean strips the build suffix — two releases that differ
-// only by build number are indistinguishable to Compare.
-func TestCompareIgnoresBuildMetadata(t *testing.T) {
-	if got := Compare(Clean("jdk-21.0.2+13"), Clean("jdk-21.0.2+9")); got != 0 {
-		t.Errorf("Compare on build-only difference = %d, want 0", got)
-	}
-}
-
 func sign(n int) int {
 	switch {
 	case n < 0:

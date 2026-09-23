@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -340,5 +343,71 @@ func TestCleanupOldVersionsRemovesVersionSpecificDest(t *testing.T) {
 
 	if _, err := os.Stat(oldDest); !os.IsNotExist(err) {
 		t.Errorf("old version-specific dest should have been removed, stat err = %v", err)
+	}
+}
+
+// TestUpgradeAppIgnoresTheLockfile verifies that upgradeApp sets
+// hooks.IgnoreLock: without it, the pipeline would re-consult paq.lock.toml,
+// find the old pinned version and no-op, so "paq upgrade" would silently do
+// nothing for every locked app.
+func TestUpgradeAppIgnoresTheLockfile(t *testing.T) {
+	withStateHome(t, t.TempDir())
+	withConfigHome(t, t.TempDir())
+
+	newBinary := []byte("tool-2.0.0")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/latest.json"):
+			w.Write([]byte(`{"version":"2.0.0"}`))
+		case strings.HasSuffix(r.URL.Path, "2.0.0"):
+			w.Write(newBinary)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "1.0.0"}); err != nil {
+		t.Fatalf("WriteLockEntry: %v", err)
+	}
+	lock, err := config.LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+
+	destDir := t.TempDir()
+	cfg := &config.Config{
+		Lock: lock,
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "latest", Dest: destDir},
+		},
+		Specs: map[string]config.Spec{
+			"tool": {
+				Backend:        "url",
+				Source:         srv.URL + "/tool-{{version}}",
+				Binaries:       []config.Binary{{To: "tool"}},
+				LatestStrategy: "json",
+				LatestURL:      srv.URL + "/latest.json",
+				LatestJSON:     "version",
+			},
+		},
+	}
+	if err := state.Update(func(st *state.State) error {
+		st.Set(state.InstalledApp{Name: "tool", Version: "1.0.0", Kind: "binaries", Dest: destDir})
+		return nil
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	if err := upgradeApp(context.Background(), cfg, "tool", &install.Hooks{}, nil); err != nil {
+		t.Fatalf("upgradeApp: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(destDir, "tool"))
+	if err != nil {
+		t.Fatalf("installed file: %v", err)
+	}
+	if !bytes.Equal(data, newBinary) {
+		t.Errorf("installed content = %q, want %q (upgrade must ignore the stale lock)", data, newBinary)
 	}
 }

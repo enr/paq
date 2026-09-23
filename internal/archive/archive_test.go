@@ -148,7 +148,7 @@ func TestExtractTarGzSubdir(t *testing.T) {
 		t.Errorf("java content = %q, want java-binary", string(data))
 	}
 
-	// "other" non deve essere presente
+	// "other" must not be present
 	if _, err := os.Stat(filepath.Join(dest, "other")); !os.IsNotExist(err) {
 		t.Error("'other' should not have been extracted")
 	}
@@ -355,6 +355,12 @@ func TestExtractTarGzPathTraversalRejected(t *testing.T) {
 	err := Extract(tgz, "tar.gz", ExtractOpts{Dest: dest})
 	if err == nil {
 		t.Fatal("expected error for path traversal entry, got nil")
+	}
+	// Pins the offending entry and the layer that refused it (securePath's
+	// lexical check), so the guard's own message stays under test rather
+	// than relying only on os.Root's incidental refusal.
+	if !strings.Contains(err.Error(), `illegal path "../../evil.txt"`) {
+		t.Errorf("error = %v, want it to name the offending entry as illegal", err)
 	}
 
 	if _, statErr := os.Stat(filepath.Join(parent, "evil.txt")); !os.IsNotExist(statErr) {

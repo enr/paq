@@ -29,12 +29,12 @@ func TestRenderAppEntryTOML(t *testing.T) {
 	if got.Use != "ripgrep" || got.Version != "latest" || got.Dest != "~/.local/bin/rg{{ext}}" {
 		t.Errorf("parsed entry = %+v", got)
 	}
-}
 
-func TestRenderAppEntryTOMLOmitsEmpty(t *testing.T) {
-	block := renderAppEntryTOML("x", config.AppEntry{Use: "x", Version: "latest"})
-	if strings.Contains(block, "dest") {
-		t.Errorf("empty dest should be omitted; got:\n%s", block)
+	// An empty field (no explicit dest here) is omitted rather than rendered
+	// as `dest = ""`.
+	empty := renderAppEntryTOML("x", config.AppEntry{Use: "x", Version: "latest"})
+	if strings.Contains(empty, "dest") {
+		t.Errorf("empty dest should be omitted; got:\n%s", empty)
 	}
 }
 
