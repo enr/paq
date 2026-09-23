@@ -80,7 +80,7 @@ func withStateHome(t *testing.T, dir string) {
 
 func TestRunLsJSONEmptyPrintsEmptyArray(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	out := withJSON(t, func() {
 		if err := runLs(lsCmd, nil); err != nil {

@@ -42,7 +42,7 @@ func TestRunUninstallNonTTYRequiresYes(t *testing.T) {
 	t.Cleanup(func() { uninstallIsTTY = prevIsTTY })
 
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	binPath := filepath.Join(t.TempDir(), "rg")
 	if err := os.WriteFile(binPath, []byte("binary"), 0755); err != nil {
@@ -81,7 +81,7 @@ func TestRunUninstallNonTTYRequiresYes(t *testing.T) {
 // in one invocation and removes all of them.
 func TestRunUninstallMultiApp(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	rgPath := filepath.Join(t.TempDir(), "rg")
 	batPath := filepath.Join(t.TempDir(), "bat")
@@ -121,7 +121,7 @@ func TestRunUninstallMultiApp(t *testing.T) {
 // even the apps that were found and would have resolved successfully.
 func TestRunUninstallMultiAppFailsFastOnUnknownName(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	rgPath := filepath.Join(t.TempDir(), "rg")
 	if err := os.WriteFile(rgPath, []byte("binary"), 0755); err != nil {
@@ -214,7 +214,7 @@ func TestRunUninstallKeepsSharedDest(t *testing.T) {
 	t.Cleanup(func() { uninstallIsTTY = prevIsTTY })
 	withFlag(t, &flagUninstallYes, true)
 
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	withStateHome(t, t.TempDir())
 
 	destDir := filepath.Join(t.TempDir(), "maven")
 	if err := os.MkdirAll(destDir, 0755); err != nil {

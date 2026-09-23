@@ -22,7 +22,7 @@ func installedFile(t *testing.T, dir, name string) string {
 
 func TestRunWhichFileKind(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {
@@ -48,7 +48,7 @@ func TestRunWhichFileKind(t *testing.T) {
 
 func TestRunWhichBinariesKind(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {
@@ -78,7 +78,7 @@ func TestRunWhichBinariesKind(t *testing.T) {
 
 func TestRunWhichVersionDisambiguation(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {
@@ -115,7 +115,7 @@ func TestRunWhichVersionDisambiguation(t *testing.T) {
 
 func TestRunWhichNotInstalled(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	if err := runWhich(whichCmd, []string{"nope"}); err == nil {
 		t.Fatal("expected an error for a tool that isn't installed")
@@ -124,7 +124,7 @@ func TestRunWhichNotInstalled(t *testing.T) {
 
 func TestRunWhichUnknownVersion(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {
@@ -145,7 +145,7 @@ func TestRunWhichUnknownVersion(t *testing.T) {
 // would resurface later as a confusing "no such file" somewhere else.
 func TestRunWhichFailsWhenFilesAreGone(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {
@@ -175,7 +175,7 @@ func TestRunWhichFailsWhenFilesAreGone(t *testing.T) {
 // version's files have been removed.
 func TestRunWhichSkipsOnlyTheMissingVersion(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {

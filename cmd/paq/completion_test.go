@@ -47,7 +47,7 @@ func TestFilterByPrefix(t *testing.T) {
 
 func TestCompleteInstalledApps(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	st, err := state.Load()
 	if err != nil {

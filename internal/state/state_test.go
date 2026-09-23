@@ -15,7 +15,7 @@ import (
 func TestStateLoadSaveRoundtrip(t *testing.T) {
 	// Override the path using XDG_STATE_HOME
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	setStateHome(t, dir)
 
 	s, err := Load()
 	if err != nil {
@@ -77,7 +77,7 @@ func TestStateLoadSaveRoundtrip(t *testing.T) {
 // file is diffed and inspected by hand, so a stable order is part of its
 // contract rather than an implementation detail.
 func TestSaveOrdersRecordsDeterministically(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	setStateHome(t, t.TempDir())
 
 	s := emptyState()
 	for _, rec := range []InstalledApp{
@@ -113,7 +113,7 @@ func TestSaveOrdersRecordsDeterministically(t *testing.T) {
 // TestConcurrentUpdate verifies that parallel Update calls do not lose records.
 func TestConcurrentUpdate(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	setStateHome(t, dir)
 
 	const n = 10
 	var wg sync.WaitGroup
@@ -167,7 +167,7 @@ func TestLoadFailsWhenStatePathIsUnknown(t *testing.T) {
 // makes Update fail after the timeout with a message naming the lock file.
 func TestUpdateFailsWhenLockedByAnotherProcess(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	setStateHome(t, dir)
 
 	prevInterval, prevTimeout := lockRetryInterval, lockTimeout
 	lockRetryInterval = 5 * time.Millisecond
@@ -201,7 +201,7 @@ func TestUpdateFailsWhenLockedByAnotherProcess(t *testing.T) {
 // removed instead of blocking every later state-mutating command.
 func TestUpdateReclaimsStaleLock(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	setStateHome(t, dir)
 
 	path, err := StatePath()
 	if err != nil {
@@ -251,7 +251,7 @@ func exitedPID(t *testing.T) int {
 // lock file it created.
 func TestUpdateLeavesNoLockFileOnSuccess(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	setStateHome(t, dir)
 
 	if err := Update(func(st *State) error {
 		st.Set(InstalledApp{Name: "rg", Version: "1.0.0", Kind: "file", Dest: "/bin/rg"})
@@ -271,7 +271,7 @@ func TestUpdateLeavesNoLockFileOnSuccess(t *testing.T) {
 
 func TestMultipleVersionsCoexist(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	setStateHome(t, dir)
 
 	s, _ := Load()
 	s.Set(InstalledApp{Name: "jdk", Version: "21.0.2", Kind: "dir", Dest: "/opt/jdk-21.0.2"})
@@ -397,4 +397,12 @@ func TestMissingPaths(t *testing.T) {
 			t.Errorf("MissingPaths = %v, want [%s]", got, absent)
 		}
 	})
+}
+
+// setStateHome points StatePath at dir on every OS: XDG_STATE_HOME is ignored
+// on Windows, where paq reads %LOCALAPPDATA% instead.
+func setStateHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
 }

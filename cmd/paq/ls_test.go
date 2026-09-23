@@ -15,7 +15,7 @@ import (
 func lsState(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", dir)
+	withStateHome(t, dir)
 
 	present := filepath.Join(dir, "bat")
 	if err := os.WriteFile(present, []byte("binary"), 0o755); err != nil {

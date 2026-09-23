@@ -1394,7 +1394,7 @@ func TestPipelineSHA256URLAndJSON(t *testing.T) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/checksums/linux":
+		case "/api/checksums/" + runtime.GOOS:
 			// The hash lives in a JSON API, under a path of its own: nothing
 			// about this URL can be derived from the asset's.
 			w.Write([]byte(`{"build":{"digest":"sha256:` + sha256hex(tgzData) + `"}}`))

@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoadMissingReturnsZero(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	setCacheHome(t, t.TempDir())
 
 	st, err := Load()
 	if err != nil {
@@ -19,7 +19,7 @@ func TestLoadMissingReturnsZero(t *testing.T) {
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	setCacheHome(t, t.TempDir())
 
 	now := time.Now().UTC().Truncate(time.Second)
 	want := State{LastChecked: now, LatestVersion: "1.2.3", LatestTag: "v1.2.3"}
@@ -62,4 +62,12 @@ func TestPathPerOS(t *testing.T) {
 	if got != "/tmp/xdgcache/paq/update-check.json" {
 		t.Fatalf("Path = %q", got)
 	}
+}
+
+// setCacheHome points Path at dir on every OS: XDG_CACHE_HOME is ignored on
+// Windows, where paq reads %LOCALAPPDATA% instead.
+func setCacheHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("LOCALAPPDATA", dir)
 }
