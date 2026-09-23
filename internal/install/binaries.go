@@ -43,7 +43,13 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 			return nil, fmt.Errorf("a non-archive download installs exactly one binary, got %d", len(bins))
 		}
 		dest := filepath.Join(destDir, bins[0].To)
-		if err := installRawBinary(artifactPath, dest, mode); err != nil {
+		// The artifact IS the executable, and the temp file it is copied
+		// through is created 0600: without a chmod it would install unusable.
+		rawMode := mode
+		if rawMode == 0 {
+			rawMode = 0755
+		}
+		if err := installRawBinary(artifactPath, dest, rawMode); err != nil {
 			return nil, err
 		}
 		return []string{dest}, nil

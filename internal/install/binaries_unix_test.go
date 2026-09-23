@@ -51,6 +51,21 @@ func TestInstallBinariesAppliesChmod(t *testing.T) {
 		}
 		assertPerm(t, installed, 0755)
 	})
+
+	t.Run("bare download without chmod is still executable", func(t *testing.T) {
+		src := filepath.Join(t.TempDir(), "mytool_1.0.0_linux_amd64")
+		if err := os.WriteFile(src, []byte("raw-elf"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		destDir := filepath.Join(t.TempDir(), "bin")
+		bins := []ResolvedBinary{{From: "mytool_1.0.0_linux_amd64", To: "mytool"}}
+		installed, err := InstallBinaries(src, "", bins, destDir, "", archive.ExtractOpts{})
+		if err != nil {
+			t.Fatalf("InstallBinaries (bare): %v", err)
+		}
+		assertPerm(t, installed, 0755)
+	})
 }
 
 func assertPerm(t *testing.T, paths []string, want os.FileMode) {
