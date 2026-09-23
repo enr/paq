@@ -1122,13 +1122,17 @@ func TestPipelineRecordsInstalledState(t *testing.T) {
 // "✓ Installed rg ... → /path" immediately followed by "✗ save state: ...",
 // while the tool was on disk but untracked by ls/upgrade/uninstall.
 func TestPipelineDoesNotAnnounceSuccessBeforeStateSaveSucceeds(t *testing.T) {
-	// Point XDG_STATE_HOME at a path that already exists as a regular file:
+	// Point the state home (XDG_STATE_HOME, or LOCALAPPDATA on Windows) at a
+	// path that already exists as a regular file:
 	// state.Update's directory creation then fails deterministically.
 	blocker := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_STATE_HOME", blocker)
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", blocker)
+	}
 
 	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

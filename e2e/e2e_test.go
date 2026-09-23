@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -39,7 +40,11 @@ func loadE2ECfg(t *testing.T, apps map[string]config.AppEntry) *config.Config {
 }
 
 func TestInstallRipgrep(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", stateHome)
+	}
 	dest := filepath.Join(t.TempDir(), "rg")
 	cfg := loadE2ECfg(t, map[string]config.AppEntry{
 		"rg": {
