@@ -96,12 +96,26 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 		}
 	}
 
-	// Move each binary into destDir/<To>.
+	// Move each binary into destDir/<To>. A 'from' listed under several names
+	// is copied into all but its last one, which takes the extracted file.
+	remaining := make(map[string]int, len(bins))
+	for _, b := range bins {
+		remaining[b.From]++
+	}
 	var installed []string
 	for _, b := range bins {
 		extracted := filepath.Join(tmpDir, b.From)
 		dest := filepath.Join(destDir, b.To)
-		if err := os.Rename(extracted, dest); err != nil {
+		remaining[b.From]--
+		if remaining[b.From] > 0 {
+			info, err := os.Stat(extracted)
+			if err != nil {
+				return installed, fmt.Errorf("install %q: %w", b.To, err)
+			}
+			if err := installRawBinary(extracted, dest, info.Mode().Perm()); err != nil {
+				return installed, fmt.Errorf("install %q: %w", b.To, err)
+			}
+		} else if err := os.Rename(extracted, dest); err != nil {
 			return installed, fmt.Errorf("install %q: %w", b.To, err)
 		}
 		installed = append(installed, dest)

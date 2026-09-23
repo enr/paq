@@ -69,6 +69,35 @@ func TestInstallBinaries(t *testing.T) {
 	// asserted by TestInstallBinariesAppliesChmod (binaries_unix_test.go).
 }
 
+// TestInstallBinariesSameFromUnderSeveralNames verifies that one archive entry
+// can be installed under more than one name (e.g. an alias): extraction
+// yields a single file, so every name but one must get its own copy.
+func TestInstallBinariesSameFromUnderSeveralNames(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "tool.zip")
+	if err := os.WriteFile(src, makeMultiBinZip("tool-1.0.0", map[string][]byte{"tool": []byte("bin")}), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	destDir := filepath.Join(t.TempDir(), "bin")
+	bins := []ResolvedBinary{{From: "tool", To: "tool"}, {From: "tool", To: "t"}}
+	installed, err := InstallBinaries(src, "zip", bins, destDir, "0755", archive.ExtractOpts{StripComponents: 1})
+	if err != nil {
+		t.Fatalf("InstallBinaries: %v", err)
+	}
+	if len(installed) != 2 {
+		t.Fatalf("installed = %v, want 2 paths", installed)
+	}
+	for _, name := range []string{"tool", "t"} {
+		got, err := os.ReadFile(filepath.Join(destDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if string(got) != "bin" {
+			t.Errorf("%s content = %q, want %q", name, got, "bin")
+		}
+	}
+}
+
 // TestInstallBinariesBare verifies the case with no archive: the downloaded
 // artifact is the executable (name with os/arch in the filename) and must be
 // installed under a clean name.
