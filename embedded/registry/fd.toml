@@ -1,0 +1,16 @@
+[fd]
+backend = "github"
+repo = "sharkdp/fd"
+asset = "fd-v{{version}}-{{rust_target}}.tar.gz"
+archive = "tar.gz"
+extract = "fd{{ext}}"
+chmod = "0755"
+
+[fd.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+# Windows ships a .zip instead of a .tar.gz.
+[fd.windows]
+asset = "fd-v{{version}}-{{rust_target}}.zip"
+archive = "zip"
