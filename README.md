@@ -147,6 +147,8 @@ paq init
 paq install ripgrep
 # install without recording it in the manifest (ephemeral)
 paq install ripgrep --no-save
+# install a specific version, recording it as the app's version in the manifest
+paq install ripgrep@14.1.0
 
 # Generate a default manifest entry without installing (prints it)
 paq import ripgrep
@@ -271,6 +273,23 @@ sha256_asset = "{{asset}}.sha256"
 #   paq install mytool
 ```
 
+`archive` accepts `tar.gz` (or `tgz`), `tar.xz`, `tar.zst`, `tar.bz2` and `zip`
+(and `gz`, see below).
+
+With the `github` backend, `asset` may be a glob (`*`, `?`, `[...]`, as in shell
+patterns) when part of the name cannot be derived from the version and the
+platform, such as a build number. It must match exactly one asset of the
+release, otherwise the install fails listing the candidates. `{{asset}}` expands
+to the name of the matched asset, so `sha256_asset = "{{asset}}.sha256"` keeps
+working:
+
+```toml
+[specs.mytool]
+backend = "github"
+repo = "owner/mytool"
+asset = "mytool-{{version}}+*-{{os}}-{{arch}}.tar.gz"
+```
+
 A recipe for an archive containing **multiple executables** (each installed into
 a bin directory):
 
@@ -305,6 +324,10 @@ asset = "mytool_{{version}}_{{os}}_{{arch}}{{ext}}"
 chmod = "0755"
 binaries = [ { to = "mytool{{ext}}" } ]   # one entry; the artifact is the binary
 ```
+
+A single executable compressed with gzip (e.g. `mytool-linux-amd64.gz`) works the
+same way with `archive = "gz"`: it is decompressed, then installed as the one
+`binaries` entry. Without `to`, it is installed under the asset name minus `.gz`.
 
 A recipe for a direct URL:
 

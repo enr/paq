@@ -80,7 +80,7 @@ func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
-	path, err := ensureManifestEntry(cfg, "ripgrep", true)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "", true)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestEnsureManifestEntryNoSave(t *testing.T) {
 	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
-	path, err := ensureManifestEntry(cfg, "ripgrep", false)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "", false)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestEnsureManifestEntryExistingApp(t *testing.T) {
 
 	cfg := newTestConfig()
 	cfg.Apps["ripgrep"] = config.AppEntry{Use: "ripgrep", Version: "1.2.3"}
-	path, err := ensureManifestEntry(cfg, "ripgrep", true)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "", true)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -141,9 +141,97 @@ func TestEnsureManifestEntryExistingApp(t *testing.T) {
 	}
 }
 
+func TestEnsureManifestEntryVersionAutoImport(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+
+	cfg := newTestConfig()
+	path, err := ensureManifestEntry(cfg, "ripgrep", "14.1.0", true)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if got := cfg.Apps["ripgrep"].Version; got != "14.1.0" {
+		t.Errorf("in-memory version = %q, want 14.1.0", got)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if !strings.Contains(string(data), `version = "14.1.0"`) {
+		t.Fatalf("manifest does not pin 14.1.0, got:\n%s", data)
+	}
+}
+
+// An explicit version on an app already in the manifest rewrites only its
+// version line, keeping the rest of the entry and the other lines.
+func TestEnsureManifestEntryVersionUpdatesExistingApp(t *testing.T) {
+	dir := t.TempDir()
+	withConfigHome(t, dir)
+	manifest := filepath.Join(dir, "paq", "config.toml")
+	os.MkdirAll(filepath.Dir(manifest), 0755)
+	orig := "# my tools\n[apps.rg]\nuse = \"ripgrep\"\nversion = \"latest\" # track upstream\ndest = \"~/bin/rg\"\n"
+	if err := os.WriteFile(manifest, []byte(orig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := newTestConfig()
+	cfg.Apps["rg"] = config.AppEntry{Use: "ripgrep", Version: "latest", Dest: "~/bin/rg"}
+	path, err := ensureManifestEntry(cfg, "rg", "14.1.0", true)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if path != manifest {
+		t.Errorf("path = %q, want %q", path, manifest)
+	}
+	if got := cfg.Apps["rg"]; got.Version != "14.1.0" || got.Dest != "~/bin/rg" {
+		t.Errorf("in-memory entry = %+v, want version 14.1.0 and the original dest", got)
+	}
+	data, _ := os.ReadFile(manifest)
+	want := "# my tools\n[apps.rg]\nuse = \"ripgrep\"\nversion = \"14.1.0\"\ndest = \"~/bin/rg\"\n"
+	if string(data) != want {
+		t.Errorf("manifest =\n%s\nwant\n%s", data, want)
+	}
+}
+
+func TestEnsureManifestEntryVersionNoSaveKeepsManifest(t *testing.T) {
+	dir := t.TempDir()
+	withConfigHome(t, dir)
+
+	cfg := newTestConfig()
+	cfg.Apps["rg"] = config.AppEntry{Use: "ripgrep", Version: "latest"}
+	path, err := ensureManifestEntry(cfg, "rg", "14.1.0", false)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if path != "" {
+		t.Errorf("path = %q, want empty with save=false", path)
+	}
+	if got := cfg.Apps["rg"].Version; got != "14.1.0" {
+		t.Errorf("in-memory version = %q, want 14.1.0", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "paq", "config.toml")); !os.IsNotExist(err) {
+		t.Fatal("save=false must not write the manifest")
+	}
+}
+
+func TestParseInstallArg(t *testing.T) {
+	for _, tc := range []struct{ arg, name, version string }{
+		{"ripgrep", "ripgrep", ""},
+		{"ripgrep@14.1.0", "ripgrep", "14.1.0"},
+		{"jdk@latest", "jdk", "latest"},
+	} {
+		name, version, err := parseInstallArg(tc.arg)
+		if err != nil || name != tc.name || version != tc.version {
+			t.Errorf("parseInstallArg(%q) = %q, %q, %v; want %q, %q", tc.arg, name, version, err, tc.name, tc.version)
+		}
+	}
+	if _, _, err := parseInstallArg("ripgrep@"); err == nil {
+		t.Error("expected an error for an empty version")
+	}
+}
+
 func TestEnsureManifestEntryUnknownSpec(t *testing.T) {
 	cfg := newTestConfig()
-	_, err := ensureManifestEntry(cfg, "rip", true) // substring of "ripgrep"
+	_, err := ensureManifestEntry(cfg, "rip", "", true) // substring of "ripgrep"
 	if err == nil {
 		t.Fatal("expected an error for unknown spec")
 	}
@@ -158,7 +246,7 @@ func TestEnsureManifestEntryUnknownSpec(t *testing.T) {
 
 func TestEnsureManifestEntryUnknownNoSuggestion(t *testing.T) {
 	cfg := newTestConfig()
-	_, err := ensureManifestEntry(cfg, "zzz", true) // no substring match
+	_, err := ensureManifestEntry(cfg, "zzz", "", true) // no substring match
 	var he hintError
 	if !errors.As(err, &he) {
 		t.Fatalf("expected hintError, got %T: %v", err, err)

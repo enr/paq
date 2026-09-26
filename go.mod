@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/jedisct1/go-minisign v0.0.0-20260527172527-a09352b57a22
+	github.com/klauspost/compress v1.20.1
 	github.com/pelletier/go-toml/v2 v2.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.15

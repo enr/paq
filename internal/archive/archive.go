@@ -53,8 +53,14 @@ func Extract(archivePath string, archiveType string, opts ExtractOpts) error {
 		return extractTarGz(archivePath, root, opts)
 	case "tar.xz":
 		return extractTarXz(archivePath, root, opts)
+	case "tar.zst":
+		return extractTarZst(archivePath, root, opts)
+	case "tar.bz2":
+		return extractTarBz2(archivePath, root, opts)
 	case "zip":
 		return extractZip(archivePath, root, opts)
+	case "gz":
+		return fmt.Errorf(`archive "gz" is a single compressed file, not an archive: install it with binaries = [{ to = "..." }]`)
 	default:
 		return fmt.Errorf("unsupported archive type: %q", archiveType)
 	}

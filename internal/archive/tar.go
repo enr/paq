@@ -19,7 +19,7 @@ type symlinkEntry struct {
 }
 
 // extractTar extracts a tar archive from reader with the given options.
-// This function is shared by tar.gz and tar.xz.
+// This function is shared by tar.gz, tar.xz, tar.zst and tar.bz2.
 func extractTar(r io.Reader, root *os.Root, opts ExtractOpts) error {
 	tr := tar.NewReader(r)
 

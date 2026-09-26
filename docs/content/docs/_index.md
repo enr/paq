@@ -221,6 +221,9 @@ paq install ripgrep
 # Install without recording it in the manifest (ephemeral)
 paq install ripgrep --no-save
 
+# Install a specific version
+paq install ripgrep@14.1.0
+
 # Reinstall even if already installed
 paq install ripgrep --force
 
@@ -230,6 +233,11 @@ paq install ripgrep bat delta
 # Install all tools from the manifest
 paq install
 ```
+
+`name@version` installs that version and records it as the app's `version` in
+the manifest: a new app is imported with it, and for an app already in the
+manifest only its `version` line is rewritten. With `--no-save` the version
+applies to that run only.
 
 When several tools are installed in one run, a failing one does not abort the
 others: every app is attempted and the command reports the failures at the end.
@@ -475,6 +483,23 @@ sha256_asset = "{{asset}}.sha256"
 #   paq install mytool
 ```
 
+`archive` accepts `tar.gz` (or `tgz`), `tar.xz`, `tar.zst`, `tar.bz2` and `zip`
+(and `gz`, see below).
+
+With the `github` backend, `asset` may be a glob (`*`, `?`, `[...]`, as in shell
+patterns) when part of the name cannot be derived from the version and the
+platform, such as a build number. It must match exactly one asset of the
+release, otherwise the install fails listing the candidates. `{{asset}}` expands
+to the name of the matched asset, so `sha256_asset = "{{asset}}.sha256"` keeps
+working:
+
+```toml
+[specs.mytool]
+backend = "github"
+repo = "owner/mytool"
+asset = "mytool-{{version}}+*-{{os}}-{{arch}}.tar.gz"
+```
+
 `[specs.mytool.arch]` and `[specs.mytool.os]` remap the canonical `{{arch}}` /
 `{{os}}` values to the vocabulary the release uses. When a tool ships a
 different C environment per arch (e.g. musl on x86_64 but gnu on aarch64),
@@ -533,6 +558,10 @@ asset = "mytool_{{version}}_{{os}}_{{arch}}{{ext}}"
 chmod = "0755"
 binaries = [ { to = "mytool{{ext}}" } ]   # one entry; the artifact is the binary
 ```
+
+A single executable compressed with gzip (e.g. `mytool-linux-amd64.gz`) works the
+same way with `archive = "gz"`: it is decompressed, then installed as the one
+`binaries` entry. Without `to`, it is installed under the asset name minus `.gz`.
 
 A recipe for a direct URL:
 
