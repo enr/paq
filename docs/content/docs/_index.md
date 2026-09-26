@@ -457,8 +457,9 @@ shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
 The embedded registry currently ships `bat`, `bun`, `delta`, `deno`, `fresh`,
-`gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`, `nub`, `ripgrep`,
-`runp`, `terraform`, `vscode`, `zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
+`fd`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`,
+`nub`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
+`temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
 
 A recipe for a GitHub-hosted tool:
