@@ -59,16 +59,88 @@ func WriteManifestEntry(key, block string, overwrite bool) (string, error) {
 		return "", fmt.Errorf("resulting manifest is invalid (entry %q may already exist): %w", key, err)
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("write manifest: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return "", fmt.Errorf("replace manifest: %w", err)
+	if err := replaceManifest(path, content); err != nil {
+		return "", err
 	}
 
 	return path, nil
+}
+
+// SetManifestAppVersion sets the version of the existing app `key` in the
+// user manifest, rewriting only the `version` line of its [apps.<key>]
+// table (or adding one right below the header): the rest of the file,
+// comments included, is left untouched. Fails if the manifest has no
+// [apps.<key>] table header, e.g. an app declared as an inline table.
+// Returns the manifest's path.
+func SetManifestAppVersion(key, version string) (string, error) {
+	path, err := userConfigPath()
+	if err != nil {
+		return "", err
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read manifest %s: %w", path, err)
+	}
+
+	newLine := fmt.Sprintf("version = %q", version)
+	lines := strings.Split(string(existing), "\n")
+	header, inTable, done := -1, false, false
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+			if inTable {
+				break // left the table without finding a version line
+			}
+			if strings.TrimSpace(t[1:len(t)-1]) == "apps."+key {
+				header, inTable = i, true
+			}
+			continue
+		}
+		if name, _, ok := strings.Cut(t, "="); inTable && ok && strings.TrimSpace(name) == "version" {
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			if strings.HasSuffix(line, "\r") {
+				newLine += "\r"
+			}
+			lines[i] = indent + newLine
+			done = true
+			break
+		}
+	}
+	if header < 0 {
+		return "", fmt.Errorf("no [apps.%s] table in %s: set its version there by hand", key, path)
+	}
+	if !done {
+		lines = append(lines[:header+1], append([]string{newLine}, lines[header+1:]...)...)
+	}
+	content := strings.Join(lines, "\n")
+
+	// Validate the result before writing, and that the edit landed where meant.
+	var raw userConfigRaw
+	if err := toml.Unmarshal([]byte(content), &raw); err != nil {
+		return "", fmt.Errorf("resulting manifest is invalid: %w", err)
+	}
+	if got := raw.Apps[key].Version; got != version {
+		return "", fmt.Errorf("could not set the version of %q in %s: set it there by hand", key, path)
+	}
+
+	if err := replaceManifest(path, content); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// replaceManifest atomically replaces the manifest at path with content
+// (temp file + rename).
+func replaceManifest(path, content string) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replace manifest: %w", err)
+	}
+	return nil
 }
 
 // removeAppTable removes from the TOML content the tables for app `key`

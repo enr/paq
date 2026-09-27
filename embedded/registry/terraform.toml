@@ -1,0 +1,14 @@
+[terraform]
+backend = "url"
+source = "https://releases.hashicorp.com/terraform/{{version}}/terraform_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+extract = "terraform{{ext}}"
+chmod = "0755"
+default_version = "1.16.4"
+# With version = "latest" the version is read from HashiCorp's checkpoint API.
+latest_strategy = "json"
+latest_url = "https://checkpoint-api.hashicorp.com/v1/check/terraform"
+latest_json = "current_version"
+
+[terraform.verify]
+sha256_asset = "terraform_{{version}}_SHA256SUMS"

@@ -1,0 +1,20 @@
+[go]
+backend = "url"
+source = "https://dl.google.com/go/go{{version}}.{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+default_version = "1.27.1"
+# With version = "latest" the version is read from the go.dev download index,
+# whose first entry is the newest stable release (e.g. "go1.27.1").
+latest_strategy = "json"
+latest_url = "https://go.dev/dl/?mode=json"
+latest_json = "0.version"
+
+# Windows ships a .zip instead of a .tar.gz.
+[go.windows]
+source = "https://dl.google.com/go/go{{version}}.{{os}}-{{arch}}.zip"
+archive = "zip"
+
+[go.verify]
+# A hash-only checksum file next to each download.
+sha256_asset = "{{asset}}.sha256"

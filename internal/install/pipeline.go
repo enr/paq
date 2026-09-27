@@ -268,11 +268,13 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// 6. Resolve the artifact URL.
 	step(fmt.Sprintf("Resolving download URL for %s...", appName))
 
-	var downloadURL string
+	// matchedAsset is the name of the release asset the github backend picked:
+	// spec.Asset may be a glob, so its expansion is not necessarily the name.
+	var downloadURL, matchedAsset string
 	switch spec.Backend {
 	case "github":
 		gb := backend.GitHubBackend{Repo: spec.Repo, Asset: spec.Asset, HTTPClient: client}
-		downloadURL, err = gb.Resolve(ctx, tag, vars)
+		downloadURL, matchedAsset, err = gb.ResolveAsset(ctx, tag, vars)
 	case "url":
 		ub := backend.URLBackend{Source: spec.Source}
 		downloadURL, err = ub.Resolve(vars)
@@ -295,7 +297,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	vars.Extra["asset"] = assetName
 	// Resolve the asset name from the template and add it to vars.Extra so
 	// that {{asset}} is available in subsequent templates (e.g. sha256_asset).
-	if spec.Asset != "" {
+	if matchedAsset != "" {
+		assetName = matchedAsset
+		vars.Extra["asset"] = matchedAsset
+	} else if spec.Asset != "" {
 		name, err2 := template.Resolve(spec.Asset, vars)
 		if err2 != nil {
 			return fmt.Errorf("resolve asset name: %w", err2)
@@ -506,6 +511,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 					to = filepath.Base(from)
 				} else {
 					to = assetName
+					if spec.Archive == "gz" {
+						to = strings.TrimSuffix(to, ".gz")
+					}
 				}
 			}
 			bins = append(bins, ResolvedBinary{From: from, To: to})

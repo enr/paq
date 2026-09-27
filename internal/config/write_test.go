@@ -117,3 +117,58 @@ func TestRemoveAppTable(t *testing.T) {
 		t.Errorf("other tables should remain:\n%s", got)
 	}
 }
+
+func TestSetManifestAppVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name, orig, want string
+	}{
+		{
+			name: "replaces the version line",
+			orig: "[apps.rg]\nuse = \"ripgrep\"\nversion = \"latest\"\n\n[apps.bat]\nversion = \"0.24.0\"\n",
+			want: "[apps.rg]\nuse = \"ripgrep\"\nversion = \"14.1.0\"\n\n[apps.bat]\nversion = \"0.24.0\"\n",
+		},
+		{
+			name: "adds a missing version below the header",
+			orig: "[apps.bat]\nversion = \"0.24.0\"\n\n[apps.rg]\nuse = \"ripgrep\"\n\n[apps.rg.os]\nversion = \"x\"\n",
+			want: "[apps.bat]\nversion = \"0.24.0\"\n\n[apps.rg]\nversion = \"14.1.0\"\nuse = \"ripgrep\"\n\n[apps.rg.os]\nversion = \"x\"\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			withConfigHome(t, dir)
+			path := filepath.Join(dir, "paq", "config.toml")
+			os.MkdirAll(filepath.Dir(path), 0755)
+			if err := os.WriteFile(path, []byte(tc.orig), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := SetManifestAppVersion("rg", "14.1.0"); err != nil {
+				t.Fatalf("SetManifestAppVersion: %v", err)
+			}
+			data, _ := os.ReadFile(path)
+			if string(data) != tc.want {
+				t.Errorf("manifest =\n%s\nwant\n%s", data, tc.want)
+			}
+		})
+	}
+}
+
+// An app declared without its own [apps.<key>] header cannot be edited line
+// by line: the manifest must be left untouched.
+func TestSetManifestAppVersionInlineTableFails(t *testing.T) {
+	dir := t.TempDir()
+	withConfigHome(t, dir)
+	path := filepath.Join(dir, "paq", "config.toml")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	orig := "[apps]\nrg = { use = \"ripgrep\", version = \"latest\" }\n"
+	if err := os.WriteFile(path, []byte(orig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := SetManifestAppVersion("rg", "14.1.0"); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if data, _ := os.ReadFile(path); string(data) != orig {
+		t.Errorf("manifest was modified:\n%s", data)
+	}
+}

@@ -24,7 +24,8 @@ type ResolvedBinary struct {
 //
 // If archiveType is empty, the downloaded artifact IS the executable (bare
 // download): exactly one entry is allowed and the artifact is installed as
-// destDir/<To>. Otherwise each binary is extracted from the archive (by
+// destDir/<To>. "gz" is the same, with the artifact decompressed first
+// (a gzip-compressed single executable). Otherwise each binary is extracted from the archive (by
 // basename From) into a temp dir on the same filesystem as destDir, then
 // moved into destDir/<To>.
 func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, destDir, chmod string, opts archive.ExtractOpts) ([]string, error) {
@@ -38,9 +39,16 @@ func InstallBinaries(artifactPath, archiveType string, bins []ResolvedBinary, de
 	}
 
 	// Bare download: the artifact is the binary, no extraction.
-	if archiveType == "" {
+	if archiveType == "" || archiveType == "gz" {
 		if len(bins) != 1 {
 			return nil, fmt.Errorf("a non-archive download installs exactly one binary, got %d", len(bins))
+		}
+		if archiveType == "gz" {
+			artifactPath, err = archive.Gunzip(artifactPath, "")
+			if err != nil {
+				return nil, err
+			}
+			defer os.Remove(artifactPath)
 		}
 		dest := filepath.Join(destDir, bins[0].To)
 		// The artifact IS the executable, and the temp file it is copied

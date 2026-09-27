@@ -639,6 +639,65 @@ func TestPipelineInstallFile(t *testing.T) {
 	}
 }
 
+// TestPipelineAssetGlob verifies that a glob asset installs the one matching
+// release asset, and that {{asset}} names that asset (not the pattern), so
+// the sibling checksum file is found and matched.
+func TestPipelineAssetGlob(t *testing.T) {
+	isolateState(t)
+	binaryContent := []byte("fake-rg-binary")
+	tgzData := makeFakeTarGz(binaryContent)
+	assetName := "ripgrep-0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+	checksumFile := fmt.Sprintf("%s  %s\n", sha256hex(tgzData), assetName)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "releases/tags"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"assets": []map[string]string{
+					{"name": assetName, "url": "http://" + r.Host + "/download/" + assetName},
+					{"name": assetName + ".sha256", "url": "http://" + r.Host + "/download/" + assetName + ".sha256"},
+				},
+			})
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write([]byte(checksumFile))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "rg")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"ripgrep": {
+				Backend: "github",
+				Repo:    "test/ripgrep",
+				Asset:   "ripgrep-{{version}}-*-linux-gnu.tar.gz",
+				Archive: "tar.gz",
+				Extract: "rg",
+				Verify:  config.VerifyConfig{SHA256Asset: "{{asset}}.sha256"},
+			},
+		},
+		Apps: map[string]config.AppEntry{
+			"rg": {Use: "ripgrep", Version: "0.1.0", Dest: dest},
+		},
+	}
+
+	client := &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
+	if err := Run(context.Background(), cfg, "rg", nil, &Hooks{HTTPClient: client}); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("dest not found: %v", err)
+	}
+	if !bytes.Equal(data, binaryContent) {
+		t.Errorf("dest content = %q, want %q", data, binaryContent)
+	}
+}
+
 // TestPipelineMinimumReleaseAgeDefaultAppliesToGitHub verifies the built-in
 // default (24h, applied even with no configuration at all): a "latest"
 // install against a github-backed spec skips a release published within the

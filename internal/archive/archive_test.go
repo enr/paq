@@ -5,11 +5,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 )
 
@@ -631,5 +633,127 @@ func TestExtractTarXzRejectsNonXzInput(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "xz reader") {
 		t.Errorf("error = %v, want it to name the xz reader", err)
+	}
+}
+
+// makeTarZst creates an in-memory .tar.zst with the given entries.
+func makeTarZst(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(zw)
+	for name, content := range entries {
+		tw.WriteHeader(&tar.Header{
+			Name: name,
+			Mode: 0755,
+			Size: int64(len(content)),
+		})
+		tw.Write([]byte(content))
+	}
+	tw.Close()
+	zw.Close()
+
+	tmp, _ := os.CreateTemp(t.TempDir(), "test-*.tar.zst")
+	tmp.Write(buf.Bytes())
+	tmp.Close()
+	return tmp.Name()
+}
+
+func TestExtractTarZstSingleFile(t *testing.T) {
+	tzst := makeTarZst(t, map[string]string{
+		"tool-1.0/tool":    "zst-binary",
+		"tool-1.0/LICENSE": "license",
+	})
+
+	dest := t.TempDir()
+	if err := Extract(tzst, "tar.zst", ExtractOpts{Extract: "tool", Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dest, "tool"))
+	if err != nil {
+		t.Fatalf("tool not extracted: %v", err)
+	}
+	if string(data) != "zst-binary" {
+		t.Errorf("tool content = %q, want zst-binary", data)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "LICENSE")); !os.IsNotExist(err) {
+		t.Error("LICENSE should not have been extracted")
+	}
+}
+
+func TestExtractTarZstRejectsNonZstInput(t *testing.T) {
+	notZst := filepath.Join(t.TempDir(), "broken.tar.zst")
+	if err := os.WriteFile(notZst, []byte("this is not a zstd stream"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Extract(notZst, "tar.zst", ExtractOpts{Dest: t.TempDir()}); err == nil {
+		t.Fatal("expected an error for a non-zstd file, got nil")
+	}
+}
+
+// tarBz2Fixture is a .tar.bz2 (the standard library has no bzip2 writer)
+// holding tool-1.0/tool ("bz2-binary") and tool-1.0/LICENSE ("license").
+const tarBz2Fixture = "QlpoOTFBWSZTWUz8D+QAAKD/gMuAAIBAA/qACiVIAHolnjAICCAAchpQNBoAA9IAzSBVJAg0NGmINGgA/W5ayd8kDKqIhDdb5XKyi+xWzoQkJRqU3qFqRFypMQxxnQqYKYmuk+z6VjYw0OdJsYahvAHD697UcbkJSvIioJCW8LFs6PDargRAfi7kinChIJn4H8g="
+
+func TestExtractTarBz2StripComponents(t *testing.T) {
+	data, err := base64.StdEncoding.DecodeString(tarBz2Fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbz := filepath.Join(t.TempDir(), "tool.tar.bz2")
+	if err := os.WriteFile(tbz, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := t.TempDir()
+	if err := Extract(tbz, "tar.bz2", ExtractOpts{StripComponents: 1, Dest: dest}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dest, "tool"))
+	if err != nil {
+		t.Fatalf("tool not extracted: %v", err)
+	}
+	if string(got) != "bz2-binary" {
+		t.Errorf("tool content = %q, want bz2-binary", got)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "LICENSE")); err != nil {
+		t.Errorf("LICENSE not extracted: %v", err)
+	}
+}
+
+// "gz" is a single compressed file: asking Extract to unpack it as an
+// archive must fail with a message pointing at binaries, not "unsupported".
+func TestExtractGzIsNotAnArchive(t *testing.T) {
+	err := Extract(filepath.Join(t.TempDir(), "tool.gz"), "gz", ExtractOpts{Dest: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "binaries") {
+		t.Fatalf("error = %v, want it to point at binaries", err)
+	}
+}
+
+func TestGunzip(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write([]byte("gz-binary"))
+	gz.Close()
+	src := filepath.Join(t.TempDir(), "tool.gz")
+	if err := os.WriteFile(src, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := Gunzip(src, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "gz-binary" {
+		t.Errorf("content = %q, want gz-binary", got)
 	}
 }

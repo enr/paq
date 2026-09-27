@@ -3,8 +3,10 @@ package install
 import (
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -125,6 +127,39 @@ func TestInstallBinariesBare(t *testing.T) {
 	}
 	if !bytes.Equal(got, content) {
 		t.Errorf("content = %q, want %q", got, content)
+	}
+}
+
+// A "gz" artifact is a single compressed executable: it is decompressed and
+// installed like a bare download.
+func TestInstallBinariesGz(t *testing.T) {
+	content := []byte("raw-elf")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write(content)
+	gz.Close()
+	src := filepath.Join(t.TempDir(), "mytool-linux-amd64.gz")
+	if err := os.WriteFile(src, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	destDir := filepath.Join(t.TempDir(), "bin")
+	bins := []ResolvedBinary{{To: "mytool"}}
+
+	if _, err := InstallBinaries(src, "gz", bins, destDir, "", archive.ExtractOpts{}); err != nil {
+		t.Fatalf("InstallBinaries (gz) failed: %v", err)
+	}
+
+	dest := filepath.Join(destDir, "mytool")
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read mytool: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Errorf("content = %q, want %q", got, content)
+	}
+	if info, err := os.Stat(dest); err == nil && info.Mode().Perm()&0100 == 0 && runtime.GOOS != "windows" {
+		t.Errorf("mode = %v, want executable", info.Mode().Perm())
 	}
 }
 

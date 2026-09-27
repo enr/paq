@@ -27,16 +27,19 @@ var (
 const maxParallel = 3
 
 var installCmd = &cobra.Command{
-	Use:     "install [app...]",
+	Use:     "install [app[@version]...]",
 	Aliases: []string{"i"},
 	Short:   "Install a tool (or all tools from manifest if no app specified)",
 	Long: "Install one or more tools. A name that isn't yet in the manifest is auto-imported " +
 		"from the registry, with a default version and destination, before being installed. " +
+		"Append @version to install that version: it is recorded as the app's version in the manifest " +
+		"(only for this run with --no-save). " +
 		"With no arguments, installs every app declared in the manifest instead. " +
 		"Installing more than one app runs them concurrently (up to 3 at a time), " +
 		"each with a [name]-prefixed line of output.",
 	Example: `  paq install ripgrep            # install, recording it in the manifest
   paq install ripgrep --no-save  # install without recording it (ephemeral)
+  paq install ripgrep@14.1.0     # install (and record) a specific version
   paq install ripgrep bat delta  # install multiple tools
   paq install                    # install every tool from the manifest`,
 	Args:              cobra.ArbitraryArgs,
@@ -61,13 +64,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	// A single explicit app gets the friendlier single-app UX: no [name]
 	// prefix on its output, and a progress bar for the download.
 	if len(args) == 1 {
-		name := args[0]
-		path, err := ensureManifestEntry(cfg, name, !flagInstallNoSave)
+		name, ver, err := parseInstallArg(args[0])
 		if err != nil {
 			return err
 		}
-		if path != "" {
-			ui.OK("added %s to %s", name, path)
+		if err := saveManifestEntry(cfg, name, ver); err != nil {
+			return err
 		}
 		hooks := appHooks(name, "")
 		hooks.Force = flagInstallForce
@@ -79,21 +81,24 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		// Validate every name before touching the manifest or installing
 		// anything, so a typo in the last argument doesn't leave earlier
 		// apps auto-imported into the manifest.
-		for _, name := range args {
-			if err := validateAppName(cfg, name); err != nil {
-				return err
-			}
-		}
-		for _, name := range args {
-			path, err := ensureManifestEntry(cfg, name, !flagInstallNoSave)
+		names := make([]string, len(args))
+		versions := make([]string, len(args))
+		for i, arg := range args {
+			name, ver, err := parseInstallArg(arg)
 			if err != nil {
 				return err
 			}
-			if path != "" {
-				ui.OK("added %s to %s", name, path)
+			if err := validateAppName(cfg, name); err != nil {
+				return err
+			}
+			names[i], versions[i] = name, ver
+		}
+		for i, name := range names {
+			if err := saveManifestEntry(cfg, name, versions[i]); err != nil {
+				return err
 			}
 		}
-		return installParallel(ctx, cfg, args)
+		return installParallel(ctx, cfg, names)
 	}
 
 	// No args: install all apps from the manifest.
@@ -194,15 +199,57 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 	return nil
 }
 
+// parseInstallArg splits an install argument, "name" or "name@version".
+func parseInstallArg(arg string) (name, version string, err error) {
+	if strings.HasSuffix(arg, "@") {
+		return "", "", fmt.Errorf("missing version after '@' in %q", arg)
+	}
+	name, version = parseAppRef(arg)
+	return name, version, nil
+}
+
+// saveManifestEntry runs ensureManifestEntry for an install argument,
+// honoring --no-save, and reports a manifest write.
+func saveManifestEntry(cfg *config.Config, name, version string) error {
+	_, existed := cfg.Apps[name]
+	path, err := ensureManifestEntry(cfg, name, version, !flagInstallNoSave)
+	if err != nil {
+		return err
+	}
+	switch {
+	case path == "":
+	case existed:
+		ui.OK("set %s version to %s in %s", name, version, path)
+	default:
+		ui.OK("added %s to %s", name, path)
+	}
+	return nil
+}
+
 // ensureManifestEntry ensures that cfg.Apps[name] exists, so that install
 // can proceed. If name is missing from the manifest but matches a registry
 // spec, it synthesizes a default entry (auto-import): injects it into
 // cfg.Apps in memory and, if save is true, persists it to the user manifest.
-// Returns the written path ("" if not persisted or the app already existed)
-// or a hintError if name is neither a known app nor a known spec.
-func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, error) {
-	if _, exists := cfg.Apps[name]; exists {
-		return "", nil
+// A non-empty version (from "name@version") overrides the entry's version:
+// the default one of an auto-imported entry, or the manifest's one of an
+// existing entry, whose version line is then rewritten if save is true.
+// Returns the written path ("" if nothing was persisted) or a hintError if
+// name is neither a known app nor a known spec.
+func ensureManifestEntry(cfg *config.Config, name, version string, save bool) (string, error) {
+	if entry, exists := cfg.Apps[name]; exists {
+		if version == "" || version == entry.Version {
+			return "", nil
+		}
+		entry.Version = version
+		cfg.Apps[name] = entry
+		if !save {
+			return "", nil
+		}
+		path, err := config.SetManifestAppVersion(name, version)
+		if err != nil {
+			return "", fmt.Errorf("update manifest entry: %w", err)
+		}
+		return path, nil
 	}
 
 	if err := validateAppName(cfg, name); err != nil {
@@ -214,6 +261,9 @@ func ensureManifestEntry(cfg *config.Config, name string, save bool) (string, er
 		Use:     name,
 		Version: defaultImportVersion(spec),
 		Dest:    config.DefaultDest(spec, name, cfg.Defaults),
+	}
+	if version != "" {
+		entry.Version = version
 	}
 	// Makes the app installable in memory, regardless of persistence.
 	cfg.Apps[name] = entry

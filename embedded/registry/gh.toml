@@ -1,0 +1,22 @@
+[gh]
+backend = "github"
+repo = "cli/cli"
+asset = "gh_{{version}}_{{os}}_{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "gh{{ext}}"
+chmod = "0755"
+
+[gh.os]
+darwin = "macOS"
+
+# macOS and Windows ship a .zip instead of a .tar.gz.
+[gh.darwin]
+asset = "gh_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[gh.windows]
+asset = "gh_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[gh.verify]
+sha256_asset = "gh_{{version}}_checksums.txt"
