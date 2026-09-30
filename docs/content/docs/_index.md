@@ -456,7 +456,7 @@ tool — `paq install <name>` auto-imports it into the manifest. If a user recip
 shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
-The embedded registry currently ships `bat`, `bun`, `delta`, `deno`, `fresh`,
+The embedded registry currently ships `bat`, `bun`, `cosign`, `delta`, `deno`, `fresh`,
 `fd`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`,
 `nub`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
 `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
@@ -612,6 +612,109 @@ sha256_asset = "{{asset}}.sha256"
 [specs.mytool.verify.minisign]
 public_key   = "RWQ...publisher-minisign-public-key..."
 signed_asset = "{{asset}}.sha256.minisig"
+```
+
+A key-based [cosign](https://docs.sigstore.dev/cosign/) signature
+(`cosign sign-blob --key`) is supported too. `public_key` is the PEM content of
+the publisher's `cosign.pub` (ECDSA P-256 or Ed25519) and `signature` names the
+base64 `.sig` asset; both must be set together. The signature covers the
+checksum document when `sha256_asset` or `sha256_url` is configured (checked
+before the artifact is downloaded), otherwise the artifact itself:
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "checksums.txt"
+
+[specs.mytool.verify.cosign]
+public_key = """
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+-----END PUBLIC KEY-----
+"""
+signature = "checksums.txt.sig"
+```
+
+cosign v3 writes a Sigstore bundle (`.sigstore.json`) by default instead of a
+`.sig`: name it with `bundle` (mutually exclusive with `signature`). With
+`public_key` the bundle is still verified by paq itself, against the key; its
+transparency log entries are not checked, the key being the trust anchor.
+
+A **keyless** bundle, signed with a short-lived certificate (as goreleaser does
+from GitHub Actions), has no key to pin: what it proves is *who* signed, so the
+recipe must say who is expected. `certificate_oidc_issuer` and exactly one of
+`certificate_identity` (the exact signer, templated) or
+`certificate_identity_regexp` (which must start with `^`) are required:
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "checksums.txt"
+
+[specs.mytool.verify.cosign]
+bundle                  = "checksums.txt.sigstore.json"
+certificate_oidc_issuer = "https://token.actions.githubusercontent.com"
+certificate_identity    = "https://github.com/owner/mytool/.github/workflows/release.yml@refs/tags/v{{version}}"
+```
+
+Keyless bundles are verified by running the `cosign` binary (v3 or later),
+which needs network access to fetch the Sigstore trust root. paq uses, in
+order: the path in `[defaults] cosign = "/path/to/cosign"`, `cosign` on `PATH`,
+a cosign installed with `paq install cosign`, and finally a private copy of a
+release whose hash is pinned in paq, kept in paq's cache directory
+(`tools/cosign`). When none exists, the first install that needs it downloads
+the private copy; in an interactive terminal paq first asks whether to install
+cosign as a regular tool instead, or to abort. Installing cosign with
+`paq install cosign` removes the private copy. `paq doctor` shows which cosign
+is in use. The legacy keyless format (`.sig` plus `.pem`, without a bundle) is
+not supported.
+
+Projects that build their releases with GitHub Actions can publish **GitHub
+build-provenance attestations** (`actions/attest-build-provenance`), stored by
+GitHub rather than in the release. They sign the artifact itself: paq looks up
+the attestations for the downloaded file's sha256 and has cosign check that
+one of them is a valid SLSA provenance signed by a workflow of the expected
+repository, before anything is installed. The block's presence enables it;
+`repo` defaults to the recipe's `repo`, and `signer_workflow` optionally
+narrows the signer to one workflow (possibly a reusable one in another
+repository):
+
+```toml
+[specs.mytool.verify.github_attestation]
+# repo            = "owner/mytool"
+# signer_workflow = "owner/mytool/.github/workflows/release.yml"
+```
+
+This queries the GitHub API for every install: set `GITHUB_TOKEN` to avoid its
+rate limit. It uses cosign like keyless bundles (see above), and supports
+public repositories only (private ones are signed by GitHub's own Sigstore
+instance). The embedded `gh` recipe does not enable it, to keep `paq install
+gh` free of the cosign download. To require it, add the whole recipe to your
+manifest with the extra block (a user recipe replaces the embedded one, it is
+not merged with it):
+
+```toml
+[specs.gh]
+backend = "github"
+repo = "cli/cli"
+asset = "gh_{{version}}_{{os}}_{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "gh{{ext}}"
+chmod = "0755"
+
+[specs.gh.os]
+darwin = "macOS"
+
+[specs.gh.darwin]
+asset = "gh_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[specs.gh.windows]
+asset = "gh_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[specs.gh.verify]
+sha256_asset = "gh_{{version}}_checksums.txt"
+
+[specs.gh.verify.github_attestation]
 ```
 
 ### Restricting the supported platforms

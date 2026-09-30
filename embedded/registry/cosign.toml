@@ -1,0 +1,16 @@
+# cosign publishes bare executables, not archives (see jq.toml). paq also
+# keeps a private, hash-pinned copy of cosign for keyless signature checks
+# (internal/install/cosign_pin.go); installing it from this recipe replaces
+# that copy.
+
+[cosign]
+backend = "github"
+repo = "sigstore/cosign"
+asset = "cosign-{{os}}-{{arch}}{{ext}}"
+chmod = "0755"
+binaries = [
+  { to = "cosign{{ext}}" },
+]
+
+[cosign.verify]
+sha256_asset = "cosign_checksums.txt"

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -73,6 +76,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 		hooks := appHooks(name, "")
 		hooks.Force = flagInstallForce
+		if ui.IsTTY() && !ui.Global.JSON {
+			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
+		}
 		progress := ui.NewProgressFn(name)
 		return install.Run(ctx, cfg, name, progress, hooks)
 	}
@@ -312,6 +318,31 @@ func appHooks(name, prefix string) *install.Hooks {
 		OnInfo:  func(msg string) { ui.Info("%s%s", prefix, msg) },
 		OnWarn:  func(msg string) { ui.Warn("%s%s", prefix, msg) },
 		OnDebug: func(msg string) { ui.Debug("%s%s", prefix, msg) },
+	}
+}
+
+// cosignPrompt returns the Hooks.CosignMissing callback for an interactive
+// session: when a keyless signature needs cosign and none is available, it
+// asks whether to install cosign as a regular tool (recorded in the manifest
+// and state, like "paq install cosign"), to let paq use its private copy (the
+// default), or to abort.
+func cosignPrompt(cfg *config.Config, app string, r io.Reader) func(context.Context) (bool, error) {
+	return func(ctx context.Context) (bool, error) {
+		fmt.Printf("cosign is required to verify %s. Install it as [u]ser tool, [p]rivate copy for paq, or [a]bort? [P/u/a] ", app)
+		line, _ := bufio.NewReader(r).ReadString('\n')
+		switch strings.TrimSpace(strings.ToLower(line)) {
+		case "u", "user":
+			if err := saveManifestEntry(cfg, "cosign", ""); err != nil {
+				return false, err
+			}
+			if err := install.Run(ctx, cfg, "cosign", ui.NewProgressFn("cosign"), appHooks("cosign", "")); err != nil {
+				return false, err
+			}
+			return true, nil
+		case "a", "abort":
+			return false, install.ErrCosignDeclined
+		}
+		return false, nil
 	}
 }
 

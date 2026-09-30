@@ -1,0 +1,139 @@
+package verify
+
+import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"os"
+	"strings"
+)
+
+// CheckCosignKey verifies that signaturePath is a valid key-based cosign
+// signature ("cosign sign-blob --key") of filePath, produced by the private
+// key matching pemPubKey (the PEM-encoded contents of cosign.pub).
+//
+// The signature file holds the base64-encoded signature. Supported keys are
+// ECDSA P-256 (cosign's default: ASN.1 signature over the SHA-256 digest) and
+// Ed25519 (signature over the raw file content).
+func CheckCosignKey(filePath, signaturePath, pemPubKey string) error {
+	pub, err := parseCosignPublicKey(pemPubKey)
+	if err != nil {
+		return fmt.Errorf("parse cosign public key: %w", err)
+	}
+
+	sigBytes, err := os.ReadFile(signaturePath)
+	if err != nil {
+		return fmt.Errorf("read signature file %s: %w", signaturePath, err)
+	}
+
+	fileBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read file %s: %w", filePath, err)
+	}
+
+	// From here on the failures are verdicts on the signature itself, so they
+	// carry ErrVerification (exit code 4), as in CheckMinisign.
+	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(sigBytes)))
+	if err != nil {
+		return failed("decode cosign signature: %v", err)
+	}
+
+	if !checkCosignSig(pub, fileBytes, sig) {
+		return failed("cosign signature is invalid for %s", filePath)
+	}
+	return nil
+}
+
+// cosignBundle is the part of a Sigstore bundle (.sigstore.json) needed to
+// verify a key-based blob signature.
+type cosignBundle struct {
+	MessageSignature *struct {
+		MessageDigest *struct {
+			Algorithm string `json:"algorithm"`
+			Digest    []byte `json:"digest"` // base64 in JSON
+		} `json:"messageDigest"`
+		Signature []byte `json:"signature"` // base64 in JSON
+	} `json:"messageSignature"`
+}
+
+// CheckCosignKeyBundle verifies a Sigstore bundle produced by
+// "cosign sign-blob --key ... --bundle" for filePath, with the key matching
+// pemPubKey. Only the signature is checked: transparency log entries in the
+// bundle are ignored, since the trust anchor is the publisher's key.
+func CheckCosignKeyBundle(filePath, bundlePath, pemPubKey string) error {
+	pub, err := parseCosignPublicKey(pemPubKey)
+	if err != nil {
+		return fmt.Errorf("parse cosign public key: %w", err)
+	}
+
+	bundleBytes, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return fmt.Errorf("read bundle file %s: %w", bundlePath, err)
+	}
+
+	fileBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read file %s: %w", filePath, err)
+	}
+
+	var b cosignBundle
+	if err := json.Unmarshal(bundleBytes, &b); err != nil {
+		return failed("decode cosign bundle: %v", err)
+	}
+	if b.MessageSignature == nil {
+		return failed("cosign bundle %s holds no blob signature (messageSignature)", bundlePath)
+	}
+	if d := b.MessageSignature.MessageDigest; d != nil {
+		sum := sha256.Sum256(fileBytes)
+		if d.Algorithm != "SHA2_256" || !bytes.Equal(d.Digest, sum[:]) {
+			return failed("cosign bundle digest does not match %s", filePath)
+		}
+	}
+	if !checkCosignSig(pub, fileBytes, b.MessageSignature.Signature) {
+		return failed("cosign signature is invalid for %s", filePath)
+	}
+	return nil
+}
+
+// checkCosignSig reports whether sig is a valid cosign signature of data.
+func checkCosignSig(pub any, data, sig []byte) bool {
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		digest := sha256.Sum256(data)
+		return ecdsa.VerifyASN1(k, digest[:], sig)
+	case ed25519.PublicKey:
+		return ed25519.Verify(k, data, sig)
+	}
+	return false
+}
+
+// parseCosignPublicKey decodes a PEM "PUBLIC KEY" block and accepts only the
+// key types CheckCosignKey can verify.
+func parseCosignPublicKey(pemPubKey string) (any, error) {
+	block, _ := pem.Decode([]byte(strings.TrimSpace(pemPubKey)))
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		if k.Curve != elliptic.P256() {
+			return nil, fmt.Errorf("unsupported ECDSA curve %s (only P-256)", k.Curve.Params().Name)
+		}
+	case ed25519.PublicKey:
+	default:
+		return nil, fmt.Errorf("unsupported key type %T (only ECDSA P-256 and Ed25519)", pub)
+	}
+	return pub, nil
+}

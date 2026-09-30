@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/download"
@@ -46,7 +47,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		if _, ok := cfg.Apps[name]; !ok {
 			return fmt.Errorf("app %q not found in manifest (~/.config/paq/config.toml)", name)
 		}
-		return upgradeApp(ctx, cfg, name, appHooks(name, ""), ui.NewProgressFn(name))
+		hooks := appHooks(name, "")
+		if ui.IsTTY() && !ui.Global.JSON {
+			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
+		}
+		return upgradeApp(ctx, cfg, name, hooks, ui.NewProgressFn(name))
 	}
 
 	var names []string

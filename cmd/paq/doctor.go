@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/install"
 	"github.com/enr/paq/internal/pathenv"
 	"github.com/enr/paq/internal/platform"
 	"github.com/enr/paq/internal/registry"
@@ -184,6 +185,19 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		binDir, optDir := config.DefaultDestRoots(cfg.Defaults)
 		reportOK("bin_dir", "Bin dir", binDir)
 		reportOK("opt_dir", "Opt dir", optDir)
+
+		// Only looked up, never downloaded: cosign is fetched on demand by
+		// the first install that needs a keyless signature check.
+		var cosignWarnings []string
+		if c, ok := install.FindCosign(cfg, func(m string) { cosignWarnings = append(cosignWarnings, m) }); ok {
+			value := fmt.Sprintf("%s (%s)", c.Path, c.Origin)
+			if c.Version != "" {
+				value = fmt.Sprintf("%s %s (%s)", c.Path, c.Version, c.Origin)
+			}
+			reportOK("cosign", "Cosign", value)
+		} else {
+			reportWarn("cosign", "Cosign", "not installed", "downloaded on demand for keyless signature checks", "", false, cosignWarnings...)
+		}
 
 		// Check whether bin dir is in PATH. Not a "label: value" row in the
 		// human report (a plain OK/Warn line instead), so it bypasses

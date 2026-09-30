@@ -570,7 +570,33 @@ func PrintSpecDetail(name string, spec config.Spec) error {
 	render("SHA256Asset", spec.Verify.SHA256Asset)
 	render("Minisign key", spec.Verify.Minisign.PublicKey)
 	render("Minisign sig", spec.Verify.Minisign.SignedAsset)
+	render("Cosign key", pemBody(spec.Verify.Cosign.PublicKey))
+	render("Cosign sig", spec.Verify.Cosign.Signature)
+	render("Cosign bundle", spec.Verify.Cosign.Bundle)
+	render("Cosign identity", spec.Verify.Cosign.CertificateIdentity)
+	render("Cosign id regexp", spec.Verify.Cosign.CertificateIdentityRegexp)
+	render("Cosign issuer", spec.Verify.Cosign.CertificateOIDCIssuer)
+	if att := spec.Verify.GitHubAttestation; att != nil {
+		repo := att.Repo
+		if repo == "" {
+			repo = spec.Repo
+		}
+		render("Attest repo", repo)
+		render("Signer workflow", att.SignerWorkflow)
+	}
 	return nil
+}
+
+// pemBody returns the base64 body of a PEM block on a single line (without
+// the BEGIN/END lines), so a multi-line key fits in one table row.
+func pemBody(s string) string {
+	var body []string
+	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "-----") {
+			body = append(body, line)
+		}
+	}
+	return strings.Join(body, "")
 }
 
 // formatBinaries renders each Binary as "from → to" (or just "from"/"to" when

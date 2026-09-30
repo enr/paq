@@ -42,6 +42,11 @@ type Hooks struct {
 	// downloads (tests inject one pointed at an httptest server); nil uses
 	// download.NewClient().
 	HTTPClient *http.Client
+	// CosignMissing is called when a keyless cosign signature must be verified
+	// and no cosign is available. It returns true after installing cosign as a
+	// regular tool, false to use paq's private copy, or an error to abort.
+	// Nil means the private copy, without asking.
+	CosignMissing func(ctx context.Context) (userInstalled bool, err error)
 }
 
 // shownError marks an error as already shown to the user via the OnFail hook,
@@ -134,6 +139,29 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	if spec.Verify.Minisign.PublicKey != "" && spec.Verify.SHA256Asset == "" && spec.Verify.SHA256URL == "" {
 		return fmt.Errorf("spec %q: verify.minisign requires sha256_asset or sha256_url (the signature is verified against the checksum file)", specName)
+	}
+	// The cosign signature covers the checksum document when one is
+	// configured, otherwise the artifact itself.
+	if err := validateCosign(spec.Verify.Cosign); err != nil {
+		return fmt.Errorf("spec %q: %w", specName, err)
+	}
+	// A GitHub attestation is verified against the repository that must have
+	// built the artifact: the recipe's, unless the block names another.
+	var attestation verify.AttestationPolicy
+	if att := spec.Verify.GitHubAttestation; att != nil {
+		attestation = verify.AttestationPolicy{Repo: att.Repo, SignerWorkflow: att.SignerWorkflow}
+		if attestation.Repo == "" {
+			attestation.Repo = spec.Repo
+		}
+		if owner, name, found := strings.Cut(attestation.Repo, "/"); !found || owner == "" || name == "" || strings.Contains(name, "/") {
+			return fmt.Errorf("spec %q: verify.github_attestation requires repo as \"owner/name\" (or a spec repo), got %q", specName, attestation.Repo)
+		}
+	}
+	// Keyless signatures and attestations are checked by the cosign binary.
+	needsCosign := spec.Verify.Cosign.Keyless() || spec.Verify.GitHubAttestation != nil
+	// cosign cannot be the tool that verifies its own install.
+	if specName == "cosign" && needsCosign {
+		return fmt.Errorf("spec %q: cosign cannot be verified with a keyless signature or an attestation (it would need itself)", specName)
 	}
 	// The checksum document has exactly one source: a sibling of the asset
 	// (sha256_asset) or an absolute URL (sha256_url). sha256_json only says how
@@ -325,7 +353,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 
 	// 7. Download checksum/signature files (if configured).
-	var checksumPath, checksum512Path, sigPath string
+	var checksumPath, checksum512Path, sigPath, cosignSigPath string
 	defer func() {
 		if checksumPath != "" {
 			os.Remove(checksumPath)
@@ -335,6 +363,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 		if sigPath != "" {
 			os.Remove(sigPath)
+		}
+		if cosignSigPath != "" {
+			os.Remove(cosignSigPath)
 		}
 	}()
 
@@ -402,8 +433,74 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		dbg("signature saved to %s", sigPath)
 	}
 
+	var cosignPath string // external cosign, for keyless signatures and attestations
+	if needsCosign {
+		found, err2 := EnsureCosign(ctx, cfg, client, hooks.CosignMissing, step, warn)
+		if err2 != nil {
+			return err2
+		}
+		cosignPath = found.Path
+		dbg("cosign: %s (%s) %s", found.Path, found.Origin, found.Version)
+	}
+
+	var cosignPolicy verify.CosignIdentity // resolved policy of a keyless signature
+	if c := spec.Verify.Cosign; c.Signature != "" || c.Bundle != "" {
+		if c.Keyless() {
+			var err2 error
+			cosignPolicy.Issuer, err2 = template.Resolve(c.CertificateOIDCIssuer, vars)
+			if err2 == nil {
+				cosignPolicy.Identity, err2 = template.Resolve(c.CertificateIdentity, vars)
+			}
+			if err2 == nil {
+				cosignPolicy.IdentityRegexp, err2 = template.Resolve(c.CertificateIdentityRegexp, vars)
+			}
+			if err2 != nil {
+				return fmt.Errorf("resolve cosign certificate policy: %w", err2)
+			}
+		}
+		asset := c.Signature
+		if asset == "" {
+			asset = c.Bundle
+		}
+		cosignSigName, err2 := template.Resolve(asset, vars)
+		if err2 != nil {
+			return fmt.Errorf("resolve cosign signature: %w", err2)
+		}
+		cosignSigURL, err2 := resolveAuxURL(cosignSigName)
+		if err2 != nil {
+			return fmt.Errorf("resolve cosign signature URL: %w", err2)
+		}
+		step("Downloading cosign signature...")
+		dbg("cosign signature URL: %s", cosignSigURL)
+		cosignSigPath, err = download.ToTemp(ctx, client, cosignSigURL, nil)
+		if err != nil {
+			return fmt.Errorf("download cosign signature: %w", err)
+		}
+		dbg("cosign signature saved to %s", cosignSigPath)
+	}
+
 	if !spec.Verify.Enabled() {
 		dbg("no verification configured for this spec")
+	}
+
+	// checkCosign verifies the downloaded cosign signature or bundle of target.
+	checkCosign := func(target string) error {
+		c := spec.Verify.Cosign
+		step("Verifying cosign signature...")
+		var err error
+		switch {
+		case c.Signature != "":
+			err = verify.CheckCosignKey(target, cosignSigPath, c.PublicKey)
+		case c.PublicKey != "":
+			err = verify.CheckCosignKeyBundle(target, cosignSigPath, c.PublicKey)
+		default:
+			err = verify.CheckCosignBundle(ctx, cosignPath, target, cosignSigPath, cosignPolicy)
+		}
+		if err != nil {
+			return fmt.Errorf("signature verification failed: %w", err)
+		}
+		ok("Cosign signature OK")
+		return nil
 	}
 
 	// 8. Verify the checksum's minisign signature (BEFORE downloading the artifact).
@@ -413,6 +510,13 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			return fmt.Errorf("signature verification failed: %w", err)
 		}
 		ok("Signature OK")
+	}
+	// The cosign signature of the checksum document is checked here too; one
+	// of the artifact itself can only be checked after step 9.
+	if cosignSigPath != "" && checksumPath != "" {
+		if err := checkCosign(checksumPath); err != nil {
+			return err
+		}
 	}
 
 	// 9. Download the artifact.
@@ -424,6 +528,12 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	defer os.Remove(artifactPath)
 	dbg("artifact saved to %s", artifactPath)
 	ok(fmt.Sprintf("Downloaded %s", assetName))
+
+	if cosignSigPath != "" && checksumPath == "" {
+		if err := checkCosign(artifactPath); err != nil {
+			return err
+		}
+	}
 
 	// 10. Verify SHA256/SHA512 integrity.
 	verifyPlan := verify.Plan{
@@ -457,6 +567,24 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		artifactSHA256 = ""
 	}
 	dbg("artifact sha256: %s", artifactSHA256)
+
+	// The attestation names the artifact by its digest, so it is checked
+	// once the digest is known, before anything is installed.
+	if spec.Verify.GitHubAttestation != nil {
+		if artifactSHA256 == "" {
+			return fmt.Errorf("cannot verify the GitHub attestation: the artifact could not be hashed")
+		}
+		step("Verifying GitHub attestation...")
+		bundles, err := backend.FetchAttestationBundles(ctx, client, attestation.Repo, artifactSHA256)
+		if err != nil {
+			return fmt.Errorf("fetch GitHub attestations: %w", err)
+		}
+		dbg("%d attestation(s) found in %s", len(bundles), attestation.Repo)
+		if err := verify.CheckGitHubAttestations(ctx, cosignPath, artifactPath, bundles, attestation); err != nil {
+			return fmt.Errorf("attestation verification failed: %w", err)
+		}
+		ok("GitHub attestation OK")
+	}
 
 	// 12. Install.
 	step(fmt.Sprintf("Installing to %s...", dest))
@@ -556,6 +684,14 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	dbg("state record saved: name=%q version=%q kind=%q", appName, ver, kind)
 
 	ok(fmt.Sprintf("Installed %s %s → %s", appName, ver, dest))
+
+	// A cosign installed as a regular tool takes precedence over paq's private
+	// copy, which is therefore no longer needed.
+	if specName == "cosign" {
+		if err := RemovePrivateCosign(); err != nil {
+			dbg("could not remove the private cosign copy: %v", err)
+		}
+	}
 
 	// Pin the freshly-resolved version in paq.lock.toml, so a later `paq
 	// install` (this machine or another sharing the manifest+lockfile)
@@ -726,4 +862,34 @@ func filesha256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// validateCosign rejects an incomplete or contradictory [verify.cosign]
+// block, which would otherwise be skipped or verified against a policy that
+// proves nothing.
+func validateCosign(c config.CosignConfig) error {
+	hasPolicy := c.CertificateIdentity != "" || c.CertificateIdentityRegexp != "" || c.CertificateOIDCIssuer != ""
+	switch {
+	case c.Signature == "" && c.Bundle == "":
+		if c.PublicKey != "" || hasPolicy {
+			return fmt.Errorf("verify.cosign requires signature or bundle")
+		}
+	case c.Signature != "" && c.Bundle != "":
+		return fmt.Errorf("verify.cosign signature and bundle are mutually exclusive")
+	case c.Signature != "" && c.PublicKey == "":
+		return fmt.Errorf("verify.cosign requires both public_key and signature")
+	case c.PublicKey != "" && hasPolicy:
+		return fmt.Errorf("verify.cosign public_key excludes the certificate_* fields (they apply to keyless bundles)")
+	case c.Keyless():
+		if c.CertificateOIDCIssuer == "" {
+			return fmt.Errorf("verify.cosign keyless bundle requires certificate_oidc_issuer")
+		}
+		if (c.CertificateIdentity == "") == (c.CertificateIdentityRegexp == "") {
+			return fmt.Errorf("verify.cosign keyless bundle requires exactly one of certificate_identity and certificate_identity_regexp")
+		}
+		if c.CertificateIdentityRegexp != "" && !strings.HasPrefix(c.CertificateIdentityRegexp, "^") {
+			return fmt.Errorf("verify.cosign certificate_identity_regexp must be anchored with ^ (cosign matches it anywhere in the identity)")
+		}
+	}
+	return nil
 }

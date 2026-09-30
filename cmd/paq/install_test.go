@@ -292,3 +292,19 @@ func TestRunInstallMultiArgFailsFastOnUnknownName(t *testing.T) {
 		t.Fatal("manifest should not have been written when a later argument is invalid")
 	}
 }
+
+// The cosign prompt defaults to paq's private copy and aborts on "a".
+func TestCosignPrompt(t *testing.T) {
+	for input, want := range map[string]error{
+		"\n":        nil,
+		"p\n":       nil,
+		"a\n":       install.ErrCosignDeclined,
+		"abort\n":   install.ErrCosignDeclined,
+		"garbage\n": nil,
+	} {
+		userInstalled, err := cosignPrompt(&config.Config{}, "tool", strings.NewReader(input))(context.Background())
+		if userInstalled || !errors.Is(err, want) {
+			t.Errorf("input %q: got (%v, %v), want (false, %v)", input, userInstalled, err, want)
+		}
+	}
+}

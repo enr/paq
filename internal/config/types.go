@@ -176,6 +176,10 @@ type VerifyConfig struct {
 	SHA512      string         `toml:"sha512"`
 	SHA512Asset string         `toml:"sha512_asset"`
 	Minisign    MinisignConfig `toml:"minisign"`
+	Cosign      CosignConfig   `toml:"cosign"`
+	// GitHubAttestation, when the block is present (even empty), requires a
+	// GitHub build-provenance attestation for the artifact.
+	GitHubAttestation *GitHubAttestationConfig `toml:"github_attestation"`
 }
 
 // MinisignConfig configures minisign signature verification.
@@ -184,12 +188,57 @@ type MinisignConfig struct {
 	SignedAsset string `toml:"signed_asset"`
 }
 
+// CosignConfig configures cosign signature verification. The signature
+// covers the checksum document when one is configured, otherwise the artifact
+// itself. With PublicKey the signature is key-based ("cosign sign-blob --key")
+// and verified in-process; a Bundle without PublicKey is keyless and verified
+// by the external cosign binary against the certificate identity policy.
+type CosignConfig struct {
+	// PublicKey is the PEM-encoded public key (the contents of cosign.pub).
+	PublicKey string `toml:"public_key"`
+	// Signature is the (templated) name of the base64 signature asset.
+	Signature string `toml:"signature"`
+	// Bundle is the (templated) name of the Sigstore bundle asset
+	// (.sigstore.json). Mutually exclusive with Signature.
+	Bundle string `toml:"bundle"`
+	// CertificateIdentity is the exact (templated) signer identity (the
+	// certificate SAN) required of a keyless bundle.
+	CertificateIdentity string `toml:"certificate_identity"`
+	// CertificateIdentityRegexp is the alternative to CertificateIdentity; it
+	// must be anchored with "^".
+	CertificateIdentityRegexp string `toml:"certificate_identity_regexp"`
+	// CertificateOIDCIssuer is the OIDC issuer required of a keyless bundle.
+	CertificateOIDCIssuer string `toml:"certificate_oidc_issuer"`
+}
+
+// GitHubAttestationConfig configures GitHub build-provenance attestation
+// verification: the artifact's sha256 must be the subject of an attestation
+// signed by a GitHub Actions workflow of the repository.
+type GitHubAttestationConfig struct {
+	// Repo is the "owner/name" repository that must have produced the
+	// attestation. Empty = the spec's repo.
+	Repo string `toml:"repo"`
+	// SignerWorkflow optionally narrows the signer to one workflow, as
+	// "owner/name/.github/workflows/file.yml" (it may live in another
+	// repository, e.g. a reusable workflow).
+	SignerWorkflow string `toml:"signer_workflow"`
+}
+
+// Keyless reports whether the cosign signature is a keyless bundle, which
+// needs the external cosign binary.
+func (c CosignConfig) Keyless() bool {
+	return c.Bundle != "" && c.PublicKey == ""
+}
+
 // Enabled indicates whether the spec configures at least one integrity or
 // signature check. Used to warn the user when a tool is installed with no verification.
 func (v VerifyConfig) Enabled() bool {
 	return v.SHA256 != "" || v.SHA256Asset != "" || v.SHA256URL != "" ||
 		v.SHA512 != "" || v.SHA512Asset != "" ||
-		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "")
+		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "") ||
+		(v.Cosign.PublicKey != "" && (v.Cosign.Signature != "" || v.Cosign.Bundle != "")) ||
+		(v.Cosign.Keyless() && v.Cosign.CertificateOIDCIssuer != "") ||
+		v.GitHubAttestation != nil
 }
 
 // AppEntry is an app's configuration in the user manifest (~/.config/paq/config.toml).
@@ -230,6 +279,9 @@ type Defaults struct {
 	// Spec.MinimumReleaseAge. Empty = use the built-in default (see
 	// version.DefaultMinimumReleaseAge).
 	MinimumReleaseAge string `toml:"minimum_release_age"`
+	// Cosign is the path of the cosign binary used for keyless signature
+	// verification. Empty = look it up (PATH, state, paq's private copy).
+	Cosign string `toml:"cosign"`
 }
 
 // RegistrySettings configures a custom source for "paq registry update"

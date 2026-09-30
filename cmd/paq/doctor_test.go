@@ -213,3 +213,50 @@ func TestRunDoctorJSONSucceedsWhenNothingIsBroken(t *testing.T) {
 		t.Error("report.Checks is empty, want at least the platform/registry/... rows")
 	}
 }
+
+// The cosign row reports a usable cosign, or that one will be downloaded on
+// demand; a missing cosign is never a problem.
+func TestRunDoctorCosignRow(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake cosign is a shell script")
+	}
+	for _, tc := range []struct {
+		name       string
+		withCosign bool
+		wantStatus string
+	}{
+		{"missing", false, "warn"},
+		{"on PATH", true, "ok"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doctorEnv(t, "")
+			pathDir := t.TempDir()
+			t.Setenv("PATH", pathDir)
+			if tc.withCosign {
+				script := "#!/bin/sh\necho '{\"gitVersion\": \"v3.1.3\"}'\n"
+				if err := os.WriteFile(filepath.Join(pathDir, "cosign"), []byte(script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var runErr error
+			out := withJSON(t, func() { runErr = runDoctor(doctorCmd, nil) })
+			if runErr != nil {
+				t.Fatalf("runDoctor: %v, want nil", runErr)
+			}
+			var report doctorReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v\noutput:\n%s", err, out)
+			}
+			for _, c := range report.Checks {
+				if c.Name == "cosign" {
+					if c.Status != tc.wantStatus || c.Problem {
+						t.Errorf("cosign check = %+v, want status %q and no problem", c, tc.wantStatus)
+					}
+					return
+				}
+			}
+			t.Errorf("doctor report has no cosign check: %+v", report.Checks)
+		})
+	}
+}
