@@ -21,6 +21,9 @@ func TestVerifyConfigEnabled(t *testing.T) {
 		{"cosign complete", VerifyConfig{Cosign: CosignConfig{PublicKey: "k", Signature: "s"}}, true},
 		{"cosign public key only", VerifyConfig{Cosign: CosignConfig{PublicKey: "k"}}, false},
 		{"cosign signature only", VerifyConfig{Cosign: CosignConfig{Signature: "s"}}, false},
+		{"cosign key bundle", VerifyConfig{Cosign: CosignConfig{PublicKey: "k", Bundle: "b"}}, true},
+		{"cosign keyless bundle", VerifyConfig{Cosign: CosignConfig{Bundle: "b", CertificateOIDCIssuer: "i"}}, true},
+		{"cosign keyless bundle without issuer", VerifyConfig{Cosign: CosignConfig{Bundle: "b"}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

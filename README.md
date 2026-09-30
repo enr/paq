@@ -379,6 +379,23 @@ public_key   = "RWQ...publisher-minisign-public-key..."
 signed_asset = "{{asset}}.sha256.minisig"
 ```
 
+[cosign](https://docs.sigstore.dev/cosign/) signatures are supported too, over
+the checksum file (or the artifact when there is none): key-based, as a `.sig`
+or a Sigstore bundle, verified by paq itself; or keyless bundles, such as the
+ones goreleaser publishes, verified against the expected signer through the
+`cosign` binary (found on the system, or downloaded by paq as a hash-pinned
+private copy):
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "checksums.txt"
+
+[specs.mytool.verify.cosign]
+bundle                  = "checksums.txt.sigstore.json"
+certificate_oidc_issuer = "https://token.actions.githubusercontent.com"
+certificate_identity    = "https://github.com/owner/mytool/.github/workflows/release.yml@refs/tags/v{{version}}"
+```
+
 ### Restricting the supported platforms
 
 When a project does not publish a build for every platform, list the ones it

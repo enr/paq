@@ -185,14 +185,33 @@ type MinisignConfig struct {
 	SignedAsset string `toml:"signed_asset"`
 }
 
-// CosignConfig configures key-based cosign signature verification
-// ("cosign sign-blob --key"). The signature covers the checksum document when
-// one is configured, otherwise the artifact itself.
+// CosignConfig configures cosign signature verification. The signature
+// covers the checksum document when one is configured, otherwise the artifact
+// itself. With PublicKey the signature is key-based ("cosign sign-blob --key")
+// and verified in-process; a Bundle without PublicKey is keyless and verified
+// by the external cosign binary against the certificate identity policy.
 type CosignConfig struct {
 	// PublicKey is the PEM-encoded public key (the contents of cosign.pub).
 	PublicKey string `toml:"public_key"`
 	// Signature is the (templated) name of the base64 signature asset.
 	Signature string `toml:"signature"`
+	// Bundle is the (templated) name of the Sigstore bundle asset
+	// (.sigstore.json). Mutually exclusive with Signature.
+	Bundle string `toml:"bundle"`
+	// CertificateIdentity is the exact (templated) signer identity (the
+	// certificate SAN) required of a keyless bundle.
+	CertificateIdentity string `toml:"certificate_identity"`
+	// CertificateIdentityRegexp is the alternative to CertificateIdentity; it
+	// must be anchored with "^".
+	CertificateIdentityRegexp string `toml:"certificate_identity_regexp"`
+	// CertificateOIDCIssuer is the OIDC issuer required of a keyless bundle.
+	CertificateOIDCIssuer string `toml:"certificate_oidc_issuer"`
+}
+
+// Keyless reports whether the cosign signature is a keyless bundle, which
+// needs the external cosign binary.
+func (c CosignConfig) Keyless() bool {
+	return c.Bundle != "" && c.PublicKey == ""
 }
 
 // Enabled indicates whether the spec configures at least one integrity or
@@ -201,7 +220,8 @@ func (v VerifyConfig) Enabled() bool {
 	return v.SHA256 != "" || v.SHA256Asset != "" || v.SHA256URL != "" ||
 		v.SHA512 != "" || v.SHA512Asset != "" ||
 		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "") ||
-		(v.Cosign.PublicKey != "" && v.Cosign.Signature != "")
+		(v.Cosign.PublicKey != "" && (v.Cosign.Signature != "" || v.Cosign.Bundle != "")) ||
+		(v.Cosign.Keyless() && v.Cosign.CertificateOIDCIssuer != "")
 }
 
 // AppEntry is an app's configuration in the user manifest (~/.config/paq/config.toml).
@@ -242,6 +262,9 @@ type Defaults struct {
 	// Spec.MinimumReleaseAge. Empty = use the built-in default (see
 	// version.DefaultMinimumReleaseAge).
 	MinimumReleaseAge string `toml:"minimum_release_age"`
+	// Cosign is the path of the cosign binary used for keyless signature
+	// verification. Empty = look it up (PATH, state, paq's private copy).
+	Cosign string `toml:"cosign"`
 }
 
 // RegistrySettings configures a custom source for "paq registry update"

@@ -66,6 +66,10 @@ func cosignFixture(t *testing.T, signer *ecdsa.PrivateKey, signArtifact bool) (*
 		switch {
 		case strings.HasSuffix(r.URL.Path, ".sig"):
 			w.Write(signCosign(t, signer, signed))
+		case strings.HasSuffix(r.URL.Path, ".sigstore.json"):
+			sum := sha256.Sum256(signed)
+			fmt.Fprintf(w, `{"messageSignature":{"messageDigest":{"algorithm":"SHA2_256","digest":%q},"signature":%q}}`,
+				base64.StdEncoding.EncodeToString(sum[:]), signCosign(t, signer, signed))
 		case strings.HasSuffix(r.URL.Path, ".sha256"):
 			w.Write(checksumFile)
 		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
@@ -134,6 +138,88 @@ func TestPipelineVerifiesCosignSignatureOfArtifact(t *testing.T) {
 	}
 }
 
+// TestPipelineVerifiesCosignKeyBundle verifies a key-based Sigstore bundle
+// over the checksum file, checked in-process.
+func TestPipelineVerifiesCosignKeyBundle(t *testing.T) {
+	isolateState(t)
+	k, pub := newTestCosignKey(t)
+	srv, _ := cosignFixture(t, k, false)
+	cfg, _ := cosignConfig(t, srv.URL, config.VerifyConfig{
+		SHA256Asset: "{{asset}}.sha256",
+		Cosign:      config.CosignConfig{PublicKey: pub, Bundle: "{{asset}}.sha256.sigstore.json"},
+	})
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+}
+
+// keylessConfig is a keyless [verify.cosign] block over the checksum file.
+func keylessConfig() config.VerifyConfig {
+	return config.VerifyConfig{
+		SHA256Asset: "{{asset}}.sha256",
+		Cosign: config.CosignConfig{
+			Bundle:                "{{asset}}.sha256.sigstore.json",
+			CertificateOIDCIssuer: "https://token.actions.githubusercontent.com",
+			CertificateIdentity:   "https://github.com/owner/tool/.github/workflows/release.yml@refs/tags/v{{version}}",
+		},
+	}
+}
+
+// TestPipelineKeylessCosign verifies that a keyless bundle is handed to the
+// external cosign: its exit 0 lets the install proceed, a non-zero exit fails
+// it with ErrVerification before the artifact is downloaded.
+func TestPipelineKeylessCosign(t *testing.T) {
+	for name, code := range map[string]int{"valid": 0, "invalid": 1} {
+		t.Run(name, func(t *testing.T) {
+			isolateCosign(t)
+			pathDir := t.TempDir()
+			writeFakeCosign(t, filepath.Join(pathDir, "cosign"), "v3.1.3", code)
+			t.Setenv("PATH", pathDir)
+			k, _ := newTestCosignKey(t)
+			srv, artifactRequests := cosignFixture(t, k, false)
+			cfg, _ := cosignConfig(t, srv.URL, keylessConfig())
+
+			err := Run(context.Background(), cfg, "tool", nil, nil)
+			if code == 0 {
+				if err != nil {
+					t.Fatalf("install failed: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, verify.ErrVerification) || !strings.Contains(err.Error(), "fake cosign verdict") {
+				t.Fatalf("error = %v, want ErrVerification with cosign's message", err)
+			}
+			if n := artifactRequests.Load(); n != 0 {
+				t.Errorf("artifact endpoint was requested %d times, want 0", n)
+			}
+		})
+	}
+}
+
+// TestPipelineCosignInstallRemovesPrivateCopy verifies that installing the
+// cosign spec as a regular tool removes paq's private copy.
+func TestPipelineCosignInstallRemovesPrivateCopy(t *testing.T) {
+	isolateCosign(t)
+	private, err := privateCosignPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFakeCosign(t, private, "v3.1.3", 0)
+	k, _ := newTestCosignKey(t)
+	srv, _ := cosignFixture(t, k, false)
+	cfg, _ := cosignConfig(t, srv.URL, config.VerifyConfig{SHA256Asset: "{{asset}}.sha256"})
+	cfg.Specs["cosign"] = cfg.Specs["tool"]
+	cfg.Apps["tool"] = config.AppEntry{Use: "cosign", Version: "1.0.0", Dest: cfg.Apps["tool"].Dest}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if fileExists(private) {
+		t.Error("private cosign copy still present after installing cosign")
+	}
+}
+
 // TestPipelineRejectsBadCosignSignature verifies that a checksum file signed
 // by another key fails with ErrVerification before the artifact is downloaded.
 func TestPipelineRejectsBadCosignSignature(t *testing.T) {
@@ -155,18 +241,30 @@ func TestPipelineRejectsBadCosignSignature(t *testing.T) {
 	}
 }
 
-// TestPipelineHalfConfiguredCosignFails verifies that setting only one of
-// public_key/signature is rejected instead of being silently ignored.
-func TestPipelineHalfConfiguredCosignFails(t *testing.T) {
+// TestPipelineInvalidCosignConfigFails verifies that an incomplete or
+// contradictory [verify.cosign] block is rejected before any network access.
+func TestPipelineInvalidCosignConfigFails(t *testing.T) {
 	isolateState(t)
-	for name, c := range map[string]config.CosignConfig{
-		"only public_key": {PublicKey: "-----BEGIN PUBLIC KEY-----"},
-		"only signature":  {Signature: "{{asset}}.sig"},
+	const issuer = "https://token.actions.githubusercontent.com"
+	for name, tc := range map[string]struct {
+		c    config.CosignConfig
+		want string
+	}{
+		"only public_key":       {config.CosignConfig{PublicKey: "k"}, "requires signature or bundle"},
+		"signature without key": {config.CosignConfig{Signature: "{{asset}}.sig"}, "public_key and signature"},
+		"signature and bundle":  {config.CosignConfig{PublicKey: "k", Signature: "s", Bundle: "b"}, "mutually exclusive"},
+		"key with identity":     {config.CosignConfig{PublicKey: "k", Bundle: "b", CertificateOIDCIssuer: issuer}, "excludes the certificate_*"},
+		"keyless no issuer":     {config.CosignConfig{Bundle: "b", CertificateIdentity: "x"}, "certificate_oidc_issuer"},
+		"keyless no identity":   {config.CosignConfig{Bundle: "b", CertificateOIDCIssuer: issuer}, "exactly one of"},
+		"keyless two identities": {config.CosignConfig{Bundle: "b", CertificateOIDCIssuer: issuer,
+			CertificateIdentity: "x", CertificateIdentityRegexp: "^x"}, "exactly one of"},
+		"unanchored regexp": {config.CosignConfig{Bundle: "b", CertificateOIDCIssuer: issuer,
+			CertificateIdentityRegexp: "https://github.com/owner/"}, "anchored"},
 	} {
-		cfg, _ := cosignConfig(t, "https://unreachable.invalid", config.VerifyConfig{Cosign: c})
+		cfg, _ := cosignConfig(t, "https://unreachable.invalid", config.VerifyConfig{Cosign: tc.c})
 		err := Run(context.Background(), cfg, "tool", nil, nil)
-		if err == nil || !strings.Contains(err.Error(), "public_key and signature") {
-			t.Errorf("%s: error = %v, want mention of public_key and signature", name, err)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want mention of %q", name, err, tc.want)
 		}
 	}
 }

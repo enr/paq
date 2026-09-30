@@ -456,7 +456,7 @@ tool — `paq install <name>` auto-imports it into the manifest. If a user recip
 shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
-The embedded registry currently ships `bat`, `bun`, `delta`, `deno`, `fresh`,
+The embedded registry currently ships `bat`, `bun`, `cosign`, `delta`, `deno`, `fresh`,
 `fd`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`,
 `nub`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
 `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
@@ -634,8 +634,38 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
 signature = "checksums.txt.sig"
 ```
 
-Keyless (Fulcio/Rekor) signatures and Sigstore bundles (`.sigstore.json`) are
-not supported yet.
+cosign v3 writes a Sigstore bundle (`.sigstore.json`) by default instead of a
+`.sig`: name it with `bundle` (mutually exclusive with `signature`). With
+`public_key` the bundle is still verified by paq itself, against the key; its
+transparency log entries are not checked, the key being the trust anchor.
+
+A **keyless** bundle, signed with a short-lived certificate (as goreleaser does
+from GitHub Actions), has no key to pin: what it proves is *who* signed, so the
+recipe must say who is expected. `certificate_oidc_issuer` and exactly one of
+`certificate_identity` (the exact signer, templated) or
+`certificate_identity_regexp` (which must start with `^`) are required:
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "checksums.txt"
+
+[specs.mytool.verify.cosign]
+bundle                  = "checksums.txt.sigstore.json"
+certificate_oidc_issuer = "https://token.actions.githubusercontent.com"
+certificate_identity    = "https://github.com/owner/mytool/.github/workflows/release.yml@refs/tags/v{{version}}"
+```
+
+Keyless bundles are verified by running the `cosign` binary (v3 or later),
+which needs network access to fetch the Sigstore trust root. paq uses, in
+order: the path in `[defaults] cosign = "/path/to/cosign"`, `cosign` on `PATH`,
+a cosign installed with `paq install cosign`, and finally a private copy of a
+release whose hash is pinned in paq, kept in paq's cache directory
+(`tools/cosign`). When none exists, the first install that needs it downloads
+the private copy; in an interactive terminal paq first asks whether to install
+cosign as a regular tool instead, or to abort. Installing cosign with
+`paq install cosign` removes the private copy. `paq doctor` shows which cosign
+is in use. The legacy keyless format (`.sig` plus `.pem`, without a bundle) is
+not supported.
 
 ### Restricting the supported platforms
 

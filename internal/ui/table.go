@@ -572,6 +572,10 @@ func PrintSpecDetail(name string, spec config.Spec) error {
 	render("Minisign sig", spec.Verify.Minisign.SignedAsset)
 	render("Cosign key", pemBody(spec.Verify.Cosign.PublicKey))
 	render("Cosign sig", spec.Verify.Cosign.Signature)
+	render("Cosign bundle", spec.Verify.Cosign.Bundle)
+	render("Cosign identity", spec.Verify.Cosign.CertificateIdentity)
+	render("Cosign id regexp", spec.Verify.Cosign.CertificateIdentityRegexp)
+	render("Cosign issuer", spec.Verify.Cosign.CertificateOIDCIssuer)
 	return nil
 }
 

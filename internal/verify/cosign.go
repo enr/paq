@@ -1,12 +1,15 @@
 package verify
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -43,18 +46,73 @@ func CheckCosignKey(filePath, signaturePath, pemPubKey string) error {
 		return failed("decode cosign signature: %v", err)
 	}
 
-	var valid bool
-	switch k := pub.(type) {
-	case *ecdsa.PublicKey:
-		digest := sha256.Sum256(fileBytes)
-		valid = ecdsa.VerifyASN1(k, digest[:], sig)
-	case ed25519.PublicKey:
-		valid = ed25519.Verify(k, fileBytes, sig)
-	}
-	if !valid {
+	if !checkCosignSig(pub, fileBytes, sig) {
 		return failed("cosign signature is invalid for %s", filePath)
 	}
 	return nil
+}
+
+// cosignBundle is the part of a Sigstore bundle (.sigstore.json) needed to
+// verify a key-based blob signature.
+type cosignBundle struct {
+	MessageSignature *struct {
+		MessageDigest *struct {
+			Algorithm string `json:"algorithm"`
+			Digest    []byte `json:"digest"` // base64 in JSON
+		} `json:"messageDigest"`
+		Signature []byte `json:"signature"` // base64 in JSON
+	} `json:"messageSignature"`
+}
+
+// CheckCosignKeyBundle verifies a Sigstore bundle produced by
+// "cosign sign-blob --key ... --bundle" for filePath, with the key matching
+// pemPubKey. Only the signature is checked: transparency log entries in the
+// bundle are ignored, since the trust anchor is the publisher's key.
+func CheckCosignKeyBundle(filePath, bundlePath, pemPubKey string) error {
+	pub, err := parseCosignPublicKey(pemPubKey)
+	if err != nil {
+		return fmt.Errorf("parse cosign public key: %w", err)
+	}
+
+	bundleBytes, err := os.ReadFile(bundlePath)
+	if err != nil {
+		return fmt.Errorf("read bundle file %s: %w", bundlePath, err)
+	}
+
+	fileBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read file %s: %w", filePath, err)
+	}
+
+	var b cosignBundle
+	if err := json.Unmarshal(bundleBytes, &b); err != nil {
+		return failed("decode cosign bundle: %v", err)
+	}
+	if b.MessageSignature == nil {
+		return failed("cosign bundle %s holds no blob signature (messageSignature)", bundlePath)
+	}
+	if d := b.MessageSignature.MessageDigest; d != nil {
+		sum := sha256.Sum256(fileBytes)
+		if d.Algorithm != "SHA2_256" || !bytes.Equal(d.Digest, sum[:]) {
+			return failed("cosign bundle digest does not match %s", filePath)
+		}
+	}
+	if !checkCosignSig(pub, fileBytes, b.MessageSignature.Signature) {
+		return failed("cosign signature is invalid for %s", filePath)
+	}
+	return nil
+}
+
+// checkCosignSig reports whether sig is a valid cosign signature of data.
+func checkCosignSig(pub any, data, sig []byte) bool {
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		digest := sha256.Sum256(data)
+		return ecdsa.VerifyASN1(k, digest[:], sig)
+	case ed25519.PublicKey:
+		return ed25519.Verify(k, data, sig)
+	}
+	return false
 }
 
 // parseCosignPublicKey decodes a PEM "PUBLIC KEY" block and accepts only the
