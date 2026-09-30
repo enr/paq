@@ -576,6 +576,14 @@ func PrintSpecDetail(name string, spec config.Spec) error {
 	render("Cosign identity", spec.Verify.Cosign.CertificateIdentity)
 	render("Cosign id regexp", spec.Verify.Cosign.CertificateIdentityRegexp)
 	render("Cosign issuer", spec.Verify.Cosign.CertificateOIDCIssuer)
+	if att := spec.Verify.GitHubAttestation; att != nil {
+		repo := att.Repo
+		if repo == "" {
+			repo = spec.Repo
+		}
+		render("Attest repo", repo)
+		render("Signer workflow", att.SignerWorkflow)
+	}
 	return nil
 }
 

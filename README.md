@@ -396,6 +396,14 @@ certificate_oidc_issuer = "https://token.actions.githubusercontent.com"
 certificate_identity    = "https://github.com/owner/mytool/.github/workflows/release.yml@refs/tags/v{{version}}"
 ```
 
+GitHub build-provenance attestations of the artifact can be required too
+(fetched from the GitHub API and checked with cosign; `repo` defaults to the
+recipe's):
+
+```toml
+[specs.mytool.verify.github_attestation]
+```
+
 ### Restricting the supported platforms
 
 When a project does not publish a build for every platform, list the ones it

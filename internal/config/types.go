@@ -177,6 +177,9 @@ type VerifyConfig struct {
 	SHA512Asset string         `toml:"sha512_asset"`
 	Minisign    MinisignConfig `toml:"minisign"`
 	Cosign      CosignConfig   `toml:"cosign"`
+	// GitHubAttestation, when the block is present (even empty), requires a
+	// GitHub build-provenance attestation for the artifact.
+	GitHubAttestation *GitHubAttestationConfig `toml:"github_attestation"`
 }
 
 // MinisignConfig configures minisign signature verification.
@@ -208,6 +211,19 @@ type CosignConfig struct {
 	CertificateOIDCIssuer string `toml:"certificate_oidc_issuer"`
 }
 
+// GitHubAttestationConfig configures GitHub build-provenance attestation
+// verification: the artifact's sha256 must be the subject of an attestation
+// signed by a GitHub Actions workflow of the repository.
+type GitHubAttestationConfig struct {
+	// Repo is the "owner/name" repository that must have produced the
+	// attestation. Empty = the spec's repo.
+	Repo string `toml:"repo"`
+	// SignerWorkflow optionally narrows the signer to one workflow, as
+	// "owner/name/.github/workflows/file.yml" (it may live in another
+	// repository, e.g. a reusable workflow).
+	SignerWorkflow string `toml:"signer_workflow"`
+}
+
 // Keyless reports whether the cosign signature is a keyless bundle, which
 // needs the external cosign binary.
 func (c CosignConfig) Keyless() bool {
@@ -221,7 +237,8 @@ func (v VerifyConfig) Enabled() bool {
 		v.SHA512 != "" || v.SHA512Asset != "" ||
 		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "") ||
 		(v.Cosign.PublicKey != "" && (v.Cosign.Signature != "" || v.Cosign.Bundle != "")) ||
-		(v.Cosign.Keyless() && v.Cosign.CertificateOIDCIssuer != "")
+		(v.Cosign.Keyless() && v.Cosign.CertificateOIDCIssuer != "") ||
+		v.GitHubAttestation != nil
 }
 
 // AppEntry is an app's configuration in the user manifest (~/.config/paq/config.toml).

@@ -667,6 +667,56 @@ cosign as a regular tool instead, or to abort. Installing cosign with
 is in use. The legacy keyless format (`.sig` plus `.pem`, without a bundle) is
 not supported.
 
+Projects that build their releases with GitHub Actions can publish **GitHub
+build-provenance attestations** (`actions/attest-build-provenance`), stored by
+GitHub rather than in the release. They sign the artifact itself: paq looks up
+the attestations for the downloaded file's sha256 and has cosign check that
+one of them is a valid SLSA provenance signed by a workflow of the expected
+repository, before anything is installed. The block's presence enables it;
+`repo` defaults to the recipe's `repo`, and `signer_workflow` optionally
+narrows the signer to one workflow (possibly a reusable one in another
+repository):
+
+```toml
+[specs.mytool.verify.github_attestation]
+# repo            = "owner/mytool"
+# signer_workflow = "owner/mytool/.github/workflows/release.yml"
+```
+
+This queries the GitHub API for every install: set `GITHUB_TOKEN` to avoid its
+rate limit. It uses cosign like keyless bundles (see above), and supports
+public repositories only (private ones are signed by GitHub's own Sigstore
+instance). The embedded `gh` recipe does not enable it, to keep `paq install
+gh` free of the cosign download. To require it, add the whole recipe to your
+manifest with the extra block (a user recipe replaces the embedded one, it is
+not merged with it):
+
+```toml
+[specs.gh]
+backend = "github"
+repo = "cli/cli"
+asset = "gh_{{version}}_{{os}}_{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "gh{{ext}}"
+chmod = "0755"
+
+[specs.gh.os]
+darwin = "macOS"
+
+[specs.gh.darwin]
+asset = "gh_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[specs.gh.windows]
+asset = "gh_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[specs.gh.verify]
+sha256_asset = "gh_{{version}}_checksums.txt"
+
+[specs.gh.verify.github_attestation]
+```
+
 ### Restricting the supported platforms
 
 When a project does not publish a build for every platform, list the ones it

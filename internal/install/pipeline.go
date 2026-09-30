@@ -145,9 +145,23 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if err := validateCosign(spec.Verify.Cosign); err != nil {
 		return fmt.Errorf("spec %q: %w", specName, err)
 	}
+	// A GitHub attestation is verified against the repository that must have
+	// built the artifact: the recipe's, unless the block names another.
+	var attestation verify.AttestationPolicy
+	if att := spec.Verify.GitHubAttestation; att != nil {
+		attestation = verify.AttestationPolicy{Repo: att.Repo, SignerWorkflow: att.SignerWorkflow}
+		if attestation.Repo == "" {
+			attestation.Repo = spec.Repo
+		}
+		if owner, name, found := strings.Cut(attestation.Repo, "/"); !found || owner == "" || name == "" || strings.Contains(name, "/") {
+			return fmt.Errorf("spec %q: verify.github_attestation requires repo as \"owner/name\" (or a spec repo), got %q", specName, attestation.Repo)
+		}
+	}
+	// Keyless signatures and attestations are checked by the cosign binary.
+	needsCosign := spec.Verify.Cosign.Keyless() || spec.Verify.GitHubAttestation != nil
 	// cosign cannot be the tool that verifies its own install.
-	if specName == "cosign" && spec.Verify.Cosign.Keyless() {
-		return fmt.Errorf("spec %q: cosign cannot be verified with a keyless cosign signature (it would need itself)", specName)
+	if specName == "cosign" && needsCosign {
+		return fmt.Errorf("spec %q: cosign cannot be verified with a keyless signature or an attestation (it would need itself)", specName)
 	}
 	// The checksum document has exactly one source: a sibling of the asset
 	// (sha256_asset) or an absolute URL (sha256_url). sha256_json only says how
@@ -419,16 +433,20 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		dbg("signature saved to %s", sigPath)
 	}
 
+	var cosignPath string // external cosign, for keyless signatures and attestations
+	if needsCosign {
+		found, err2 := EnsureCosign(ctx, cfg, client, hooks.CosignMissing, step, warn)
+		if err2 != nil {
+			return err2
+		}
+		cosignPath = found.Path
+		dbg("cosign: %s (%s) %s", found.Path, found.Origin, found.Version)
+	}
+
 	var cosignPolicy verify.CosignIdentity // resolved policy of a keyless signature
-	var cosignPath string                  // external cosign, only for a keyless signature
 	if c := spec.Verify.Cosign; c.Signature != "" || c.Bundle != "" {
 		if c.Keyless() {
-			found, err2 := EnsureCosign(ctx, cfg, client, hooks.CosignMissing, step, warn)
-			if err2 != nil {
-				return err2
-			}
-			cosignPath = found.Path
-			dbg("cosign: %s (%s) %s", found.Path, found.Origin, found.Version)
+			var err2 error
 			cosignPolicy.Issuer, err2 = template.Resolve(c.CertificateOIDCIssuer, vars)
 			if err2 == nil {
 				cosignPolicy.Identity, err2 = template.Resolve(c.CertificateIdentity, vars)
@@ -549,6 +567,24 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		artifactSHA256 = ""
 	}
 	dbg("artifact sha256: %s", artifactSHA256)
+
+	// The attestation names the artifact by its digest, so it is checked
+	// once the digest is known, before anything is installed.
+	if spec.Verify.GitHubAttestation != nil {
+		if artifactSHA256 == "" {
+			return fmt.Errorf("cannot verify the GitHub attestation: the artifact could not be hashed")
+		}
+		step("Verifying GitHub attestation...")
+		bundles, err := backend.FetchAttestationBundles(ctx, client, attestation.Repo, artifactSHA256)
+		if err != nil {
+			return fmt.Errorf("fetch GitHub attestations: %w", err)
+		}
+		dbg("%d attestation(s) found in %s", len(bundles), attestation.Repo)
+		if err := verify.CheckGitHubAttestations(ctx, cosignPath, artifactPath, bundles, attestation); err != nil {
+			return fmt.Errorf("attestation verification failed: %w", err)
+		}
+		ok("GitHub attestation OK")
+	}
 
 	// 12. Install.
 	step(fmt.Sprintf("Installing to %s...", dest))

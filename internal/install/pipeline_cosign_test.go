@@ -268,3 +268,92 @@ func TestPipelineInvalidCosignConfigFails(t *testing.T) {
 		}
 	}
 }
+
+// attestationFixture serves a tar.gz artifact and, on host api.github.com,
+// the attestations API answering apiStatus/apiBody for the artifact's digest.
+// It returns a client routing every host to it.
+func attestationFixture(t *testing.T, apiStatus int, apiBody string) (*httptest.Server, *http.Client) {
+	t.Helper()
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "api.github.com" {
+			want := "/repos/owner/tool/attestations/sha256:" + sha256hex(tgzData)
+			if r.URL.Path != want {
+				t.Errorf("attestations request %s, want %s", r.URL.Path, want)
+			}
+			w.WriteHeader(apiStatus)
+			fmt.Fprint(w, apiBody)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, ".tar.gz") {
+			w.Write(tgzData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
+}
+
+// TestPipelineGitHubAttestation verifies that an attestation is fetched for
+// the artifact's digest and checked by cosign before anything is installed:
+// a valid one lets the install proceed, a missing or invalid one fails it
+// with ErrVerification and leaves the destination untouched.
+func TestPipelineGitHubAttestation(t *testing.T) {
+	for name, tc := range map[string]struct {
+		apiStatus  int
+		apiBody    string
+		cosignExit int
+		wantErr    string
+	}{
+		"valid":          {http.StatusOK, `{"attestations":[{"bundle":{"mediaType":"x"}}]}`, 0, ""},
+		"no attestation": {http.StatusNotFound, `{"message":"Not Found"}`, 0, "no GitHub attestation"},
+		"invalid":        {http.StatusOK, `{"attestations":[{"bundle":{"mediaType":"x"}}]}`, 1, "fake cosign verdict"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			isolateCosign(t)
+			pathDir := t.TempDir()
+			writeFakeCosign(t, filepath.Join(pathDir, "cosign"), "v3.1.3", tc.cosignExit)
+			t.Setenv("PATH", pathDir)
+			srv, client := attestationFixture(t, tc.apiStatus, tc.apiBody)
+			cfg, dest := cosignConfig(t, srv.URL, config.VerifyConfig{
+				GitHubAttestation: &config.GitHubAttestationConfig{Repo: "owner/tool"},
+			})
+
+			err := Run(context.Background(), cfg, "tool", nil, &Hooks{HTTPClient: client})
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("install failed: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, verify.ErrVerification) || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want ErrVerification mentioning %q", err, tc.wantErr)
+			}
+			if fileExists(dest) {
+				t.Error("artifact was installed despite the failed attestation")
+			}
+		})
+	}
+}
+
+// TestPipelineGitHubAttestationInvalidConfig verifies the checks made before
+// any network access.
+func TestPipelineGitHubAttestationInvalidConfig(t *testing.T) {
+	isolateState(t)
+	cfg, _ := cosignConfig(t, "https://unreachable.invalid", config.VerifyConfig{
+		GitHubAttestation: &config.GitHubAttestationConfig{},
+	})
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err == nil || !strings.Contains(err.Error(), "owner/name") {
+		t.Errorf("no repo: error = %v, want mention of owner/name", err)
+	}
+
+	cfg, _ = cosignConfig(t, "https://unreachable.invalid", config.VerifyConfig{
+		GitHubAttestation: &config.GitHubAttestationConfig{Repo: "sigstore/cosign"},
+	})
+	cfg.Specs["cosign"] = cfg.Specs["tool"]
+	cfg.Apps["tool"] = config.AppEntry{Use: "cosign", Version: "1.0.0", Dest: cfg.Apps["tool"].Dest}
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err == nil || !strings.Contains(err.Error(), "would need itself") {
+		t.Errorf("cosign with attestation: error = %v, want the recursion guard", err)
+	}
+}

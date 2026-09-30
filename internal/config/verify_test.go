@@ -24,6 +24,7 @@ func TestVerifyConfigEnabled(t *testing.T) {
 		{"cosign key bundle", VerifyConfig{Cosign: CosignConfig{PublicKey: "k", Bundle: "b"}}, true},
 		{"cosign keyless bundle", VerifyConfig{Cosign: CosignConfig{Bundle: "b", CertificateOIDCIssuer: "i"}}, true},
 		{"cosign keyless bundle without issuer", VerifyConfig{Cosign: CosignConfig{Bundle: "b"}}, false},
+		{"github attestation", VerifyConfig{GitHubAttestation: &GitHubAttestationConfig{}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
