@@ -176,6 +176,7 @@ type VerifyConfig struct {
 	SHA512      string         `toml:"sha512"`
 	SHA512Asset string         `toml:"sha512_asset"`
 	Minisign    MinisignConfig `toml:"minisign"`
+	Cosign      CosignConfig   `toml:"cosign"`
 }
 
 // MinisignConfig configures minisign signature verification.
@@ -184,12 +185,23 @@ type MinisignConfig struct {
 	SignedAsset string `toml:"signed_asset"`
 }
 
+// CosignConfig configures key-based cosign signature verification
+// ("cosign sign-blob --key"). The signature covers the checksum document when
+// one is configured, otherwise the artifact itself.
+type CosignConfig struct {
+	// PublicKey is the PEM-encoded public key (the contents of cosign.pub).
+	PublicKey string `toml:"public_key"`
+	// Signature is the (templated) name of the base64 signature asset.
+	Signature string `toml:"signature"`
+}
+
 // Enabled indicates whether the spec configures at least one integrity or
 // signature check. Used to warn the user when a tool is installed with no verification.
 func (v VerifyConfig) Enabled() bool {
 	return v.SHA256 != "" || v.SHA256Asset != "" || v.SHA256URL != "" ||
 		v.SHA512 != "" || v.SHA512Asset != "" ||
-		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "")
+		(v.Minisign.PublicKey != "" && v.Minisign.SignedAsset != "") ||
+		(v.Cosign.PublicKey != "" && v.Cosign.Signature != "")
 }
 
 // AppEntry is an app's configuration in the user manifest (~/.config/paq/config.toml).

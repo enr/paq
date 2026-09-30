@@ -1,0 +1,172 @@
+package install
+
+import (
+	"bytes"
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/verify"
+)
+
+// newTestCosignKey generates a throwaway ECDSA P-256 key pair (cosign's
+// default) and returns it with the PEM public key a recipe holds.
+func newTestCosignKey(t *testing.T) (*ecdsa.PrivateKey, string) {
+	t.Helper()
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(k.Public())
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	return k, string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+}
+
+// signCosign returns the base64 signature "cosign sign-blob --key" writes.
+func signCosign(t *testing.T, k *ecdsa.PrivateKey, data []byte) []byte {
+	t.Helper()
+	digest := sha256.Sum256(data)
+	sig, err := ecdsa.SignASN1(rand.Reader, k, digest[:])
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return []byte(base64.StdEncoding.EncodeToString(sig))
+}
+
+// cosignFixture serves a tar.gz artifact, its checksum file and a cosign
+// signature made by signer over the checksum file (or over the artifact when
+// signArtifact is set). It counts the artifact requests.
+func cosignFixture(t *testing.T, signer *ecdsa.PrivateKey, signArtifact bool) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	tgzData := makeFakeTarGz([]byte("fake-rg-binary"))
+	checksumFile := []byte(fmt.Sprintf("%s  tool-1.0.0.tar.gz\n", sha256hex(tgzData)))
+	signed := checksumFile
+	if signArtifact {
+		signed = tgzData
+	}
+	var artifactRequests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".sig"):
+			w.Write(signCosign(t, signer, signed))
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			w.Write(checksumFile)
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			artifactRequests.Add(1)
+			w.Write(tgzData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &artifactRequests
+}
+
+func cosignConfig(t *testing.T, srvURL string, v config.VerifyConfig) (*config.Config, string) {
+	t.Helper()
+	dest := filepath.Join(t.TempDir(), "rg")
+	return &config.Config{
+		Specs: map[string]config.Spec{"tool": {
+			Backend: "url",
+			Source:  srvURL + "/tool-{{version}}.tar.gz",
+			Archive: "tar.gz",
+			Extract: "rg",
+			Verify:  v,
+		}},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}, dest
+}
+
+// TestPipelineVerifiesCosignSignatureOfChecksum verifies the happy path of a
+// cosign key-based signature over the checksum file.
+func TestPipelineVerifiesCosignSignatureOfChecksum(t *testing.T) {
+	isolateState(t)
+	k, pub := newTestCosignKey(t)
+	srv, _ := cosignFixture(t, k, false)
+	cfg, dest := cosignConfig(t, srv.URL, config.VerifyConfig{
+		SHA256Asset: "{{asset}}.sha256",
+		Cosign:      config.CosignConfig{PublicKey: pub, Signature: "{{asset}}.sha256.sig"},
+	})
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("dest not found: %v", err)
+	}
+	if !bytes.Equal(data, []byte("fake-rg-binary")) {
+		t.Errorf("dest content = %q", data)
+	}
+}
+
+// TestPipelineVerifiesCosignSignatureOfArtifact verifies that, with no
+// checksum document, the signature is checked against the artifact itself.
+func TestPipelineVerifiesCosignSignatureOfArtifact(t *testing.T) {
+	isolateState(t)
+	k, pub := newTestCosignKey(t)
+	srv, _ := cosignFixture(t, k, true)
+	cfg, _ := cosignConfig(t, srv.URL, config.VerifyConfig{
+		Cosign: config.CosignConfig{PublicKey: pub, Signature: "{{asset}}.sig"},
+	})
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+}
+
+// TestPipelineRejectsBadCosignSignature verifies that a checksum file signed
+// by another key fails with ErrVerification before the artifact is downloaded.
+func TestPipelineRejectsBadCosignSignature(t *testing.T) {
+	isolateState(t)
+	_, pub := newTestCosignKey(t)
+	other, _ := newTestCosignKey(t)
+	srv, artifactRequests := cosignFixture(t, other, false)
+	cfg, _ := cosignConfig(t, srv.URL, config.VerifyConfig{
+		SHA256Asset: "{{asset}}.sha256",
+		Cosign:      config.CosignConfig{PublicKey: pub, Signature: "{{asset}}.sha256.sig"},
+	})
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if !errors.Is(err, verify.ErrVerification) {
+		t.Fatalf("error = %v, want ErrVerification", err)
+	}
+	if n := artifactRequests.Load(); n != 0 {
+		t.Errorf("artifact endpoint was requested %d times, want 0 (signature must be checked before download)", n)
+	}
+}
+
+// TestPipelineHalfConfiguredCosignFails verifies that setting only one of
+// public_key/signature is rejected instead of being silently ignored.
+func TestPipelineHalfConfiguredCosignFails(t *testing.T) {
+	isolateState(t)
+	for name, c := range map[string]config.CosignConfig{
+		"only public_key": {PublicKey: "-----BEGIN PUBLIC KEY-----"},
+		"only signature":  {Signature: "{{asset}}.sig"},
+	} {
+		cfg, _ := cosignConfig(t, "https://unreachable.invalid", config.VerifyConfig{Cosign: c})
+		err := Run(context.Background(), cfg, "tool", nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "public_key and signature") {
+			t.Errorf("%s: error = %v, want mention of public_key and signature", name, err)
+		}
+	}
+}

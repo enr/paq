@@ -135,6 +135,11 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if spec.Verify.Minisign.PublicKey != "" && spec.Verify.SHA256Asset == "" && spec.Verify.SHA256URL == "" {
 		return fmt.Errorf("spec %q: verify.minisign requires sha256_asset or sha256_url (the signature is verified against the checksum file)", specName)
 	}
+	// Same rule for cosign; its signature covers the checksum document when
+	// one is configured, otherwise the artifact itself.
+	if (spec.Verify.Cosign.PublicKey != "") != (spec.Verify.Cosign.Signature != "") {
+		return fmt.Errorf("spec %q: verify.cosign requires both public_key and signature", specName)
+	}
 	// The checksum document has exactly one source: a sibling of the asset
 	// (sha256_asset) or an absolute URL (sha256_url). sha256_json only says how
 	// to read that document, so it needs one of the two to point at.
@@ -325,7 +330,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 
 	// 7. Download checksum/signature files (if configured).
-	var checksumPath, checksum512Path, sigPath string
+	var checksumPath, checksum512Path, sigPath, cosignSigPath string
 	defer func() {
 		if checksumPath != "" {
 			os.Remove(checksumPath)
@@ -335,6 +340,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 		if sigPath != "" {
 			os.Remove(sigPath)
+		}
+		if cosignSigPath != "" {
+			os.Remove(cosignSigPath)
 		}
 	}()
 
@@ -402,6 +410,24 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		dbg("signature saved to %s", sigPath)
 	}
 
+	if spec.Verify.Cosign.PublicKey != "" {
+		cosignSigName, err2 := template.Resolve(spec.Verify.Cosign.Signature, vars)
+		if err2 != nil {
+			return fmt.Errorf("resolve cosign signature: %w", err2)
+		}
+		cosignSigURL, err2 := resolveAuxURL(cosignSigName)
+		if err2 != nil {
+			return fmt.Errorf("resolve cosign signature URL: %w", err2)
+		}
+		step("Downloading cosign signature...")
+		dbg("cosign signature URL: %s", cosignSigURL)
+		cosignSigPath, err = download.ToTemp(ctx, client, cosignSigURL, nil)
+		if err != nil {
+			return fmt.Errorf("download cosign signature: %w", err)
+		}
+		dbg("cosign signature saved to %s", cosignSigPath)
+	}
+
 	if !spec.Verify.Enabled() {
 		dbg("no verification configured for this spec")
 	}
@@ -414,6 +440,15 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 		ok("Signature OK")
 	}
+	// The cosign signature of the checksum document is checked here too; one
+	// of the artifact itself can only be checked after step 9.
+	if cosignSigPath != "" && checksumPath != "" {
+		step("Verifying cosign signature...")
+		if err := verify.CheckCosignKey(checksumPath, cosignSigPath, spec.Verify.Cosign.PublicKey); err != nil {
+			return fmt.Errorf("signature verification failed: %w", err)
+		}
+		ok("Cosign signature OK")
+	}
 
 	// 9. Download the artifact.
 	step(fmt.Sprintf("Downloading %s...", assetName))
@@ -424,6 +459,14 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	defer os.Remove(artifactPath)
 	dbg("artifact saved to %s", artifactPath)
 	ok(fmt.Sprintf("Downloaded %s", assetName))
+
+	if cosignSigPath != "" && checksumPath == "" {
+		step("Verifying cosign signature...")
+		if err := verify.CheckCosignKey(artifactPath, cosignSigPath, spec.Verify.Cosign.PublicKey); err != nil {
+			return fmt.Errorf("signature verification failed: %w", err)
+		}
+		ok("Cosign signature OK")
+	}
 
 	// 10. Verify SHA256/SHA512 integrity.
 	verifyPlan := verify.Plan{

@@ -614,6 +614,29 @@ public_key   = "RWQ...publisher-minisign-public-key..."
 signed_asset = "{{asset}}.sha256.minisig"
 ```
 
+A key-based [cosign](https://docs.sigstore.dev/cosign/) signature
+(`cosign sign-blob --key`) is supported too. `public_key` is the PEM content of
+the publisher's `cosign.pub` (ECDSA P-256 or Ed25519) and `signature` names the
+base64 `.sig` asset; both must be set together. The signature covers the
+checksum document when `sha256_asset` or `sha256_url` is configured (checked
+before the artifact is downloaded), otherwise the artifact itself:
+
+```toml
+[specs.mytool.verify]
+sha256_asset = "checksums.txt"
+
+[specs.mytool.verify.cosign]
+public_key = """
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+-----END PUBLIC KEY-----
+"""
+signature = "checksums.txt.sig"
+```
+
+Keyless (Fulcio/Rekor) signatures and Sigstore bundles (`.sigstore.json`) are
+not supported yet.
+
 ### Restricting the supported platforms
 
 When a project does not publish a build for every platform, list the ones it

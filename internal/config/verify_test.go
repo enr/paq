@@ -18,6 +18,9 @@ func TestVerifyConfigEnabled(t *testing.T) {
 		{"minisign complete", VerifyConfig{Minisign: MinisignConfig{PublicKey: "k", SignedAsset: "s"}}, true},
 		{"minisign public key only", VerifyConfig{Minisign: MinisignConfig{PublicKey: "k"}}, false},
 		{"minisign signed asset only", VerifyConfig{Minisign: MinisignConfig{SignedAsset: "s"}}, false},
+		{"cosign complete", VerifyConfig{Cosign: CosignConfig{PublicKey: "k", Signature: "s"}}, true},
+		{"cosign public key only", VerifyConfig{Cosign: CosignConfig{PublicKey: "k"}}, false},
+		{"cosign signature only", VerifyConfig{Cosign: CosignConfig{Signature: "s"}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
