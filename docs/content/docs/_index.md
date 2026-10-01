@@ -728,6 +728,39 @@ sha256_asset = "gh_{{version}}_checksums.txt"
 [specs.gh.verify.github_attestation]
 ```
 
+### musl-based systems (Alpine)
+
+paq detects musl-based Linux systems (Alpine, Void musl, ...) by the presence
+of the musl dynamic loader (`/lib/ld-musl-*.so.1`) and sets `{{env}}` to `musl`
+there, so recipes built on `{{rust_target}}` pick the `*-unknown-linux-musl`
+asset with no changes. `paq doctor` shows it in the Platform row.
+
+When the musl build has a different name, put the differences in a
+`[specs.mytool.musl]` section, optionally refined per arch with
+`[specs.mytool.musl.<arch>]`. It accepts the same fields as a per-OS section
+and is applied after `[specs.mytool.linux]` / `[specs.mytool.linux.<arch>]`,
+only on musl systems:
+
+```toml
+[specs.mytool.musl]
+asset = "mytool-{{os}}-{{arch}}-musl.tar.gz"
+```
+
+When a tool publishes no musl build, map `{{env}}` back to `gnu` so musl
+systems get the glibc build instead of failing on a missing asset (it runs
+only with a glibc compatibility layer such as `gcompat`):
+
+```toml
+[specs.mytool.env]
+musl = "gnu"       # or, for a single arch: [specs.mytool.env_arch] arm64 = "gnu"
+```
+
+After installing, paq reads the dynamic loader each installed executable
+requires (its ELF interpreter) and warns when it is missing from the system:
+such a binary installs but cannot run, typically a glibc build on a musl
+system without `gcompat`. Static binaries (most Go tools) run everywhere and
+are never flagged. Tools installed as a directory are not checked.
+
 ### Restricting the supported platforms
 
 When a project does not publish a build for every platform, list the ones it
@@ -932,7 +965,7 @@ public_key = "RWQ...your-minisign-public-key..."
 | `{{os}}` | `linux`, `darwin`, `windows` |
 | `{{arch}}` | `amd64`, `arm64` |
 | `{{vendor}}` | `unknown`, `apple`, `pc` |
-| `{{env}}` | `gnu` (linux), `` (others) |
+| `{{env}}` | `gnu` (linux), `musl` (musl-based linux, e.g. Alpine), `` (others) |
 | `{{ext}}` | `.exe` (windows), `` (others) |
 | `{{version}}` | Resolved version, e.g. `14.1.1` |
 | `{{version_major}}` | e.g. `14` |

@@ -1,13 +1,20 @@
 package platform
 
-import "runtime"
+import (
+	"path/filepath"
+	"runtime"
+)
+
+// muslLoaderGlob matches the dynamic loader of musl-based systems (Alpine,
+// Void musl, ...), e.g. /lib/ld-musl-x86_64.so.1. A variable for tests.
+var muslLoaderGlob = "/lib/ld-musl-*.so.1"
 
 // Defaults contains the platform values resolved for the current system.
 type Defaults struct {
 	OS     string // "linux", "darwin", "windows"
 	Arch   string // "amd64", "arm64"
 	Vendor string // "unknown" on linux, "apple" on darwin, "pc" on windows
-	Env    string // "gnu" on linux, "" elsewhere
+	Env    string // "gnu" on linux ("musl" on musl-based systems), "" elsewhere
 	Ext    string // "" on linux/darwin, ".exe" on windows
 }
 
@@ -27,6 +34,9 @@ func Detect() Defaults {
 	env := ""
 	if goos == "linux" {
 		env = "gnu"
+		if isMusl() {
+			env = "musl"
+		}
 	}
 
 	ext := ""
@@ -41,6 +51,13 @@ func Detect() Defaults {
 		Env:    env,
 		Ext:    ext,
 	}
+}
+
+// isMusl reports whether the system's C library is musl, by the presence of
+// its dynamic loader.
+func isMusl() bool {
+	matches, _ := filepath.Glob(muslLoaderGlob)
+	return len(matches) > 0
 }
 
 // ApplyMap applies an override map (e.g. [x.os] or [x.arch]): if the key

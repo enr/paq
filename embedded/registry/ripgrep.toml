@@ -11,9 +11,10 @@ chmod = "0755"
 amd64 = "x86_64"
 arm64 = "aarch64"
 
-# x86_64 builds ship only as musl; aarch64 ships only as gnu.
+# x86_64 builds ship only as musl; aarch64 ships only as gnu (on musl systems too).
 [ripgrep.env_arch]
 amd64 = "musl"
+arm64 = "gnu"
 
 # Windows ships a .zip instead of a .tar.gz.
 [ripgrep.windows]

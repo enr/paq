@@ -15,5 +15,9 @@ arm64 = "aarch64"
 asset = "fresh-editor-{{rust_target}}.zip"
 archive = "zip"
 
+# No musl builds: musl systems get the gnu one (it needs gcompat to run).
+[fresh.env]
+musl = "gnu"
+
 [fresh.verify]
 sha256_asset = "{{asset}}.sha256"

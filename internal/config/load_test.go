@@ -114,7 +114,7 @@ func TestWindowsArchiveOverride(t *testing.T) {
 		if r.Archive != "tar.gz" {
 			t.Errorf("%s default Archive = %q, want tar.gz", name, r.Archive)
 		}
-		win := r.ApplyPlatformOverride("windows", "amd64")
+		win := r.ApplyPlatformOverride("windows", "amd64", "")
 		if win.Archive != "zip" {
 			t.Errorf("%s windows Archive = %q, want zip", name, win.Archive)
 		}
@@ -187,7 +187,7 @@ asset = "tool-{{version}}-win-arm64.zip"
 		if !tool.SupportsPlatform(tc.os, tc.arch) {
 			t.Errorf("tool should support %s/%s", tc.os, tc.arch)
 		}
-		s := tool.ApplyPlatformOverride(tc.os, tc.arch)
+		s := tool.ApplyPlatformOverride(tc.os, tc.arch, "")
 		vars := template.Vars{
 			OS:      platform.ApplyMap(s.OS, tc.os, tc.os),
 			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
@@ -274,7 +274,7 @@ sha256_json = "sha256hash"
 		if !tool.SupportsPlatform(tc.os, tc.arch) {
 			t.Errorf("tool should support %s/%s", tc.os, tc.arch)
 		}
-		s := tool.ApplyPlatformOverride(tc.os, tc.arch)
+		s := tool.ApplyPlatformOverride(tc.os, tc.arch, "")
 		vars := template.Vars{
 			OS:      platform.ApplyMap(s.OS, tc.os, tc.os),
 			Arch:    platform.ApplyMap(s.Arch, tc.arch, tc.arch),
@@ -474,5 +474,48 @@ func TestMergeUserSpecsOverride(t *testing.T) {
 	rg := cfg.Specs["ripgrep"]
 	if rg.Backend != "url" || rg.Source != "https://example.com/rg" {
 		t.Errorf("ripgrep = %+v, want user override (backend url)", rg)
+	}
+}
+
+// TestMuslOverride verifies that [x.musl] (with a nested [x.musl.<arch>]) is
+// parsed apart from the per-OS sections and applied, after [x.linux], only
+// when the platform env is musl.
+func TestMuslOverride(t *testing.T) {
+	specs, err := parseSpecFile([]byte(`
+[mytool]
+asset = "mytool-{{os}}-{{arch}}.tar.gz"
+
+[mytool.linux]
+extract = "mytool-linux"
+
+[mytool.musl]
+asset = "mytool-{{os}}-{{arch}}-musl.tar.gz"
+
+[mytool.musl.arm64]
+asset = "mytool-aarch64-musl.tar.gz"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := specs["mytool"]
+	if _, ok := s.OSOverrides["musl"]; ok {
+		t.Error("musl parsed as a per-OS override")
+	}
+
+	cases := []struct {
+		os, arch, env          string
+		wantAsset, wantExtract string
+	}{
+		{"linux", "amd64", "gnu", "mytool-{{os}}-{{arch}}.tar.gz", "mytool-linux"},
+		{"linux", "amd64", "musl", "mytool-{{os}}-{{arch}}-musl.tar.gz", "mytool-linux"},
+		{"linux", "arm64", "musl", "mytool-aarch64-musl.tar.gz", "mytool-linux"},
+		{"darwin", "arm64", "", "mytool-{{os}}-{{arch}}.tar.gz", ""},
+	}
+	for _, tc := range cases {
+		got := s.ApplyPlatformOverride(tc.os, tc.arch, tc.env)
+		if got.Asset != tc.wantAsset || got.Extract != tc.wantExtract {
+			t.Errorf("%s/%s env=%q: asset=%q extract=%q, want asset=%q extract=%q",
+				tc.os, tc.arch, tc.env, got.Asset, got.Extract, tc.wantAsset, tc.wantExtract)
+		}
 	}
 }

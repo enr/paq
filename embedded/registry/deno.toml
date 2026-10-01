@@ -10,5 +10,9 @@ chmod = "0755"
 amd64 = "x86_64"
 arm64 = "aarch64"
 
+# No musl builds: musl systems get the gnu one (it needs gcompat to run).
+[deno.env]
+musl = "gnu"
+
 [deno.verify]
 sha256_asset = "{{asset}}.sha256sum"

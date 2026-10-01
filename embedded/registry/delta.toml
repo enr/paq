@@ -10,6 +10,10 @@ chmod = "0755"
 amd64 = "x86_64"
 arm64 = "aarch64"
 
+# aarch64 ships only as gnu (on musl systems too).
+[delta.env_arch]
+arm64 = "gnu"
+
 # Windows ships a .zip instead of a .tar.gz.
 [delta.windows]
 asset = "delta-{{version}}-{{rust_target}}.zip"

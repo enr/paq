@@ -108,7 +108,11 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	plat := platform.Detect()
-	reportOK("platform", "Platform", plat.OS+"/"+plat.Arch)
+	platLabel := plat.OS + "/" + plat.Arch
+	if plat.Env == "musl" {
+		platLabel += " (musl)"
+	}
+	reportOK("platform", "Platform", platLabel)
 
 	cfgPath, pathErr := config.UserManifestPath()
 	switch {

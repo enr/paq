@@ -136,7 +136,7 @@ func OverlayRegistry(specs map[string]Spec, global map[string]string, globalOS m
 
 // parseSpecFile parses a recipe TOML file.
 // Handles per-OS sections (e.g. [jdk.darwin], [micro.darwin.amd64]) by extracting
-// them as OSOverrides.
+// them as OSOverrides, and the [x.musl] section as MuslOverride.
 func parseSpecFile(data []byte) (map[string]Spec, error) {
 	// First pass: decode into a generic map to handle per-OS sections.
 	var raw map[string]any
@@ -162,6 +162,7 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 
 		// Extract the per-OS sections before re-encoding.
 		osOverrides := make(map[string]PlatformOverride)
+		var muslOverride *PlatformOverride
 		cleanMap := make(map[string]any)
 
 		for k, v := range specMap {
@@ -172,6 +173,12 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 					return nil, fmt.Errorf("os override %q: %w", k, err)
 				}
 				osOverrides[k] = ov
+			} else if k == "musl" {
+				ov, err := decodePlatformOverride(v)
+				if err != nil {
+					return nil, fmt.Errorf("musl override: %w", err)
+				}
+				muslOverride = &ov
 			} else {
 				cleanMap[k] = v
 			}
@@ -190,6 +197,7 @@ func parseSpecsFromRaw(raw map[string]any) (map[string]Spec, error) {
 
 		spec := specWrapper[specName]
 		spec.OSOverrides = osOverrides
+		spec.MuslOverride = muslOverride
 		result[specName] = spec
 	}
 
