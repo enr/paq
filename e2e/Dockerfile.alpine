@@ -1,0 +1,28 @@
+# Alpine (musl) image with paq built from source, for manual testing of the
+# musl support. Build from the repository root:
+#
+#   docker build -t paq-alpine -f e2e/Dockerfile.alpine .
+#   docker run --rm -it -e GITHUB_TOKEN paq-alpine
+#
+# Then, inside the container:
+#
+#   paq doctor                              # Platform: linux/<arch> (musl)
+#   paq install fd bat ripgrep --no-save    # *-unknown-linux-musl assets, they run
+#   paq install porffor --no-save           # [porffor.musl]: porffor-linux-<arch>-musl.tar.gz
+#   paq install deno --no-save              # no musl build: gnu asset + missing-loader warning
+#   apk add --no-cache gcompat
+#   paq install deno --no-save --force      # loader present: no warning
+#   paq install gh --no-save                # static Go binary: runs, no warning
+
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags "-s" -o /paq ./cmd/paq
+
+FROM alpine:3.20
+COPY --from=build /paq /usr/local/bin/paq
+ENV PATH="/root/.local/bin:${PATH}"
+WORKDIR /root
+CMD ["/bin/sh"]
