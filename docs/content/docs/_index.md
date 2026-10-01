@@ -469,7 +469,7 @@ patch a stale embedded recipe without waiting for a release.
 
 The embedded registry currently ships `bat`, `bun`, `cosign`, `delta`, `deno`, `fresh`,
 `fd`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`,
-`nub`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
+`nub`, `porffor`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
 `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
 
