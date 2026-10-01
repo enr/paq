@@ -62,7 +62,7 @@ for target in "${targets[@]}"; do
     fi
     out="${DIST_DIR}/${APP_NAME}-${goos}-${goarch}${ext}"
     echo "    -> ${out}"
-    GOOS="${goos}" GOARCH="${goarch}" go build \
+    CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" go build \
         -ldflags "${ldflags}" \
         -o "${out}" \
         "./cmd/${APP_NAME}"
