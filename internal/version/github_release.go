@@ -39,13 +39,30 @@ type githubReleaseResponse struct {
 	Prerelease  bool      `json:"prerelease"`
 }
 
+// PendingRelease is the newest release skipped only because it is younger
+// than MinimumAge: it becomes eligible as "latest" at EligibleAt.
+type PendingRelease struct {
+	Version     string    `json:"version"`
+	PublishedAt time.Time `json:"published_at"`
+	EligibleAt  time.Time `json:"eligible_at"`
+}
+
 func (p GitHubReleaseProvider) Resolve(ctx context.Context) (string, string, error) {
+	ver, tag, _, err := p.ResolveWithPending(ctx)
+	return ver, tag, err
+}
+
+// ResolveWithPending is Resolve plus the newest release held back by
+// MinimumAge, if any (nil when nothing newer than the resolved one was skipped
+// for its age). It costs no extra API call.
+func (p GitHubReleaseProvider) ResolveWithPending(ctx context.Context) (string, string, *PendingRelease, error) {
 	client := p.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	if p.MinimumAge <= 0 {
-		return p.resolveLatest(ctx, client)
+		ver, tag, err := p.resolveLatest(ctx, client)
+		return ver, tag, nil, err
 	}
 	return p.resolveWithMinimumAge(ctx, client)
 }
@@ -66,16 +83,18 @@ func (p GitHubReleaseProvider) resolveLatest(ctx context.Context, client *http.C
 
 // resolveWithMinimumAge scans releases newest-first, skipping drafts,
 // prereleases and anything younger than MinimumAge, and returns the first
-// (i.e. newest) one that qualifies.
-func (p GitHubReleaseProvider) resolveWithMinimumAge(ctx context.Context, client *http.Client) (string, string, error) {
+// (i.e. newest) one that qualifies, along with the newest release skipped
+// for its age only.
+func (p GitHubReleaseProvider) resolveWithMinimumAge(ctx context.Context, client *http.Client) (string, string, *PendingRelease, error) {
 	cutoff := time.Now().Add(-p.MinimumAge)
 	checked := 0
+	var pending *PendingRelease
 
 	for page := 1; page <= githubReleasesMaxPages; page++ {
 		url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=%d&page=%d", p.Repo, githubReleasesPerPage, page)
 		var releases []githubReleaseResponse
 		if err := p.getJSON(ctx, client, url, &releases); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		if len(releases) == 0 {
 			break
@@ -87,7 +106,14 @@ func (p GitHubReleaseProvider) resolveWithMinimumAge(ctx context.Context, client
 				continue
 			}
 			if !r.PublishedAt.After(cutoff) {
-				return Clean(r.TagName), r.TagName, nil
+				return Clean(r.TagName), r.TagName, pending, nil
+			}
+			if pending == nil {
+				pending = &PendingRelease{
+					Version:     Clean(r.TagName),
+					PublishedAt: r.PublishedAt,
+					EligibleAt:  r.PublishedAt.Add(p.MinimumAge),
+				}
 			}
 		}
 
@@ -96,7 +122,7 @@ func (p GitHubReleaseProvider) resolveWithMinimumAge(ctx context.Context, client
 		}
 	}
 
-	return "", "", fmt.Errorf("no release of %s is older than %s (minimum_release_age; checked %d releases)", p.Repo, p.MinimumAge, checked)
+	return "", "", nil, fmt.Errorf("no release of %s is older than %s (minimum_release_age; checked %d releases)", p.Repo, p.MinimumAge, checked)
 }
 
 // getJSON issues an authenticated GET against the GitHub API and decodes the

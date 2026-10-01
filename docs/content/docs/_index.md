@@ -310,9 +310,20 @@ version is available — without installing anything. Apps pinned to a fixed
 version, not installed, or whose backend cannot resolve `latest` are skipped
 (shown with `--verbose`).
 
+A newer release held back by [minimum release age](#minimum-release-age) is
+also listed, dimmed, with its age and when it becomes eligible (`paq upgrade`
+won't install it until then):
+
+```
+APP    INSTALLED  LATEST
+fresh  0.5.1      0.5.2
+gip    0.9.2      0.9.3 (18h old, eligible in 5h)
+```
+
 ```bash
 paq outdated
-paq outdated --verbose   # also report why apps were skipped
+paq outdated --verbose      # also report why apps were skipped
+paq outdated --min-age 0h   # ignore minimum_release_age for this run
 ```
 
 ### uninstall
@@ -862,6 +873,13 @@ Accepted units: `h` (hours), `d` (days), `mo` (months, 30 days) and `y`
 precedence over `[defaults]`, which takes precedence over the built-in
 default. It only applies to `version = "latest"`; pinned versions (including
 `default_version`) are never affected.
+
+To override it for a single run, pass `--min-age` to `upgrade` or `outdated`;
+it takes precedence over every spec and `[defaults]` value:
+
+```bash
+paq upgrade gip --min-age 0h   # install a release published less than 24h ago
+```
 
 ## External registry
 

@@ -23,19 +23,43 @@ var upgradeCmd = &cobra.Command{
 		"to the most recent upstream release. Tools pinned to a fixed version are left untouched.",
 	Example: `  paq upgrade         # upgrade every "latest"-pinned app in the manifest
   paq upgrade rg      # upgrade a single app
-  paq upgrade rg bat  # upgrade multiple apps`,
+  paq upgrade rg bat  # upgrade multiple apps
+  paq upgrade gip --min-age 0h  # take a release younger than minimum_release_age`,
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeManifestApps,
 	RunE:              runUpgrade,
 }
 
+var flagUpgradeMinAge string
+
 func init() {
+	upgradeCmd.Flags().StringVar(&flagUpgradeMinAge, "min-age", "", minAgeFlagUsage)
 	rootCmd.AddCommand(upgradeCmd)
+}
+
+// minAgeFlagUsage is the help text of the --min-age flag shared by upgrade
+// and outdated.
+const minAgeFlagUsage = `Minimum release age for this run, overriding minimum_release_age (e.g. "0h", "7d")`
+
+// applyMinAgeFlag validates a --min-age value and, if set, makes it override
+// every spec and [defaults] minimum_release_age in cfg.
+func applyMinAgeFlag(cfg *config.Config, value string) error {
+	if value == "" {
+		return nil
+	}
+	if _, err := version.ParseAge(value); err != nil {
+		return fmt.Errorf("--min-age: %w", err)
+	}
+	cfg.MinimumReleaseAgeOverride = value
+	return nil
 }
 
 func runUpgrade(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
+		return err
+	}
+	if err := applyMinAgeFlag(cfg, flagUpgradeMinAge); err != nil {
 		return err
 	}
 	ctx := cmd.Context()
@@ -134,7 +158,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	}
 
 	step("Resolving latest version...")
-	latest, err := resolveLatestVersion(ctx, cfg, spec, warn)
+	latest, _, err := resolveLatestVersion(ctx, cfg, spec, warn)
 	if errors.Is(err, version.ErrLatestNotImplemented) {
 		step("backend %q has no upstream version to resolve, skipping", spec.Backend)
 		return nil
@@ -184,17 +208,19 @@ func latestRequestFor(spec config.Spec) version.LatestRequest {
 
 // resolveLatestVersion resolves the latest upstream version for a spec,
 // selecting the provider from its backend/latest_strategy and enforcing
-// minimum_release_age (spec override > global [defaults] > built-in default)
-// when the backend/strategy supports it (currently only "github", with no
-// explicit latest_strategy). warn (may be nil) is called if the spec/defaults
-// explicitly configure minimum_release_age for a backend that can't honor it.
+// minimum_release_age (--min-age > spec override > global [defaults] >
+// built-in default) when the backend/strategy supports it (currently only
+// "github", with no explicit latest_strategy). pending is the newest release
+// skipped for being younger than that minimum age (nil if none). warn (may be
+// nil) is called if the spec/defaults explicitly configure
+// minimum_release_age for a backend that can't honor it.
 // Returns version.ErrLatestNotImplemented if neither can resolve "latest".
 // Shared by upgradeApp and the "outdated" command.
-func resolveLatestVersion(ctx context.Context, cfg *config.Config, spec config.Spec, warn func(string, ...any)) (string, error) {
+func resolveLatestVersion(ctx context.Context, cfg *config.Config, spec config.Spec, warn func(string, ...any)) (latest string, pending *version.PendingRelease, err error) {
 	req := latestRequestFor(spec)
-	minAge, explicit, err := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
+	minAge, explicit, err := version.ResolveMinimumAge(cfg.MinimumReleaseAgeOverride, spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
 	if err != nil {
-		return "", fmt.Errorf("invalid minimum_release_age: %w", err)
+		return "", nil, fmt.Errorf("invalid minimum_release_age: %w", err)
 	}
 	if spec.LatestStrategy == "" && spec.Backend == "github" {
 		req.MinimumAge = minAge
@@ -202,8 +228,12 @@ func resolveLatestVersion(ctx context.Context, cfg *config.Config, spec config.S
 		warn("minimum_release_age is not supported for backend %q, ignoring", spec.Backend)
 	}
 	provider := version.LatestProvider(req)
-	latest, _, err := provider.Resolve(ctx)
-	return latest, err
+	if gh, ok := provider.(version.GitHubReleaseProvider); ok {
+		latest, _, pending, err = gh.ResolveWithPending(ctx)
+		return latest, pending, err
+	}
+	latest, _, err = provider.Resolve(ctx)
+	return latest, nil, err
 }
 
 // cleanupOldVersions removes the state entries (and their files) for versions

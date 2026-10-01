@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"regexp"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/template"
+	"github.com/enr/paq/internal/version"
 )
 
 // unresolvedVersionPlaceholder matches {{version}} and its variants
@@ -159,11 +161,37 @@ func PrintAvailableTable(entries []RegistryEntry) error {
 }
 
 // OutdatedEntry is a row of the "paq outdated" table: an app pinned to
-// "latest" whose installed version differs from the resolved upstream one.
+// "latest" whose installed version differs from the resolved upstream one,
+// or that has a newer release held back by minimum_release_age.
 type OutdatedEntry struct {
 	Name      string `json:"name"`
 	Installed string `json:"installed"`
 	Latest    string `json:"latest"`
+	// Outdated is false for a row listed only for its Pending release
+	// (Latest is already installed).
+	Outdated bool `json:"outdated"`
+	// Pending is the newest release skipped for being younger than
+	// minimum_release_age, nil if none.
+	Pending *version.PendingRelease `json:"pending,omitempty"`
+}
+
+// pendingText renders a release held back by minimum_release_age, e.g.
+// "0.9.3 (18h old, eligible in 5h)".
+func pendingText(p *version.PendingRelease) string {
+	now := time.Now()
+	return fmt.Sprintf("%s (%s old, eligible in %s)", p.Version, shortDuration(now.Sub(p.PublishedAt)), shortDuration(p.EligibleAt.Sub(now)))
+}
+
+// shortDuration renders d coarsely, in hours below two days, else in days.
+func shortDuration(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return "<1h"
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // PrintOutdatedTable prints the apps that have a newer upstream version available.
@@ -194,7 +222,14 @@ func PrintOutdatedTable(entries []OutdatedEntry) error {
 		fmt.Printf(fmtStr, headers[0], headers[1], "LATEST")
 		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "------")
 		for _, e := range entries {
-			fmt.Printf(fmtStr, e.Name, e.Installed, e.Latest)
+			var latest []string
+			if e.Outdated {
+				latest = append(latest, e.Latest)
+			}
+			if e.Pending != nil {
+				latest = append(latest, pendingText(e.Pending))
+			}
+			fmt.Printf(fmtStr, e.Name, e.Installed, strings.Join(latest, "  "))
 		}
 		return nil
 	}
@@ -208,10 +243,19 @@ func PrintOutdatedTable(entries []OutdatedEntry) error {
 
 	latestStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow: draws the eye to the new version
 	for _, e := range entries {
+		// Yellow only for what "paq upgrade" would install; a release held
+		// back by minimum_release_age is dimmed.
+		var latest []string
+		if e.Outdated {
+			latest = append(latest, latestStyle.Render(e.Latest))
+		}
+		if e.Pending != nil {
+			latest = append(latest, dimStyle.Render(pendingText(e.Pending)))
+		}
 		row := fmt.Sprintf("%s  %s  %s",
 			nameStyle.Width(w[0]).Render(e.Name),
 			dimStyle.Width(w[1]).Render(e.Installed),
-			latestStyle.Render(e.Latest),
+			strings.Join(latest, "  "),
 		)
 		fmt.Println(row)
 	}

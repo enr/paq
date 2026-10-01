@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
+	"github.com/enr/paq/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -25,11 +27,14 @@ func cmdWithContext() *cobra.Command {
 }
 
 func TestEvaluateOutdated(t *testing.T) {
+	// Shared so the pointer compares equal between input and wantEntry.
+	pending := &version.PendingRelease{Version: "14.2.0", PublishedAt: time.Now().Add(-time.Hour), EligibleAt: time.Now().Add(23 * time.Hour)}
 	cases := []struct {
 		name      string
 		appName   string
 		installed []state.InstalledApp
 		latest    string
+		pending   *version.PendingRelease
 		wantEntry ui.OutdatedEntry
 		wantIsOld bool
 	}{
@@ -45,7 +50,7 @@ func TestEvaluateOutdated(t *testing.T) {
 			appName:   "rg",
 			installed: []state.InstalledApp{{Name: "rg", Version: "14.0.0"}},
 			latest:    "14.1.1",
-			wantEntry: ui.OutdatedEntry{Name: "rg", Installed: "14.0.0", Latest: "14.1.1"},
+			wantEntry: ui.OutdatedEntry{Name: "rg", Installed: "14.0.0", Latest: "14.1.1", Outdated: true},
 			wantIsOld: true,
 		},
 		{
@@ -56,7 +61,7 @@ func TestEvaluateOutdated(t *testing.T) {
 				{Name: "node18", Version: "18.19.0"},
 			},
 			latest:    "18.20.1",
-			wantEntry: ui.OutdatedEntry{Name: "node18", Installed: "18.20.0, 18.19.0", Latest: "18.20.1"},
+			wantEntry: ui.OutdatedEntry{Name: "node18", Installed: "18.20.0, 18.19.0", Latest: "18.20.1", Outdated: true},
 			wantIsOld: true,
 		},
 		{
@@ -69,11 +74,37 @@ func TestEvaluateOutdated(t *testing.T) {
 			latest:    "18.20.1",
 			wantIsOld: false,
 		},
+		{
+			name:      "up to date but a newer release is held back by minimum_release_age",
+			appName:   "rg",
+			installed: []state.InstalledApp{{Name: "rg", Version: "14.1.1"}},
+			latest:    "14.1.1",
+			pending:   pending,
+			wantEntry: ui.OutdatedEntry{Name: "rg", Installed: "14.1.1", Latest: "14.1.1", Pending: pending},
+			wantIsOld: true,
+		},
+		{
+			name:      "outdated and a newer release is held back",
+			appName:   "rg",
+			installed: []state.InstalledApp{{Name: "rg", Version: "14.0.0"}},
+			latest:    "14.1.1",
+			pending:   pending,
+			wantEntry: ui.OutdatedEntry{Name: "rg", Installed: "14.0.0", Latest: "14.1.1", Outdated: true, Pending: pending},
+			wantIsOld: true,
+		},
+		{
+			name:      "held-back release already installed (e.g. via --min-age)",
+			appName:   "rg",
+			installed: []state.InstalledApp{{Name: "rg", Version: "14.2.0"}},
+			latest:    "14.1.1",
+			pending:   pending,
+			wantIsOld: false,
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			entry, isOutdated := evaluateOutdated(tc.appName, tc.installed, tc.latest)
+			entry, isOutdated := evaluateOutdated(tc.appName, tc.installed, tc.latest, tc.pending)
 			if isOutdated != tc.wantIsOld {
 				t.Fatalf("isOutdated = %v, want %v", isOutdated, tc.wantIsOld)
 			}
