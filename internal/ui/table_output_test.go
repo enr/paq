@@ -127,7 +127,7 @@ func TestPrintOutdatedTablePending(t *testing.T) {
 func TestPrintConfigShowJSON(t *testing.T) {
 	apps := map[string]config.AppEntry{"rg": {Use: "rg", Version: "latest"}}
 	out, _ := withGlobal(t, Config{JSON: true}, func() {
-		PrintConfigShow("/home/u/.config/paq.toml", true, config.Defaults{Bin: "/opt/bin"}, "/opt/bin", "/opt/opt",
+		PrintConfigShow("/home/u/.config/paq.toml", true, config.Defaults{Bin: "/opt/bin"}, "/opt/bin", "/opt/opt", "",
 			apps, config.RegistrySettings{}, "/home/u/.cache/paq/registry", nil, nil)
 	})
 
@@ -140,7 +140,7 @@ func TestPrintConfigShowJSON(t *testing.T) {
 
 func TestPrintConfigShowPlainNoApps(t *testing.T) {
 	out, _ := withGlobal(t, Config{}, func() {
-		PrintConfigShow("/home/u/.config/paq.toml", false, config.Defaults{}, "/opt/bin", "/opt/opt",
+		PrintConfigShow("/home/u/.config/paq.toml", false, config.Defaults{}, "/opt/bin", "/opt/opt", "",
 			nil, config.RegistrySettings{}, "/home/u/.cache/paq/registry", nil, nil)
 	})
 
@@ -153,25 +153,29 @@ func TestPrintConfigShowPlainNoApps(t *testing.T) {
 
 func TestPrintConfigShowPlainWithAppsAndRegistryMeta(t *testing.T) {
 	apps := map[string]config.AppEntry{
-		"rg": {Use: "rg", Version: "14.0.0", Dest: "/opt/bin"},
-		"jq": {}, // exercises the "use defaults to key" / "(default)" fallbacks
+		"rg":  {Use: "rg", Version: "14.0.0", Dest: "/opt/bin"},
+		"bat": {Dest: "~/.local/bin/bat{{ext}}"},
+		"jq":  {}, // exercises the "use defaults to key" / "(default)" fallbacks
 	}
 	meta := &registry.Meta{Version: "2024-01-01", FetchedAt: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)}
 	out, _ := withGlobal(t, Config{}, func() {
-		PrintConfigShow("/home/u/.config/paq.toml", true, config.Defaults{Bin: "/opt/bin"}, "/opt/bin", "/opt/opt",
+		PrintConfigShow("/home/u/.config/paq.toml", true, config.Defaults{Bin: "/opt/bin"}, "/opt/bin", "/opt/opt", ".exe",
 			apps, config.RegistrySettings{URL: "https://example.com", PublicKey: "abc"}, "/home/u/.cache/paq/registry", meta, nil)
 	})
 
-	for _, want := range []string{"rg", "14.0.0", "jq", "(default)", "https://example.com", "2024-01-01"} {
+	for _, want := range []string{"rg", "14.0.0", "jq", "(default)", "https://example.com", "2024-01-01", "~/.local/bin/bat.exe"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("PrintConfigShow plain output = %q, want it to contain %q", out, want)
 		}
+	}
+	if strings.Contains(out, "{{ext}}") {
+		t.Errorf("PrintConfigShow plain output = %q, want {{ext}} resolved", out)
 	}
 }
 
 func TestPrintConfigShowPlainRegistryOpenErr(t *testing.T) {
 	out, _ := withGlobal(t, Config{}, func() {
-		PrintConfigShow("/home/u/.config/paq.toml", true, config.Defaults{}, "/opt/bin", "/opt/opt",
+		PrintConfigShow("/home/u/.config/paq.toml", true, config.Defaults{}, "/opt/bin", "/opt/opt", "",
 			nil, config.RegistrySettings{}, "/home/u/.cache/paq/registry", nil, errBadRegistry)
 	})
 

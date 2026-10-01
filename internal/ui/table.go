@@ -24,6 +24,10 @@ import (
 // version available) are shown raw rather than substituting an empty string.
 var unresolvedVersionPlaceholder = regexp.MustCompile(`\{\{\s*version(_major|_minor|_patch|_build)?\s*\}\}`)
 
+// extPlaceholder matches {{ext}}, the only dest placeholder whose value
+// depends on the platform alone (no recipe overrides involved).
+var extPlaceholder = regexp.MustCompile(`\{\{\s*ext\s*\}\}`)
+
 var (
 	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	nameStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
@@ -265,7 +269,9 @@ func PrintOutdatedTable(entries []OutdatedEntry) error {
 // PrintConfigShow prints the evaluated user configuration path and its data:
 // the effective defaults (configured or built-in), the registry cache
 // location and installed snapshot (if any), and the declared apps.
-func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt string, apps map[string]config.AppEntry, registryCfg config.RegistrySettings, registryDir string, registryMeta *registry.Meta, registryOpenErr error) error {
+// ext is the platform's executable extension, substituted for {{ext}} in the
+// apps' dest column.
+func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin, effOpt, ext string, apps map[string]config.AppEntry, registryCfg config.RegistrySettings, registryDir string, registryMeta *registry.Meta, registryOpenErr error) error {
 	if Global.JSON {
 		cache := map[string]any{"dir": registryDir}
 		switch {
@@ -386,7 +392,7 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 		if ver == "" {
 			ver = "(default)"
 		}
-		dest := a.Dest
+		dest := extPlaceholder.ReplaceAllLiteralString(a.Dest, ext)
 		if dest == "" {
 			dest = "(default)"
 		}

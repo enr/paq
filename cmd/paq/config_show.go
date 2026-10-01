@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/platform"
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
@@ -40,5 +41,5 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	}
 	_, registryMeta, registryOpenErr := registry.Open()
 
-	return ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, cfg.Apps, cfg.Registry, registryDir, registryMeta, registryOpenErr)
+	return ui.PrintConfigShow(path, exists, cfg.Defaults, effBin, effOpt, platform.Detect().Ext, cfg.Apps, cfg.Registry, registryDir, registryMeta, registryOpenErr)
 }
