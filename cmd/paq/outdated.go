@@ -22,18 +22,26 @@ var outdatedCmd = &cobra.Command{
 	Short: "List installed tools that have a newer upstream version",
 	Long: "Check, for every installed app pinned to \"latest\", whether a newer upstream " +
 		"version is available, without installing it. Apps pinned to a fixed version, not " +
-		"installed, or whose backend cannot resolve \"latest\" are skipped (shown with --verbose).",
+		"installed, or whose backend cannot resolve \"latest\" are skipped (shown with --verbose). " +
+		"A newer release held back by minimum_release_age is shown dimmed, with when it becomes " +
+		"eligible; use --min-age to change the minimum age for this run.",
 	Args: cobra.NoArgs,
 	RunE: runOutdated,
 }
 
+var flagOutdatedMinAge string
+
 func init() {
+	outdatedCmd.Flags().StringVar(&flagOutdatedMinAge, "min-age", "", minAgeFlagUsage)
 	rootCmd.AddCommand(outdatedCmd)
 }
 
 func runOutdated(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
+		return err
+	}
+	if err := applyMinAgeFlag(cfg, flagOutdatedMinAge); err != nil {
 		return err
 	}
 	if len(cfg.Apps) == 0 {
@@ -96,8 +104,9 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 }
 
 // checkOutdated resolves the latest upstream version for a single app and
-// reports whether it differs from what's installed. checked is false when
-// the app was skipped (pinned, not installed, or no "latest" strategy) —
+// reports whether it differs from what's installed or a newer release is held
+// back by minimum_release_age. checked is false when the app has nothing to
+// report or was skipped (pinned, not installed, or no "latest" strategy) —
 // skip reasons are reported through the skip callback, gated by --verbose
 // the same way ui.Info always is.
 func checkOutdated(ctx context.Context, cfg *config.Config, st *state.State, name string, skip func(string, ...any)) (entry ui.OutdatedEntry, checked bool, err error) {
@@ -127,7 +136,7 @@ func checkOutdated(ctx context.Context, cfg *config.Config, st *state.State, nam
 		return entry, false, nil
 	}
 
-	latest, resolveErr := resolveLatestVersion(ctx, cfg, spec, skip)
+	latest, pending, resolveErr := resolveLatestVersion(ctx, cfg, spec, skip)
 	if errors.Is(resolveErr, version.ErrLatestNotImplemented) {
 		skip("%s: backend %q has no upstream version to resolve, skipping", name, spec.Backend)
 		return entry, false, nil
@@ -136,26 +145,38 @@ func checkOutdated(ctx context.Context, cfg *config.Config, st *state.State, nam
 		return entry, false, fmt.Errorf("resolve latest version: %w", resolveErr)
 	}
 
-	entry, isOutdated := evaluateOutdated(name, installed, latest)
-	return entry, isOutdated, nil
+	entry, show := evaluateOutdated(name, installed, latest, pending)
+	return entry, show, nil
 }
 
-// evaluateOutdated decides whether name is outdated given its installed
-// records and the resolved latest version: outdated means none of the
-// installed versions match latest. Kept separate from checkOutdated (which
-// does the network I/O to resolve latest) so the selection logic itself is
-// unit-testable without a real version provider.
-func evaluateOutdated(name string, installed []state.InstalledApp, latest string) (entry ui.OutdatedEntry, isOutdated bool) {
+// evaluateOutdated decides whether name has something to report given its
+// installed records, the resolved latest version and the newest release held
+// back by minimum_release_age (pending, may be nil): outdated means none of
+// the installed versions match latest; a pending release is reported (even
+// when not outdated) unless it is itself installed, e.g. via --min-age. Kept
+// separate from checkOutdated (which does the network I/O to resolve latest)
+// so the selection logic itself is unit-testable without a real version
+// provider.
+func evaluateOutdated(name string, installed []state.InstalledApp, latest string, pending *version.PendingRelease) (entry ui.OutdatedEntry, show bool) {
 	installedVersions := make([]string, len(installed))
+	outdated := true
 	for i, rec := range installed {
 		installedVersions[i] = rec.Version
 		if rec.Version == latest {
-			return ui.OutdatedEntry{}, false // already up to date
+			outdated = false
 		}
+		if pending != nil && rec.Version == pending.Version {
+			return ui.OutdatedEntry{}, false // already on the newest release
+		}
+	}
+	if !outdated && pending == nil {
+		return ui.OutdatedEntry{}, false // already up to date
 	}
 	return ui.OutdatedEntry{
 		Name:      name,
 		Installed: strings.Join(installedVersions, ", "),
 		Latest:    latest,
+		Outdated:  outdated,
+		Pending:   pending,
 	}, true
 }

@@ -305,6 +305,10 @@ type Config struct {
 	GlobalTemplates map[string]string
 	// GlobalTemplatesOS contains the per-OS meta-templates from templates.toml.
 	GlobalTemplatesOS map[string]map[string]string
+	// MinimumReleaseAgeOverride, when non-empty, replaces every spec and
+	// [defaults] minimum_release_age for this run. Set from the --min-age
+	// command-line flag, never from TOML.
+	MinimumReleaseAgeOverride string
 	// Lock is the parsed paq.lock.toml, consulted by the install pipeline to
 	// reproduce a previously-resolved "latest" version instead of re-resolving
 	// it live. Never nil once loaded through Merge; callers built directly

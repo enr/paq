@@ -191,7 +191,7 @@ func TestResolveLatestVersionWarnsOnUnsupportedBackendWithExplicitAge(t *testing
 			var warnings []string
 			warn := func(format string, a ...any) { warnings = append(warnings, format) }
 
-			_, err := resolveLatestVersion(context.Background(), &c.cfg, c.spec, warn)
+			_, _, err := resolveLatestVersion(context.Background(), &c.cfg, c.spec, warn)
 			if !errors.Is(err, version.ErrLatestNotImplemented) {
 				t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
 			}
@@ -217,7 +217,7 @@ func TestResolveLatestVersionWarnsForArchLinuxStrategy(t *testing.T) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, format) }
 
-	_, err := resolveLatestVersion(context.Background(), &cfg, spec, warn)
+	_, _, err := resolveLatestVersion(context.Background(), &cfg, spec, warn)
 	if err == nil {
 		t.Fatal("expected an error (empty arch_pkg), got nil")
 	}
@@ -240,7 +240,7 @@ func TestResolveLatestVersionNoWarnWithoutExplicitAge(t *testing.T) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, format) }
 
-	_, err := resolveLatestVersion(context.Background(), &cfg, spec, warn)
+	_, _, err := resolveLatestVersion(context.Background(), &cfg, spec, warn)
 	if !errors.Is(err, version.ErrLatestNotImplemented) {
 		t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
 	}
@@ -256,7 +256,7 @@ func TestResolveLatestVersionInvalidMinimumAge(t *testing.T) {
 	spec := config.Spec{Backend: "github", Repo: "test/repo", MinimumReleaseAge: "not-a-duration"}
 	cfg := config.Config{}
 
-	_, err := resolveLatestVersion(context.Background(), &cfg, spec, nil)
+	_, _, err := resolveLatestVersion(context.Background(), &cfg, spec, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid minimum_release_age") {
 		t.Fatalf("expected an invalid minimum_release_age error, got %v", err)
 	}
@@ -409,5 +409,31 @@ func TestUpgradeAppIgnoresTheLockfile(t *testing.T) {
 	}
 	if !bytes.Equal(data, newBinary) {
 		t.Errorf("installed content = %q, want %q (upgrade must ignore the stale lock)", data, newBinary)
+	}
+}
+
+// TestApplyMinAgeFlag verifies --min-age is validated, overrides every
+// configured minimum_release_age, and doesn't warn for backends that can't
+// honor it (it applies to every app at once).
+func TestApplyMinAgeFlag(t *testing.T) {
+	cfg := config.Config{Defaults: config.Defaults{MinimumReleaseAge: "7d"}}
+	if err := applyMinAgeFlag(&cfg, "0"); err == nil {
+		t.Error("expected an error for a value with no unit, got nil")
+	}
+	if err := applyMinAgeFlag(&cfg, "0h"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MinimumReleaseAgeOverride != "0h" {
+		t.Errorf("MinimumReleaseAgeOverride = %q, want 0h", cfg.MinimumReleaseAgeOverride)
+	}
+
+	spec := config.Spec{Backend: "url", Source: "https://example.invalid/{{version}}.tar.gz", MinimumReleaseAge: "7d"}
+	var warnings []string
+	warn := func(format string, a ...any) { warnings = append(warnings, format) }
+	if _, _, err := resolveLatestVersion(context.Background(), &cfg, spec, warn); !errors.Is(err, version.ErrLatestNotImplemented) {
+		t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings with --min-age, got %v", warnings)
 	}
 }

@@ -43,12 +43,18 @@ func ParseAge(s string) (time.Duration, error) {
 }
 
 // ResolveMinimumAge picks the minimum release age to enforce when resolving
-// "latest": the spec's own override (specValue), else the user's global
-// default ([defaults] minimum_release_age, defaultsValue), else the built-in
-// default. explicit reports whether specValue or defaultsValue was set (as
-// opposed to falling back to the built-in default), which callers use to
-// decide whether an unsupported backend/strategy deserves a warning.
-func ResolveMinimumAge(specValue, defaultsValue string) (age time.Duration, explicit bool, err error) {
+// "latest": the command-line override (overrideValue, from --min-age), else
+// the spec's own override (specValue), else the user's global default
+// ([defaults] minimum_release_age, defaultsValue), else the built-in default.
+// explicit reports whether specValue or defaultsValue was set (as opposed to
+// an override or the built-in default), which callers use to decide whether
+// an unsupported backend/strategy deserves a warning: a one-off --min-age
+// applies to every app at once and would warn for each one that can't honor it.
+func ResolveMinimumAge(overrideValue, specValue, defaultsValue string) (age time.Duration, explicit bool, err error) {
+	if overrideValue != "" {
+		age, err = ParseAge(overrideValue)
+		return age, false, err
+	}
 	raw := specValue
 	if raw == "" {
 		raw = defaultsValue

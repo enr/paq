@@ -228,7 +228,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 				Selector:   spec.LatestJSON,
 				HTTPClient: client,
 			}
-			minAge, explicitAge, aerr := version.ResolveMinimumAge(spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
+			minAge, explicitAge, aerr := version.ResolveMinimumAge(cfg.MinimumReleaseAgeOverride, spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
 			if aerr != nil {
 				return fmt.Errorf("spec %q: invalid minimum_release_age: %w", specName, aerr)
 			}

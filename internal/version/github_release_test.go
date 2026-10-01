@@ -70,6 +70,19 @@ func TestGitHubReleaseProviderMinimumAge(t *testing.T) {
 	if ver != "2.7.0" || tag != "v2.7.0" {
 		t.Errorf("Resolve() = (%q, %q), want (2.7.0, v2.7.0)", ver, tag)
 	}
+
+	// The newest release skipped only for its age (not the prerelease) is
+	// reported as pending.
+	_, _, pending, err := p.ResolveWithPending(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending == nil || pending.Version != "3.0.0" {
+		t.Fatalf("pending = %+v, want version 3.0.0", pending)
+	}
+	if want := pending.PublishedAt.Add(24 * time.Hour); !pending.EligibleAt.Equal(want) {
+		t.Errorf("pending.EligibleAt = %v, want %v", pending.EligibleAt, want)
+	}
 }
 
 func TestGitHubReleaseProviderMinimumAgePaginates(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"github.com/enr/paq/internal/registry"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/template"
+	"github.com/enr/paq/internal/version"
 )
 
 func TestPrintLsTableJSON(t *testing.T) {
@@ -63,7 +64,7 @@ func TestPrintAvailableTablePlain(t *testing.T) {
 }
 
 func TestPrintOutdatedTableJSON(t *testing.T) {
-	entries := []OutdatedEntry{{Name: "rg", Installed: "13.0.0", Latest: "14.0.0"}}
+	entries := []OutdatedEntry{{Name: "rg", Installed: "13.0.0", Latest: "14.0.0", Outdated: true}}
 	out, _ := withGlobal(t, Config{JSON: true}, func() { PrintOutdatedTable(entries) })
 
 	if !strings.Contains(out, `"name": "rg"`) || !strings.Contains(out, `"latest": "14.0.0"`) {
@@ -81,12 +82,44 @@ func TestPrintOutdatedTableEmpty(t *testing.T) {
 }
 
 func TestPrintOutdatedTablePlain(t *testing.T) {
-	entries := []OutdatedEntry{{Name: "rg", Installed: "13.0.0", Latest: "14.0.0"}}
+	entries := []OutdatedEntry{{Name: "rg", Installed: "13.0.0", Latest: "14.0.0", Outdated: true}}
 	out, _ := withGlobal(t, Config{}, func() { PrintOutdatedTable(entries) })
 
 	for _, want := range []string{"APP", "INSTALLED", "LATEST", "rg", "13.0.0", "14.0.0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("PrintOutdatedTable plain output = %q, want it to contain %q", out, want)
+		}
+	}
+}
+
+// TestPrintOutdatedTablePending verifies a release held back by
+// minimum_release_age is listed with its age and eligibility, alongside the
+// eligible latest only when the app is actually outdated.
+func TestPrintOutdatedTablePending(t *testing.T) {
+	now := time.Now()
+	pending := &version.PendingRelease{Version: "0.9.3", PublishedAt: now.Add(-18*time.Hour - time.Minute), EligibleAt: now.Add(6*time.Hour - time.Minute)}
+	entries := []OutdatedEntry{
+		{Name: "gip", Installed: "0.9.2", Latest: "0.9.2", Pending: pending},
+		{Name: "rg", Installed: "13.0.0", Latest: "14.0.0", Outdated: true, Pending: pending},
+	}
+	out, _ := withGlobal(t, Config{}, func() { PrintOutdatedTable(entries) })
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("PrintOutdatedTable output = %q, want header, separator and 2 rows", out)
+	}
+	gip := strings.Fields(lines[2])
+	if want := []string{"gip", "0.9.2", "0.9.3", "(18h", "old,", "eligible", "in", "5h)"}; strings.Join(gip, " ") != strings.Join(want, " ") {
+		t.Errorf("gip row = %q, want fields %q", lines[2], want)
+	}
+	if !strings.Contains(lines[3], "14.0.0  0.9.3 (18h old") {
+		t.Errorf("rg row = %q, want the eligible latest followed by the pending release", lines[3])
+	}
+
+	out, _ = withGlobal(t, Config{JSON: true}, func() { PrintOutdatedTable(entries[:1]) })
+	for _, want := range []string{`"outdated": false`, `"pending": {`, `"version": "0.9.3"`, `"eligible_at"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("PrintOutdatedTable JSON = %q, want it to contain %q", out, want)
 		}
 	}
 }
