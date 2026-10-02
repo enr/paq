@@ -1,0 +1,18 @@
+# Porffor releases are tagged "alpha-<n>" (earlier "pre-alpha-<n>"): the tag is
+# the version itself, e.g. version = "alpha-13". No checksums are published.
+
+[porffor]
+backend = "github"
+repo = "CanadaHonk/porffor"
+tag = "{{version}}"
+asset = "porffor-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "porf"
+chmod = "0755"
+platforms = ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"]
+
+[porffor.arch]
+amd64 = "x64"
+
+[porffor.musl]
+asset = "porffor-{{os}}-{{arch}}-musl.tar.gz"

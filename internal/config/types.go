@@ -88,6 +88,9 @@ type Spec struct {
 	Platforms []string `toml:"platforms"`
 	// OSOverrides contains per-OS field overrides (e.g. [jdk.darwin]).
 	OSOverrides map[string]PlatformOverride `toml:"-"`
+	// MuslOverride contains the field overrides for musl-based Linux systems
+	// ([x.musl], with optional [x.musl.<arch>] sub-sections). Nil when absent.
+	MuslOverride *PlatformOverride `toml:"-"`
 	// Origin records where the definition came from (OriginEmbedded,
 	// OriginRegistry or OriginUser). Set at load time, not part of the TOML format.
 	Origin string `toml:"-"`
@@ -121,12 +124,22 @@ func (r Spec) SupportsPlatform(os, arch string) bool {
 
 // ApplyPlatformOverride applies the per-OS override ([x.<os>]) and then the
 // per-OS/arch one ([x.<os>.<arch>]) if present, returning a modified copy.
-// os and arch are the canonical values, before any [x.os] / [x.arch] remapping.
-func (r Spec) ApplyPlatformOverride(os, arch string) Spec {
-	ov, ok := r.OSOverrides[os]
-	if !ok {
-		return r
+// On a musl system (env "musl") the [x.musl] / [x.musl.<arch>] blocks follow.
+// os, arch and env are the canonical values, before any [x.os] / [x.arch] /
+// [x.env] remapping.
+func (r Spec) ApplyPlatformOverride(os, arch, env string) Spec {
+	if ov, ok := r.OSOverrides[os]; ok {
+		r = r.applyOverrideForArch(ov, arch)
 	}
+	if env == "musl" && r.MuslOverride != nil {
+		r = r.applyOverrideForArch(*r.MuslOverride, arch)
+	}
+	return r
+}
+
+// applyOverrideForArch applies an override block and then its sub-section for
+// arch, if present.
+func (r Spec) applyOverrideForArch(ov PlatformOverride, arch string) Spec {
 	r = r.applyOverride(ov)
 	if archOv, ok := ov.ArchOverrides[arch]; ok {
 		r = r.applyOverride(archOv)

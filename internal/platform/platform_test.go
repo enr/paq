@@ -1,11 +1,23 @@
 package platform
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
 
+// withMuslLoaderGlob points musl detection at pattern for the test's duration.
+func withMuslLoaderGlob(t *testing.T, pattern string) {
+	t.Helper()
+	old := muslLoaderGlob
+	muslLoaderGlob = pattern
+	t.Cleanup(func() { muslLoaderGlob = old })
+}
+
 func TestDetect(t *testing.T) {
+	// Independent of the host's C library: no musl loader.
+	withMuslLoaderGlob(t, filepath.Join(t.TempDir(), "ld-musl-*.so.1"))
 	d := Detect()
 	if d.OS != runtime.GOOS {
 		t.Errorf("OS = %q, want %q", d.OS, runtime.GOOS)
@@ -41,6 +53,20 @@ func TestDetect(t *testing.T) {
 		if d.Ext != ".exe" {
 			t.Errorf("windows Ext = %q, want .exe", d.Ext)
 		}
+	}
+}
+
+func TestDetectMusl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("musl detection only applies on linux")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ld-musl-x86_64.so.1"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	withMuslLoaderGlob(t, filepath.Join(dir, "ld-musl-*.so.1"))
+	if env := Detect().Env; env != "musl" {
+		t.Errorf("Env with a musl loader = %q, want musl", env)
 	}
 }
 

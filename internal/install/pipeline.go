@@ -183,7 +183,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 	// Checked on the platform-overridden spec: an [x.<os>] block can set
 	// 'extract' on a spec whose base declares 'binaries'.
-	if ov := spec.ApplyPlatformOverride(plat.OS, plat.Arch); ov.Extract != "" && len(ov.Binaries) > 0 {
+	if ov := spec.ApplyPlatformOverride(plat.OS, plat.Arch, plat.Env); ov.Extract != "" && len(ov.Binaries) > 0 {
 		return fmt.Errorf("spec %q sets both 'extract' and 'binaries': they are mutually exclusive", specName)
 	}
 
@@ -662,6 +662,22 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			return fmt.Errorf("install dir: %w", err)
 		}
 	}
+	// A binary whose dynamic loader is missing installs fine but cannot run
+	// (e.g. a glibc build on Alpine): say so now rather than at first use.
+	executables := installedFiles
+	if kind == "file" {
+		executables = []string{dest}
+	}
+	for _, f := range executables {
+		if loader := missingLoader(f); loader != "" {
+			msg := fmt.Sprintf("%s needs the dynamic loader %s, which is not on this system: it will not run", f, loader)
+			if plat.Env == "musl" {
+				msg += " (a glibc build on a musl system: use a musl build of the tool, via an [x.musl] recipe block, or install gcompat)"
+			}
+			warn(msg)
+		}
+	}
+
 	// 13. Record in the state DB (under a mutex to avoid races with other
 	// parallel goroutines). Done before announcing success: the files are on
 	// disk either way, but if this fails, the tool is not yet trackable by
@@ -716,8 +732,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 // zero-valued: callers that have a resolved version must set them afterward.
 func ResolveVars(cfg *config.Config, plat platform.Defaults, spec config.Spec, app config.AppEntry) (config.Spec, template.Vars, error) {
 	// Apply the spec's per-OS / per-OS-arch override (e.g. jdk has [jdk.darwin],
-	// micro has [micro.darwin.amd64]).
-	spec = spec.ApplyPlatformOverride(plat.OS, plat.Arch)
+	// micro has [micro.darwin.amd64]) and, on musl, its [x.musl] block.
+	spec = spec.ApplyPlatformOverride(plat.OS, plat.Arch, plat.Env)
 
 	// Apply the spec's arch/os override (maps [ripgrep.arch]).
 	resolvedArch := platform.ApplyMap(spec.Arch, plat.Arch, plat.Arch)
