@@ -57,6 +57,7 @@ type selfUpdateFixture struct {
 // at it. Returns the tag to resolve.
 func serveSelfUpdateRelease(t *testing.T, tag, assetName string, f selfUpdateFixture) {
 	t.Helper()
+	t.Setenv("GITHUB_TOKEN", "test-token") // assets are resolved via the API only with a token
 	mux := http.NewServeMux()
 
 	assets := []map[string]string{
