@@ -1,5 +1,6 @@
 # paq manifest used by e2e/Dockerfile.devtools: two Node and two JDK lines
-# side by side, plus common CLI tools.
+# side by side, plus common CLI tools. Every version is pinned, so paq
+# downloads straight from the release URLs with no GitHub API calls.
 
 [defaults]
 bin = "/usr/local/bin"
@@ -17,28 +18,34 @@ dest = "/opt/node-22"
 
 [apps.jdk17]
 use = "temurin-17"
-version = "latest"
+version = "17.0.20+8"
 dest = "/opt/jdk-17"
 
 [apps.jdk21]
 use = "temurin-21"
-version = "latest"
+version = "21.0.12+8"
 dest = "/opt/jdk-21"
 
 [apps.bat]
 use = "bat"
+version = "0.26.1"
 
 [apps.fd]
 use = "fd"
+version = "10.5.0"
 
 [apps.rg]
 use = "ripgrep"
+version = "15.2.0"
 
 [apps.jq]
 use = "jq"
+version = "1.8.2"
 
 [apps.delta]
 use = "delta"
+version = "0.20.1"
 
 [apps.gh]
 use = "gh"
+version = "2.102.0"
