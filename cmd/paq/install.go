@@ -23,8 +23,10 @@ import (
 )
 
 var (
-	flagInstallForce  bool
-	flagInstallNoSave bool
+	flagInstallForce         bool
+	flagInstallNoSave        bool
+	flagInstallRequireVerify bool
+	flagInstallDest          string
 )
 
 const maxParallel = 3
@@ -44,6 +46,8 @@ var installCmd = &cobra.Command{
   paq install ripgrep --no-save  # install without recording it (ephemeral)
   paq install ripgrep@14.1.0     # install (and record) a specific version
   paq install ripgrep bat delta  # install multiple tools
+  paq install terraform@1.9.8 --no-save --dest '/opt/paq/terraform-{{version}}/terraform'
+                                 # side by side with other versions
   paq install                    # install every tool from the manifest`,
 	Args:              cobra.ArbitraryArgs,
 	ValidArgsFunction: completeInstallableNames,
@@ -53,6 +57,8 @@ var installCmd = &cobra.Command{
 func init() {
 	installCmd.Flags().BoolVarP(&flagInstallForce, "force", "f", false, "Reinstall even if already installed")
 	installCmd.Flags().BoolVar(&flagInstallNoSave, "no-save", false, "Install without recording the tool in the manifest (ephemeral)")
+	installCmd.Flags().StringVar(&flagInstallDest, "dest", "", "Install destination for a single app (a template: {{version}} etc.); recorded for a new manifest entry")
+	installCmd.Flags().BoolVar(&flagInstallRequireVerify, "require-verify", false, "Fail instead of warning when a recipe has no checksum or signature (also PAQ_REQUIRE_VERIFY=1)")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -64,6 +70,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
+	if flagInstallDest != "" && len(args) != 1 {
+		return fmt.Errorf("--dest needs exactly one app")
+	}
+
 	// A single explicit app gets the friendlier single-app UX: no [name]
 	// prefix on its output, and a progress bar for the download.
 	if len(args) == 1 {
@@ -71,11 +81,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := saveManifestEntry(cfg, name, ver); err != nil {
+		if err := saveManifestEntry(cfg, name, ver, flagInstallDest); err != nil {
 			return err
 		}
 		hooks := appHooks(name, "")
 		hooks.Force = flagInstallForce
+		hooks.RequireVerify = flagInstallRequireVerify
 		if ui.IsTTY() && !ui.Global.JSON {
 			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
 		}
@@ -100,7 +111,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			names[i], versions[i] = name, ver
 		}
 		for i, name := range names {
-			if err := saveManifestEntry(cfg, name, versions[i]); err != nil {
+			if err := saveManifestEntry(cfg, name, versions[i], ""); err != nil {
 				return err
 			}
 		}
@@ -123,6 +134,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 func installParallel(ctx context.Context, cfg *config.Config, names []string) error {
 	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks) error {
 		hooks.Force = flagInstallForce
+		hooks.RequireVerify = flagInstallRequireVerify
 		return install.Run(ctx, cfg, name, nil, hooks)
 	})
 }
@@ -216,9 +228,9 @@ func parseInstallArg(arg string) (name, version string, err error) {
 
 // saveManifestEntry runs ensureManifestEntry for an install argument,
 // honoring --no-save, and reports a manifest write.
-func saveManifestEntry(cfg *config.Config, name, version string) error {
+func saveManifestEntry(cfg *config.Config, name, version, dest string) error {
 	_, existed := cfg.Apps[name]
-	path, err := ensureManifestEntry(cfg, name, version, !flagInstallNoSave)
+	path, err := ensureManifestEntry(cfg, name, version, dest, !flagInstallNoSave)
 	if err != nil {
 		return err
 	}
@@ -239,10 +251,20 @@ func saveManifestEntry(cfg *config.Config, name, version string) error {
 // A non-empty version (from "name@version") overrides the entry's version:
 // the default one of an auto-imported entry, or the manifest's one of an
 // existing entry, whose version line is then rewritten if save is true.
+// A non-empty dest (from --dest) overrides the default destination of an
+// auto-imported entry; for an existing entry it only applies to an unsaved
+// run, since the manifest's own dest is not rewritten.
 // Returns the written path ("" if nothing was persisted) or a hintError if
 // name is neither a known app nor a known spec.
-func ensureManifestEntry(cfg *config.Config, name, version string, save bool) (string, error) {
+func ensureManifestEntry(cfg *config.Config, name, version, dest string, save bool) (string, error) {
 	if entry, exists := cfg.Apps[name]; exists {
+		if dest != "" && dest != entry.Dest {
+			if save {
+				return "", fmt.Errorf("%q is already in the manifest with dest %q: use --no-save to install it elsewhere for this run, or change its dest in the manifest", name, entry.Dest)
+			}
+			entry.Dest = dest
+			cfg.Apps[name] = entry
+		}
 		if version == "" || version == entry.Version {
 			return "", nil
 		}
@@ -270,6 +292,9 @@ func ensureManifestEntry(cfg *config.Config, name, version string, save bool) (s
 	}
 	if version != "" {
 		entry.Version = version
+	}
+	if dest != "" {
+		entry.Dest = dest
 	}
 	// Makes the app installable in memory, regardless of persistence.
 	cfg.Apps[name] = entry
@@ -332,7 +357,7 @@ func cosignPrompt(cfg *config.Config, app string, r io.Reader) func(context.Cont
 		line, _ := bufio.NewReader(r).ReadString('\n')
 		switch strings.TrimSpace(strings.ToLower(line)) {
 		case "u", "user":
-			if err := saveManifestEntry(cfg, "cosign", ""); err != nil {
+			if err := saveManifestEntry(cfg, "cosign", "", ""); err != nil {
 				return false, err
 			}
 			if err := install.Run(ctx, cfg, "cosign", ui.NewProgressFn("cosign"), appHooks("cosign", "")); err != nil {

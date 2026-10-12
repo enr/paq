@@ -115,6 +115,13 @@ app name). The two `dest` paths must resolve to different locations — otherwis
 the second install overwrites the first; templating `dest` with `{{version}}`
 is the easy way to guarantee this.
 
+For a one-off version that should not go in the manifest, `--dest` gives a
+single install its own destination instead:
+
+```bash
+paq install terraform@1.9.8 --no-save --dest '/opt/paq/terraform-{{version}}/terraform'
+```
+
 ### Reproducible installs (paq.lock.toml)
 
 An app pinned to `version = "latest"` resolves to whatever release is newest
@@ -123,7 +130,8 @@ on different days can end up with different versions. paq closes that gap
 with a lockfile, `paq.lock.toml`, generated next to the manifest:
 
 - The first time a "latest"-tracking app is installed, paq resolves it live
-  and records the result (version + sha256) in `paq.lock.toml`.
+  and records the result (version, release tag and sha256) in `paq.lock.toml`.
+  The tag keeps what the version alone loses, such as the Temurin build number.
 - Every later `paq install` for that app reuses the locked version instead of
   resolving "latest" again — no network call, and the exact same version on
   every machine that shares the manifest and lockfile.
@@ -135,7 +143,17 @@ teammate's `paq install` reproduces your setup exactly. It only pins apps
 that track `"latest"`; a fixed version or a spec's `default_version` is
 already deterministic and gets no entry. `paq info <app>` shows an app's
 locked version, if any. The file is generated — don't hand-edit it; `paq
-upgrade` is what moves a pin forward.
+upgrade` is what moves a pin forward (and adds the `tag` to an entry written
+by an older paq).
+
+### Download cache
+
+Set `PAQ_DOWNLOAD_CACHE` to a directory to keep downloaded archives there,
+named by their sha256. An install whose archive hash is known before the
+download (from the recipe's checksum or the lock entry) takes it from the
+cache; the cached file still goes through the full verification. Off by
+default; point it at a directory your CI keeps between builds or at a Docker
+cache mount. paq never prunes it.
 
 ## Commands
 
@@ -149,6 +167,10 @@ paq install ripgrep
 paq install ripgrep --no-save
 # install a specific version, recording it as the app's version in the manifest
 paq install ripgrep@14.1.0
+# install one version to its own destination, without touching the manifest
+paq install terraform@1.9.8 --no-save --dest '/opt/paq/terraform-{{version}}/terraform'
+# fail instead of warning on recipes with no checksum or signature (also PAQ_REQUIRE_VERIFY=1)
+paq install --require-verify
 
 # Generate a default manifest entry without installing (prints it)
 paq import ripgrep
@@ -229,7 +251,8 @@ paq completion bash   # or zsh, fish, powershell
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
 
-`NO_COLOR` env var also disables colors. Progress bar goes to stderr; data to stdout.
+`NO_COLOR` env var also disables colors. Progress bar goes to stderr, and only
+when stderr is a terminal (none in CI logs or pipes); data goes to stdout.
 
 ### Exit codes
 
@@ -565,7 +588,7 @@ explicit opt-in to the newest release.
 | `{{vendor}}` | `unknown`, `apple`, `pc` |
 | `{{env}}` | `gnu` (linux), `` (others) |
 | `{{ext}}` | `.exe` (windows), `` (others) |
-| `{{version}}` | Resolved version, e.g. `14.1.1` |
+| `{{version}}` | Resolved version, e.g. `14.1.1` (every numeric component: `21.0.12.1` for Temurin's `jdk-21.0.12.1+1`) |
 | `{{version_major}}` | e.g. `14` |
 | `{{version_minor}}` | e.g. `1` |
 | `{{version_patch}}` | e.g. `1` |
@@ -640,7 +663,8 @@ a record claiming the tool is still there. Every command that reads the state
 checks the filesystem rather than trusting it: `paq ls` warns how many tools are
 missing on disk (and `ls --json` carries a `missing` field per entry),
 `paq which` never prints a path that is gone and exits non-zero when that leaves
-nothing to print, and `paq doctor` names each missing record and exits non-zero.
+nothing to print, `paq doctor` names each missing record and exits non-zero,
+and `paq install` reinstalls such a tool instead of skipping it as installed.
 Reinstall with `paq install <name>`, or drop the stale record with
 `paq uninstall <name>`.
 

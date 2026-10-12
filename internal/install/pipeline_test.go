@@ -1359,6 +1359,53 @@ func TestPipelineSkipsWhenAlreadyInstalled(t *testing.T) {
 	}
 }
 
+// TestPipelineReinstallsWhenRecordedDestIsMissing covers a CI cache that
+// restores the state DB but not the install directory: the record alone must
+// not make paq skip the install.
+func TestPipelineReinstallsWhenRecordedDestIsMissing(t *testing.T) {
+	isolateState(t)
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+
+	var downloads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads.Add(1)
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip", StripComponents: 1},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: dest},
+		},
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+	if err := os.RemoveAll(dest); err != nil {
+		t.Fatal(err)
+	}
+
+	var warnings []string
+	hooks := &Hooks{OnWarn: func(msg string) { warnings = append(warnings, msg) }}
+	if err := Run(context.Background(), cfg, "tool", nil, hooks); err != nil {
+		t.Fatalf("second install failed: %v", err)
+	}
+	if got := downloads.Load(); got != 2 {
+		t.Errorf("made %d downloads in total, want 2: a missing dest must be reinstalled", got)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+		t.Errorf("tool not reinstalled: %v", err)
+	}
+	if !strings.Contains(strings.Join(warnings, "\n"), "missing on disk") {
+		t.Errorf("warnings = %v, want one reporting the missing dest", warnings)
+	}
+}
+
 // TestExpandHomeFailsWithoutHome verifies that a ~ which cannot be expanded is
 // an error rather than a path passed through unchanged: the unexpanded form
 // would make the installer create a directory literally named "~".
@@ -1937,5 +1984,93 @@ func TestPipelineRejectsTamperedChecksumWithValidSignature(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "signature") {
 		t.Errorf("error = %q, want it to mention the signature", err)
+	}
+}
+
+// TestPipelineRequireVerifyRejectsUnverifiedRecipe checks strict mode, from
+// the hook and from PAQ_REQUIRE_VERIFY: a recipe with no checksum or
+// signature must fail before anything is downloaded.
+func TestPipelineRequireVerifyRejectsUnverifiedRecipe(t *testing.T) {
+	cases := []struct {
+		name  string
+		hooks *Hooks
+		env   string
+	}{
+		{"hook", &Hooks{RequireVerify: true}, ""},
+		{"env", &Hooks{}, "1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateState(t)
+			t.Setenv("PAQ_REQUIRE_VERIFY", tc.env)
+
+			var downloads atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				downloads.Add(1)
+				w.Write(makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload")))
+			}))
+			defer srv.Close()
+
+			cfg := &config.Config{
+				Specs: map[string]config.Spec{
+					"tool": {Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip"},
+				},
+				Apps: map[string]config.AppEntry{
+					"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+				},
+			}
+			err := Run(context.Background(), cfg, "tool", nil, tc.hooks)
+			if err == nil || !strings.Contains(err.Error(), "no verification configured") {
+				t.Fatalf("Run() error = %v, want a strict-verification failure", err)
+			}
+			if got := downloads.Load(); got != 0 {
+				t.Errorf("made %d downloads, want 0", got)
+			}
+		})
+	}
+}
+
+func TestRequireVerifyEnv(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "0": false, "false": false, "FALSE": false, "1": true, "true": true, "yes": true} {
+		t.Setenv("PAQ_REQUIRE_VERIFY", value)
+		if got := requireVerifyEnv(); got != want {
+			t.Errorf("PAQ_REQUIRE_VERIFY=%q: requireVerifyEnv() = %v, want %v", value, got, want)
+		}
+	}
+}
+
+// TestPipelineDownloadCache checks PAQ_DOWNLOAD_CACHE: the first install
+// stores the verified archive, a second one (another dest, a fresh state as
+// on a new CI build) takes it from the cache instead of the network.
+func TestPipelineDownloadCache(t *testing.T) {
+	isolateState(t)
+	t.Setenv("PAQ_DOWNLOAD_CACHE", filepath.Join(t.TempDir(), "cache"))
+
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	var downloads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads.Add(1)
+		w.Write(zipData)
+	}))
+	defer srv.Close()
+
+	spec := config.Spec{Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip", StripComponents: 1}
+	spec.Verify.SHA256 = sha256hex(zipData)
+	for i := 0; i < 2; i++ {
+		isolateState(t) // a fresh state DB: otherwise the second run is skipped as installed
+		dest := filepath.Join(t.TempDir(), "tool")
+		cfg := &config.Config{
+			Specs: map[string]config.Spec{"tool": spec},
+			Apps:  map[string]config.AppEntry{"tool": {Use: "tool", Version: "1.0.0", Dest: dest}},
+		}
+		if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+			t.Fatalf("install %d failed: %v", i+1, err)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+			t.Fatalf("install %d: tool missing: %v", i+1, err)
+		}
+	}
+	if got := downloads.Load(); got != 1 {
+		t.Errorf("made %d downloads, want 1: the second install must use the cache", got)
 	}
 }

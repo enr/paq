@@ -4,14 +4,22 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/term"
+
 	"github.com/enr/paq/internal/download"
 )
 
-// NewProgressFn returns a ProgressFn that shows the download's progress.
-// If the terminal is a TTY and colors are enabled, uses a text progress bar on stderr.
-// Otherwise, prints just the percentage.
+// stderrIsTTY reports whether stderr, where progress is drawn, is an
+// interactive terminal. A variable so tests can simulate either case.
+var stderrIsTTY = func() bool { return term.IsTerminal(int(os.Stderr.Fd())) }
+
+// NewProgressFn returns a ProgressFn that shows the download's progress on
+// stderr: a text progress bar when colors are enabled, otherwise just the
+// percentage. Without a terminal (CI logs, pipes) it returns nil: the
+// "Downloading X..." and "Downloaded X" lines already frame the download,
+// and \r-terminated updates would only fill the log.
 func NewProgressFn(label string) download.ProgressFn {
-	if Global.Quiet {
+	if Global.Quiet || !stderrIsTTY() {
 		return nil
 	}
 

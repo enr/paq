@@ -80,7 +80,7 @@ func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
-	path, err := ensureManifestEntry(cfg, "ripgrep", "", true)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "", "", true)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -100,12 +100,61 @@ func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	}
 }
 
+// --dest replaces the default destination of an auto-imported entry, both in
+// memory and in the saved manifest block.
+func TestEnsureManifestEntryDestForNewEntry(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+
+	cfg := newTestConfig()
+	dest := "/opt/paq/rg-{{version}}/rg"
+	path, err := ensureManifestEntry(cfg, "ripgrep", "14.1.0", dest, true)
+	if err != nil {
+		t.Fatalf("ensureManifestEntry: %v", err)
+	}
+	if got := cfg.Apps["ripgrep"].Dest; got != dest {
+		t.Errorf("in-memory dest = %q, want %q", got, dest)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if !strings.Contains(string(data), `dest = "/opt/paq/rg-{{version}}/rg"`) {
+		t.Errorf("manifest does not record the --dest value:\n%s", data)
+	}
+}
+
+// For an app already in the manifest, --dest applies to an unsaved run only:
+// the manifest's own dest is never rewritten behind the user's back.
+func TestEnsureManifestEntryDestForExistingEntry(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+
+	cfg := newTestConfig()
+	cfg.Apps["rg"] = config.AppEntry{Use: "ripgrep", Version: "14.1.0", Dest: "~/bin/rg"}
+	if _, err := ensureManifestEntry(cfg, "rg", "", "/tmp/rg", true); err == nil {
+		t.Error("expected an error for --dest on a saved, existing entry")
+	}
+	if _, err := ensureManifestEntry(cfg, "rg", "", "/tmp/rg", false); err != nil {
+		t.Fatalf("ensureManifestEntry with --no-save: %v", err)
+	}
+	if got := cfg.Apps["rg"].Dest; got != "/tmp/rg" {
+		t.Errorf("in-memory dest = %q, want %q", got, "/tmp/rg")
+	}
+}
+
+func TestRunInstallDestNeedsOneApp(t *testing.T) {
+	withConfigHome(t, t.TempDir())
+	withFlag(t, &flagInstallDest, "/opt/x")
+	if err := runInstall(installCmd, []string{"ripgrep", "bat"}); err == nil || !strings.Contains(err.Error(), "--dest") {
+		t.Errorf("runInstall with two apps and --dest: err = %v, want a --dest error", err)
+	}
+}
+
 func TestEnsureManifestEntryNoSave(t *testing.T) {
 	dir := t.TempDir()
 	withConfigHome(t, dir)
 
 	cfg := newTestConfig()
-	path, err := ensureManifestEntry(cfg, "ripgrep", "", false)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "", "", false)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -126,7 +175,7 @@ func TestEnsureManifestEntryExistingApp(t *testing.T) {
 
 	cfg := newTestConfig()
 	cfg.Apps["ripgrep"] = config.AppEntry{Use: "ripgrep", Version: "1.2.3"}
-	path, err := ensureManifestEntry(cfg, "ripgrep", "", true)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "", "", true)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -145,7 +194,7 @@ func TestEnsureManifestEntryVersionAutoImport(t *testing.T) {
 	withConfigHome(t, t.TempDir())
 
 	cfg := newTestConfig()
-	path, err := ensureManifestEntry(cfg, "ripgrep", "14.1.0", true)
+	path, err := ensureManifestEntry(cfg, "ripgrep", "14.1.0", "", true)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -175,7 +224,7 @@ func TestEnsureManifestEntryVersionUpdatesExistingApp(t *testing.T) {
 
 	cfg := newTestConfig()
 	cfg.Apps["rg"] = config.AppEntry{Use: "ripgrep", Version: "latest", Dest: "~/bin/rg"}
-	path, err := ensureManifestEntry(cfg, "rg", "14.1.0", true)
+	path, err := ensureManifestEntry(cfg, "rg", "14.1.0", "", true)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -198,7 +247,7 @@ func TestEnsureManifestEntryVersionNoSaveKeepsManifest(t *testing.T) {
 
 	cfg := newTestConfig()
 	cfg.Apps["rg"] = config.AppEntry{Use: "ripgrep", Version: "latest"}
-	path, err := ensureManifestEntry(cfg, "rg", "14.1.0", false)
+	path, err := ensureManifestEntry(cfg, "rg", "14.1.0", "", false)
 	if err != nil {
 		t.Fatalf("ensureManifestEntry: %v", err)
 	}
@@ -231,7 +280,7 @@ func TestParseInstallArg(t *testing.T) {
 
 func TestEnsureManifestEntryUnknownSpec(t *testing.T) {
 	cfg := newTestConfig()
-	_, err := ensureManifestEntry(cfg, "rip", "", true) // substring of "ripgrep"
+	_, err := ensureManifestEntry(cfg, "rip", "", "", true) // substring of "ripgrep"
 	if err == nil {
 		t.Fatal("expected an error for unknown spec")
 	}
@@ -246,7 +295,7 @@ func TestEnsureManifestEntryUnknownSpec(t *testing.T) {
 
 func TestEnsureManifestEntryUnknownNoSuggestion(t *testing.T) {
 	cfg := newTestConfig()
-	_, err := ensureManifestEntry(cfg, "zzz", "", true) // no substring match
+	_, err := ensureManifestEntry(cfg, "zzz", "", "", true) // no substring match
 	var he hintError
 	if !errors.As(err, &he) {
 		t.Fatalf("expected hintError, got %T: %v", err, err)
