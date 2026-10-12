@@ -12,10 +12,12 @@ import (
 )
 
 // LockEntry is one app's pinned resolution in the lockfile: the version paq
-// resolved (and the sha256 it installed) the last time it ran a live
-// "latest" resolution for that app.
+// resolved (with its release tag, and the sha256 it installed) the last time
+// it ran a live "latest" resolution for that app. The tag keeps what the
+// clean version drops, e.g. Temurin's build number in "jdk-21.0.12+8".
 type LockEntry struct {
 	Version string `toml:"version"`
+	Tag     string `toml:"tag,omitempty"`
 	SHA256  string `toml:"sha256,omitempty"`
 }
 
@@ -123,6 +125,9 @@ func saveLock(lock *Lock) error {
 		e := lock.Apps[name]
 		fmt.Fprintf(&b, "\n[apps.%s]\n", name)
 		fmt.Fprintf(&b, "version = %q\n", e.Version)
+		if e.Tag != "" {
+			fmt.Fprintf(&b, "tag = %q\n", e.Tag)
+		}
 		if e.SHA256 != "" {
 			fmt.Fprintf(&b, "sha256 = %q\n", e.SHA256)
 		}

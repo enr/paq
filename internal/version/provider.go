@@ -13,6 +13,17 @@ type Provider interface {
 	Resolve(ctx context.Context) (version string, tag string, err error)
 }
 
+// FixedProvider returns a version and tag resolved earlier, as they are: the
+// tag carries what the clean version drops (e.g. Temurin's build number).
+type FixedProvider struct {
+	Version string
+	Tag     string
+}
+
+func (p FixedProvider) Resolve(_ context.Context) (string, string, error) {
+	return p.Version, p.Tag, nil
+}
+
 // PinProvider always returns the configured version (pinned version).
 type PinProvider struct {
 	Version     string // e.g. "21.0.2" or "v21.0.2"

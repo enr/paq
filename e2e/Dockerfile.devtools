@@ -1,12 +1,12 @@
-# Debian image with Node 20/22, Temurin JDK 17/21 and common CLI tools
+# Debian image with Node 20/24, Temurin JDK 17/21 and common CLI tools
 # (bat, fd, ripgrep, jq, delta, gh), all installed by paq from
 # e2e/devtools.toml. Build from the repository root:
 #
 #   docker build -t paq-devtools -f e2e/Dockerfile.devtools .
 #
-# Node 22 and JDK 21 are on PATH by default; switch with e.g.
+# Node 24 and JDK 21 are on PATH by default; switch with e.g.
 #
-#   docker run --rm -it -e PATH=/opt/node-20/bin:/opt/jdk-17/bin:/usr/local/bin:/usr/bin:/bin -e JAVA_HOME=/opt/jdk-17 paq-devtools
+#   docker run --rm -it -e PATH=/opt/paq/node20/bin:/opt/paq/jdk17/bin:/usr/local/bin:/usr/bin:/bin -e JAVA_HOME=/opt/paq/jdk17 paq-devtools
 
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
@@ -23,7 +23,7 @@ COPY --from=build /paq /usr/local/bin/paq
 COPY e2e/devtools.toml /etc/paq/config.toml
 ENV PAQ_CONFIG=/etc/paq/config.toml
 RUN paq install
-ENV JAVA_HOME=/opt/jdk-21
-ENV PATH="/opt/node-22/bin:/opt/jdk-21/bin:${PATH}"
+ENV JAVA_HOME=/opt/paq/jdk21
+ENV PATH="/opt/paq/node24/bin:/opt/paq/jdk21/bin:${PATH}"
 WORKDIR /root
 CMD ["/bin/bash"]

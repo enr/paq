@@ -214,8 +214,61 @@ func TestPipelineLocksNewlyResolvedLatestVersion(t *testing.T) {
 	if entry.Version != "3.0.0" {
 		t.Errorf("locked version = %q, want %q", entry.Version, "3.0.0")
 	}
+	if entry.Tag != "3.0.0" {
+		t.Errorf("locked tag = %q, want %q (the raw resolved tag)", entry.Tag, "3.0.0")
+	}
 	if entry.SHA256 != sha256hex(zipData) {
 		t.Errorf("locked sha256 = %q, want the artifact's hash %q", entry.SHA256, sha256hex(zipData))
+	}
+}
+
+// TestPipelineLockedTagKeepsBuildNumber covers a Temurin-style recipe whose
+// asset name needs the build number, which only the tag carries: a lock
+// entry must reinstall the same build without any live resolution.
+func TestPipelineLockedTagKeepsBuildNumber(t *testing.T) {
+	isolateState(t)
+	isolateConfig(t)
+
+	zipData := makeFakeZip("tool-21.0.12.1", "bin/tool", []byte("build-1"))
+	var latestHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/latest.json"):
+			latestHits.Add(1)
+			http.NotFound(w, r)
+		case strings.HasSuffix(r.URL.Path, "/tool_21.0.12.1_1.zip"):
+			w.Write(zipData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "21.0.12.1", Tag: "jdk-21.0.12.1+1"}); err != nil {
+		t.Fatalf("WriteLockEntry: %v", err)
+	}
+	lock, err := config.LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+
+	spec := latestTrackingSpec(srv.URL+"/tool_{{version}}_{{version_build}}.zip", srv.URL+"/latest.json")
+	spec.Tag = "jdk-{{version}}+{{version_build}}"
+	dest := filepath.Join(t.TempDir(), "tool")
+	cfg := &config.Config{
+		Specs: map[string]config.Spec{"tool": spec},
+		Apps:  map[string]config.AppEntry{"tool": {Use: "tool", Version: "latest", Dest: dest}},
+		Lock:  lock,
+	}
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if got := latestHits.Load(); got != 0 {
+		t.Errorf("latest.json was hit %d time(s), want 0", got)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+		t.Errorf("installed file: %v", err)
 	}
 }
 

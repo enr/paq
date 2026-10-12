@@ -4,27 +4,27 @@
 
 [defaults]
 bin = "/usr/local/bin"
-opt = "/opt"
+opt = "/opt/paq"
 
 [apps.node20]
 use = "node"
 version = "20.20.2"
-dest = "/opt/node-20"
+dest = "/opt/paq/node20"
 
-[apps.node22]
+[apps.node24]
 use = "node"
-version = "22.23.3"
-dest = "/opt/node-22"
+version = "24.21.0"
+dest = "/opt/paq/node24"
 
 [apps.jdk17]
 use = "temurin-17"
 version = "17.0.20+8"
-dest = "/opt/jdk-17"
+dest = "/opt/paq/jdk17"
 
 [apps.jdk21]
 use = "temurin-21"
 version = "21.0.12+8"
-dest = "/opt/jdk-21"
+dest = "/opt/paq/jdk21"
 
 [apps.bat]
 use = "bat"

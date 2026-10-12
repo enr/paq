@@ -15,7 +15,28 @@ func TestNewProgressFnQuietReturnsNil(t *testing.T) {
 	}
 }
 
+// withStderrTTY makes NewProgressFn see stderr as a terminal (tty=true) or
+// not, for the duration of the test.
+func withStderrTTY(t *testing.T, tty bool) {
+	t.Helper()
+	saved := stderrIsTTY
+	stderrIsTTY = func() bool { return tty }
+	t.Cleanup(func() { stderrIsTTY = saved })
+}
+
+func TestNewProgressFnNoTTYReturnsNil(t *testing.T) {
+	withStderrTTY(t, false)
+	saved := Global
+	Global = Config{}
+	defer func() { Global = saved }()
+
+	if fn := NewProgressFn("rg"); fn != nil {
+		t.Errorf("NewProgressFn without a TTY = %v, want nil", fn)
+	}
+}
+
 func TestNewProgressFnKnownTotal(t *testing.T) {
+	withStderrTTY(t, true)
 	_, errOut := withGlobal(t, Config{}, func() {
 		fn := NewProgressFn("rg")
 		fn(50, 100)
@@ -32,6 +53,7 @@ func TestNewProgressFnKnownTotal(t *testing.T) {
 }
 
 func TestNewProgressFnUnknownTotal(t *testing.T) {
+	withStderrTTY(t, true)
 	_, errOut := withGlobal(t, Config{}, func() {
 		fn := NewProgressFn("rg")
 		fn(1024*1024, 0)

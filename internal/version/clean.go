@@ -6,16 +6,18 @@ import (
 	"strings"
 )
 
-var semverRe = regexp.MustCompile(`(\d+\.\d+(?:\.\d+)?)`)
+var semverRe = regexp.MustCompile(`(\d+\.\d+(?:\.\d+)*)`)
 
 // Clean removes the "v" prefix and any non-numeric suffix from a version string.
-// Examples: "v14.1.1" → "14.1.1", "jdk-21.0.2+13" → "21.0.2", "14.1.1" → "14.1.1"
+// Every dotted numeric component is kept, so vendor schemes with a fourth one
+// (Temurin's "jdk-21.0.12.1+1") still match their asset names.
+// Examples: "v14.1.1" → "14.1.1", "jdk-21.0.2+13" → "21.0.2", "jdk-21.0.12.1+1" → "21.0.12.1"
 func Clean(raw string) string {
 	// Remove the "v" prefix, case-insensitive.
 	s := strings.TrimPrefix(raw, "v")
 	s = strings.TrimPrefix(s, "V")
 
-	// Extract the first N.N or N.N.N sequence.
+	// Extract the first N.N[.N...] sequence.
 	match := semverRe.FindString(s)
 	if match != "" {
 		return match

@@ -13,6 +13,8 @@ func TestClean(t *testing.T) {
 		{"21.0.2", "21.0.2"},
 		{"jdk-21.0.2+13", "21.0.2"},
 		{"v1.2", "1.2"},
+		{"jdk-21.0.12.1+1", "21.0.12.1"},
+		{"v2.47.1.windows.1", "2.47.1"},
 	}
 	for _, tc := range tests {
 		got := Clean(tc.input)
@@ -110,6 +112,11 @@ func TestParse(t *testing.T) {
 	major, minor, patch = Parse("21.0.2")
 	if major != "21" || minor != "0" || patch != "2" {
 		t.Errorf("Parse(21.0.2) = %q %q %q, want 21 0 2", major, minor, patch)
+	}
+
+	major, minor, patch = Parse("21.0.12.1")
+	if major != "21" || minor != "0" || patch != "12" {
+		t.Errorf("Parse(21.0.12.1) = %q %q %q, want 21 0 12", major, minor, patch)
 	}
 
 	major, minor, patch = Parse("1.2")

@@ -166,6 +166,15 @@ app name). The two `dest` paths must resolve to different locations — otherwis
 the second install overwrites the first; templating `dest` with `{{version}}`
 is the easy way to guarantee this.
 
+For a one-off version that should not go in the manifest (a CI build that
+needs a project-specific Terraform, say), `--dest` gives a single install its
+own destination instead:
+
+```bash
+paq install terraform@1.9.8 --no-save --dest '/opt/paq/terraform-{{version}}/terraform'
+paq install terraform@1.5.7 --no-save --dest '/opt/paq/terraform-{{version}}/terraform'
+```
+
 ### Reproducible installs (paq.lock.toml)
 
 An app pinned to `version = "latest"` resolves to whatever release is newest
@@ -174,7 +183,9 @@ on different days can end up with different versions. paq closes that gap
 with a lockfile, `paq.lock.toml`, generated next to the manifest:
 
 - The first time a "latest"-tracking app is installed, paq resolves it live
-  and records the result (version + sha256) in `paq.lock.toml`.
+  and records the result (version, release tag and sha256) in `paq.lock.toml`.
+  The tag keeps what the version alone loses, such as the Temurin build number
+  in `jdk-21.0.12+8`.
 - Every later `paq install` for that app reuses the locked version instead of
   resolving "latest" again — no network call, and the exact same version on
   every machine that shares the manifest and lockfile.
@@ -186,7 +197,27 @@ teammate's `paq install` reproduces your setup exactly. It only pins apps
 that track `"latest"`; a fixed version or a spec's `default_version` is
 already deterministic and gets no entry. `paq info <app>` shows an app's
 locked version, if any. The file is generated — don't hand-edit it; `paq
-upgrade` is what moves a pin forward.
+upgrade` is what moves a pin forward. An entry written by an older paq has no
+`tag`; if the recipe's asset name needs the build number, refresh it once with
+`paq upgrade <app>`.
+
+### Download cache
+
+Set `PAQ_DOWNLOAD_CACHE` to a directory to keep every downloaded archive
+there, named by its sha256. A later install whose archive hash is known
+before the download (from the recipe's checksum, or from the lock entry)
+takes it from the cache instead of the network. A cached archive is
+re-checked against its hash and goes through the same verification as a
+fresh download. The cache is off by default; point it at a directory your CI
+keeps between builds (a CodeBuild or GitHub Actions cache path, a Docker
+cache mount):
+
+```bash
+export PAQ_DOWNLOAD_CACHE=/var/cache/paq-downloads
+paq install
+```
+
+paq never prunes the cache: delete the directory to clear it.
 
 ## Commands
 
@@ -227,6 +258,12 @@ paq install ripgrep@14.1.0
 # Reinstall even if already installed
 paq install ripgrep --force
 
+# Install to a specific destination (a template; --no-save keeps it out of the manifest)
+paq install terraform@1.9.8 --no-save --dest '/opt/paq/terraform-{{version}}/terraform'
+
+# Refuse recipes with no checksum or signature
+paq install --require-verify
+
 # Install several tools at once (up to 3 in parallel)
 paq install ripgrep bat delta
 
@@ -239,6 +276,25 @@ the manifest: a new app is imported with it, and for an app already in the
 manifest only its `version` line is rewritten. With `--no-save` the version
 applies to that run only.
 
+`--dest` sets the install destination of a single app, with the same
+placeholders as a manifest `dest`. A new app is recorded with it; for an app
+already in the manifest it needs `--no-save`, since the manifest's own `dest`
+is never rewritten.
+
+An app already installed in the requested version is skipped, unless its
+files are missing on disk (a CI cache that restored the state but not the
+tools, say): then it is reinstalled with a warning.
+
+A recipe with no checksum or signature installs with a warning. With
+`--require-verify`, or `PAQ_REQUIRE_VERIFY=1` in the environment (which also
+covers `paq upgrade`), it fails instead, before anything is downloaded. Use it
+for CI images that must not contain unverified binaries. Some embedded
+recipes have nothing to verify against: `bat` and `delta` publish no
+checksum, signature or attestation, and `fd` only publishes GitHub
+attestations (correct from 10.5.0), which the embedded recipe does not enable
+(a manifest recipe can add them: see "GitHub build-provenance attestations"
+under [Adding a custom recipe](#adding-a-custom-recipe)).
+
 When several tools are installed in one run, a failing one does not abort the
 others: every app is attempted and the command reports the failures at the end.
 
@@ -246,6 +302,8 @@ others: every app is attempted and the command reports the failures at the end.
 |------|-------------|
 | `-f`, `--force` | Reinstall even if already installed |
 | `--no-save` | Install without recording the tool in the manifest (ephemeral) |
+| `--dest <path>` | Install destination for a single app (a template) |
+| `--require-verify` | Fail instead of warning when a recipe has no checksum or signature (also `PAQ_REQUIRE_VERIFY=1`) |
 
 ### import
 
@@ -445,7 +503,9 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
 
 The `NO_COLOR` environment variable also disables colors. The progress bar is
-written to stderr; data goes to stdout.
+written to stderr, and only when stderr is a terminal: in CI logs and pipes a
+download shows just its "Downloading" and "Downloaded" lines. Data goes to
+stdout.
 
 Set `GITHUB_TOKEN` to avoid rate-limiting when installing GitHub-backed tools.
 Without a token, a pinned version whose asset name has no glob is downloaded
@@ -882,7 +942,8 @@ tag = "bun-v{{version}}"       # release tags are bun-v1.3.14, not v1.3.14
 always reads the real tag from the releases API. Besides the version fields,
 `tag` can use `{{version_build}}`, the part of the pinned version after `+`
 (the Temurin recipes use `tag = "jdk-{{version}}+{{version_build}}"`, pinned
-as e.g. `version = "21.0.11+10"`).
+as e.g. `version = "21.0.11+10"`). Versions keep every numeric component, so a
+four-part Temurin release pins as `version = "21.0.12.1+1"`.
 
 ### Minimum release age
 
@@ -974,7 +1035,7 @@ public_key = "RWQ...your-minisign-public-key..."
 | `{{vendor}}` | `unknown`, `apple`, `pc` |
 | `{{env}}` | `gnu` (linux), `musl` (musl-based linux, e.g. Alpine), `` (others) |
 | `{{ext}}` | `.exe` (windows), `` (others) |
-| `{{version}}` | Resolved version, e.g. `14.1.1` |
+| `{{version}}` | Resolved version, e.g. `14.1.1` (every numeric component: `21.0.12.1` for Temurin's `jdk-21.0.12.1+1`) |
 | `{{version_major}}` | e.g. `14` |
 | `{{version_minor}}` | e.g. `1` |
 | `{{version_patch}}` | e.g. `1` |
@@ -996,6 +1057,9 @@ checks the filesystem rather than trusting it:
 - `paq which` never prints a path that is gone, and exits non-zero when that
   leaves nothing to print.
 - `paq doctor` names each missing record and exits non-zero.
+
+- `paq install` reinstalls a tool whose record is there but whose files are
+  missing, instead of skipping it as already installed.
 
 Reinstall the tool with `paq install <name>`, or drop the stale record with
 `paq uninstall <name>`.
