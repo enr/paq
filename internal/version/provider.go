@@ -28,6 +28,7 @@ func (p PinProvider) Resolve(_ context.Context) (string, string, error) {
 			VersionMajor: major,
 			VersionMinor: minor,
 			VersionPatch: patch,
+			VersionBuild: Build(p.Version),
 		})
 		if err != nil {
 			return "", "", fmt.Errorf("resolve tag template: %w", err)

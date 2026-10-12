@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path"
 	"strings"
@@ -65,6 +66,14 @@ func (b GitHubBackend) ResolveAsset(ctx context.Context, tag string, v template.
 	isGlob := strings.ContainsAny(pattern, "*?[")
 	if _, err := path.Match(pattern, ""); err != nil {
 		return "", "", fmt.Errorf("invalid asset pattern %q: %w", pattern, err)
+	}
+
+	// An exact asset name with no token: the public download URL is
+	// predictable, so skip the (rate-limited) API lookup. A token keeps the
+	// API path, which also works for private repos.
+	if !isGlob && os.Getenv("GITHUB_TOKEN") == "" {
+		escapedTag := strings.ReplaceAll(neturl.PathEscape(tag), "+", "%2B")
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", b.Repo, escapedTag, neturl.PathEscape(pattern)), pattern, nil
 	}
 
 	releaseURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", b.Repo, tag)

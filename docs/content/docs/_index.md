@@ -448,6 +448,10 @@ The `NO_COLOR` environment variable also disables colors. The progress bar is
 written to stderr; data goes to stdout.
 
 Set `GITHUB_TOKEN` to avoid rate-limiting when installing GitHub-backed tools.
+Without a token, a pinned version whose asset name has no glob is downloaded
+straight from `github.com/<repo>/releases/download/...`, with no API call;
+resolving `"latest"` and matching a glob asset still use the API. With a token,
+assets are always looked up through the API, which also covers private repos.
 
 ## Exit codes
 
@@ -875,7 +879,10 @@ tag = "bun-v{{version}}"       # release tags are bun-v1.3.14, not v1.3.14
 ```
 
 `tag` only affects pinned versions (including `default_version`); `"latest"`
-always reads the real tag from the releases API.
+always reads the real tag from the releases API. Besides the version fields,
+`tag` can use `{{version_build}}`, the part of the pinned version after `+`
+(the Temurin recipes use `tag = "jdk-{{version}}+{{version_build}}"`, pinned
+as e.g. `version = "21.0.11+10"`).
 
 ### Minimum release age
 

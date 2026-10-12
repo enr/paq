@@ -13,6 +13,7 @@ import (
 )
 
 func TestGitHubBackendResolve(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token") // the API lookup runs only with a token
 	release := map[string]any{
 		"assets": []map[string]string{
 			{"name": "tool-1.0-linux-amd64.tar.gz", "url": "https://api.github.com/repos/test/repo/releases/assets/1"},
@@ -49,6 +50,7 @@ func TestGitHubBackendResolve(t *testing.T) {
 }
 
 func TestGitHubBackendAssetNotFound(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token") // the API lookup runs only with a token
 	release := map[string]any{
 		"assets": []map[string]string{
 			{"name": "other-asset.tar.gz", "url": "https://api.github.com/repos/test/repo/releases/assets/9"},
@@ -137,6 +139,7 @@ func TestGitHubBackendResolvePaginatesAssets(t *testing.T) {
 // has a full first page and every further page is empty, Resolve reports
 // "not found" instead of erroring on pagination.
 func TestGitHubBackendResolvePaginationNotFound(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token") // the API lookup runs only with a token
 	dummyAssets := make([]map[string]string, 100)
 	for i := range dummyAssets {
 		dummyAssets[i] = map[string]string{
@@ -178,6 +181,7 @@ func TestGitHubBackendResolvePaginationNotFound(t *testing.T) {
 // a short page (e.g. one ignoring the page parameter) stops the walk with an
 // error instead of issuing requests forever.
 func TestGitHubBackendPaginationIsBounded(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token") // the API lookup runs only with a token
 	dummyAssets := make([]map[string]string, 100)
 	for i := range dummyAssets {
 		dummyAssets[i] = map[string]string{
@@ -229,6 +233,36 @@ func serveRelease(t *testing.T, names ...string) *http.Client {
 	t.Cleanup(srv.Close)
 	return &http.Client{Transport: &rewriteTransport{base: srv.URL}}
 }
+
+// TestGitHubBackendResolveDirectURL verifies that without a token an exact
+// asset name resolves to the public download URL with no API request.
+func TestGitHubBackendResolveDirectURL(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	b := GitHubBackend{
+		Repo:  "adoptium/temurin21-binaries",
+		Asset: "OpenJDK21U-jdk_x64_linux_hotspot_{{version}}.tar.gz",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			t.Fatalf("unexpected request to %s", r.URL)
+			return nil, nil
+		})},
+	}
+
+	url, name, err := b.ResolveAsset(context.Background(), "jdk-21.0.12+8", template.Vars{Version: "21.0.12_8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz"
+	if url != want {
+		t.Errorf("url = %q, want %q", url, want)
+	}
+	if name != "OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz" {
+		t.Errorf("name = %q", name)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestGitHubBackendResolveAssetGlob(t *testing.T) {
 	b := GitHubBackend{

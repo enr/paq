@@ -1,11 +1,14 @@
 # Eclipse Temurin (Adoptium) JDK, one recipe per major version.
 # The asset uses the build number ({{version_build}}, e.g. the "10" in 21.0.11+10),
-# extracted from the GitHub tag. Verifies SHA256 via the .sha256.txt file published
-# alongside each asset. linux/macOS only: on Windows the asset is a .zip.
+# extracted from the GitHub tag. To pin a release, give the version with its
+# build number (e.g. version = "21.0.11+10" for the tag jdk-21.0.11+10).
+# Verifies SHA256 via the .sha256.txt file published alongside each asset.
+# linux/macOS only: on Windows the asset is a .zip.
 
 [temurin-26]
 backend = "github"
 repo = "adoptium/temurin26-binaries"
+tag = "jdk-{{version}}+{{version_build}}"
 asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
 archive = "tar.gz"
 strip_components = 1
@@ -23,6 +26,7 @@ sha256_asset = "{{asset}}.sha256.txt"
 [temurin-21]
 backend = "github"
 repo = "adoptium/temurin21-binaries"
+tag = "jdk-{{version}}+{{version_build}}"
 asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
 archive = "tar.gz"
 strip_components = 1
@@ -40,6 +44,7 @@ sha256_asset = "{{asset}}.sha256.txt"
 [temurin-17]
 backend = "github"
 repo = "adoptium/temurin17-binaries"
+tag = "jdk-{{version}}+{{version_build}}"
 asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
 archive = "tar.gz"
 strip_components = 1
@@ -57,6 +62,7 @@ sha256_asset = "{{asset}}.sha256.txt"
 [temurin-11]
 backend = "github"
 repo = "adoptium/temurin11-binaries"
+tag = "jdk-{{version}}+{{version_build}}"
 asset = "OpenJDK{{version_major}}U-jdk_{{arch}}_{{os}}_hotspot_{{version}}_{{version_build}}.tar.gz"
 archive = "tar.gz"
 strip_components = 1

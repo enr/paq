@@ -339,10 +339,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	dbg("asset name: %q", assetName)
 
 	// resolveAuxURL builds the URL of an auxiliary asset (checksum, signature)
-	// in a backend-aware way. For the "github" backend the download URL is the
-	// asset's API endpoint (…/releases/assets/{id}), which doesn't contain the
-	// file name: the auxiliary asset must therefore be resolved by name via the
-	// API. For other backends the URL contains the file name and it's enough
+	// in a backend-aware way. For the "github" backend the download URL may be
+	// the asset's API endpoint (…/releases/assets/{id}), which doesn't contain
+	// the file name: the auxiliary asset is therefore resolved by name through
+	// the backend. For other backends the URL contains the file name and it's enough
 	// to substitute it.
 	resolveAuxURL := func(auxName string) (string, error) {
 		if spec.Backend == "github" {

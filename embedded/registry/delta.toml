@@ -1,6 +1,7 @@
 [delta]
 backend = "github"
 repo = "dandavison/delta"
+tag = "{{version}}"  # delta tags have no "v" prefix (e.g. 0.18.2, not v0.18.2)
 asset = "delta-{{version}}-{{rust_target}}.tar.gz"
 archive = "tar.gz"
 extract = "delta{{ext}}"

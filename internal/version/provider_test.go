@@ -17,6 +17,7 @@ func TestPinProviderResolve(t *testing.T) {
 		{"1.3.14", "bun-v{{version}}", "1.3.14", "bun-v1.3.14"},
 		{"v1.3.14", "bun-v{{version}}", "1.3.14", "bun-v1.3.14"},
 		{"21.0.2", "jdk-{{version}}", "21.0.2", "jdk-21.0.2"},
+		{"21.0.11+10", "jdk-{{version}}+{{version_build}}", "21.0.11", "jdk-21.0.11+10"},
 	}
 	for _, tc := range tests {
 		p := PinProvider{Version: tc.version, TagTemplate: tc.tagTemplate}
