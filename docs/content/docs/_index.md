@@ -288,7 +288,12 @@ tools, say): then it is reinstalled with a warning.
 A recipe with no checksum or signature installs with a warning. With
 `--require-verify`, or `PAQ_REQUIRE_VERIFY=1` in the environment (which also
 covers `paq upgrade`), it fails instead, before anything is downloaded. Use it
-for CI images that must not contain unverified binaries.
+for CI images that must not contain unverified binaries. Some embedded
+recipes have nothing to verify against: `bat` and `delta` publish no
+checksum, signature or attestation, and `fd` only publishes GitHub
+attestations (correct from 10.5.0), which the embedded recipe does not enable
+(a manifest recipe can add them: see "GitHub build-provenance attestations"
+under [Adding a custom recipe](#adding-a-custom-recipe)).
 
 When several tools are installed in one run, a failing one does not abort the
 others: every app is attempted and the command reports the failures at the end.
