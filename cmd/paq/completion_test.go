@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 
@@ -105,5 +106,25 @@ func TestCompleteRegistrySpecs(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected \"ripgrep\" among the completions")
+	}
+}
+
+func TestBareCompletionFailsWithoutWritingToStdout(t *testing.T) {
+	root := &cobra.Command{Use: "paq", SilenceErrors: true, SilenceUsage: true}
+	root.AddCommand(&cobra.Command{Use: "ls", Run: func(*cobra.Command, []string) {}})
+	requireCompletionShell(root)
+
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetArgs([]string{"completion"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected an error for `paq completion` without a shell, got nil")
+	}
+	if got := exitCodeFor(err); got != exitUsage {
+		t.Errorf("exit code = %d, want %d", got, exitUsage)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("expected nothing on stdout, got %q", stdout.String())
 	}
 }

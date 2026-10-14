@@ -134,3 +134,23 @@ func completeInstalledApps(cmd *cobra.Command, args []string, toComplete string)
 	}
 	return excludeArgs(filterByPrefix(out, toComplete), args), cobra.ShellCompDirectiveNoFileComp
 }
+
+// requireCompletionShell makes a bare `paq completion` fail instead of
+// printing its help to stdout with exit 0: that help would otherwise end up
+// in a redirect such as `paq completion > paq.bash` and be sourced as a
+// script. Cobra creates its default completion command lazily during
+// Execute, so it is created here first and given a RunE that reports the
+// missing shell argument.
+func requireCompletionShell(root *cobra.Command) {
+	root.InitDefaultCompletionCmd()
+	cmd, _, err := root.Find([]string{"completion"})
+	if err != nil || cmd == root {
+		return
+	}
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return hintError{
+			msg:  "requires at least 1 argument: the shell (bash, zsh, fish or powershell)",
+			hint: "e.g. `paq completion bash > ~/.bash_completion.d/paq.bash`; see `paq completion --help`",
+		}
+	}
+}

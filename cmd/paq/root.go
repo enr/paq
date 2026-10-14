@@ -86,6 +86,7 @@ func Execute() {
 		stop()
 	}()
 
+	requireCompletionShell(rootCmd)
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		reportError(err)
 		os.Exit(exitCodeFor(err))
