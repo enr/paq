@@ -1987,55 +1987,52 @@ func TestPipelineRejectsTamperedChecksumWithValidSignature(t *testing.T) {
 	}
 }
 
-// TestPipelineRequireVerifyRejectsUnverifiedRecipe checks strict mode, from
-// the hook and from PAQ_REQUIRE_VERIFY: a recipe with no checksum or
-// signature must fail before anything is downloaded.
+// TestPipelineRequireVerifyRejectsUnverifiedRecipe checks strict mode: a
+// recipe with no checksum or signature must fail before anything is
+// downloaded.
 func TestPipelineRequireVerifyRejectsUnverifiedRecipe(t *testing.T) {
-	cases := []struct {
-		name  string
-		hooks *Hooks
-		env   string
-	}{
-		{"hook", &Hooks{RequireVerify: true}, ""},
-		{"env", &Hooks{}, "1"},
+	isolateState(t)
+
+	var downloads atomic.Int32
+	cfg := unverifiedToolConfig(t, &downloads)
+	err := Run(context.Background(), cfg, "tool", nil, &Hooks{RequireVerify: true})
+	if err == nil || !strings.Contains(err.Error(), "no verification configured") {
+		t.Fatalf("Run() error = %v, want a strict-verification failure", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			isolateState(t)
-			t.Setenv("PAQ_REQUIRE_VERIFY", tc.env)
-
-			var downloads atomic.Int32
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				downloads.Add(1)
-				w.Write(makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload")))
-			}))
-			defer srv.Close()
-
-			cfg := &config.Config{
-				Specs: map[string]config.Spec{
-					"tool": {Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip"},
-				},
-				Apps: map[string]config.AppEntry{
-					"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
-				},
-			}
-			err := Run(context.Background(), cfg, "tool", nil, tc.hooks)
-			if err == nil || !strings.Contains(err.Error(), "no verification configured") {
-				t.Fatalf("Run() error = %v, want a strict-verification failure", err)
-			}
-			if got := downloads.Load(); got != 0 {
-				t.Errorf("made %d downloads, want 0", got)
-			}
-		})
+	if got := downloads.Load(); got != 0 {
+		t.Errorf("made %d downloads, want 0", got)
 	}
 }
 
-func TestRequireVerifyEnv(t *testing.T) {
-	for value, want := range map[string]bool{"": false, "0": false, "false": false, "FALSE": false, "1": true, "true": true, "yes": true} {
-		t.Setenv("PAQ_REQUIRE_VERIFY", value)
-		if got := requireVerifyEnv(); got != want {
-			t.Errorf("PAQ_REQUIRE_VERIFY=%q: requireVerifyEnv() = %v, want %v", value, got, want)
-		}
+// TestPipelineIgnoresRequireVerifyEnv: cmd/paq resolves PAQ_REQUIRE_VERIFY
+// into Hooks.RequireVerify, so strict mode has one source in the pipeline.
+func TestPipelineIgnoresRequireVerifyEnv(t *testing.T) {
+	isolateState(t)
+	t.Setenv("PAQ_REQUIRE_VERIFY", "1")
+
+	var downloads atomic.Int32
+	cfg := unverifiedToolConfig(t, &downloads)
+	if err := Run(context.Background(), cfg, "tool", nil, &Hooks{}); err != nil {
+		t.Fatalf("Run() error = %v, want the install to go ahead with only a warning", err)
+	}
+}
+
+// unverifiedToolConfig serves tool 1.0.0 from a recipe with no checksum or
+// signature, counting the downloads.
+func unverifiedToolConfig(t *testing.T, downloads *atomic.Int32) *config.Config {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downloads.Add(1)
+		w.Write(makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload")))
+	}))
+	t.Cleanup(srv.Close)
+	return &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip"},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")},
+		},
 	}
 }
 
@@ -2072,5 +2069,57 @@ func TestPipelineDownloadCache(t *testing.T) {
 	}
 	if got := downloads.Load(); got != 1 {
 		t.Errorf("made %d downloads, want 1: the second install must use the cache", got)
+	}
+}
+
+// TestPipelineDownloadCacheKeyedByChecksumDocument: the cache key comes from
+// the recipe's checksum document, read before the download; a document that
+// does not list the asset fails right there, before the archive is fetched.
+func TestPipelineDownloadCacheKeyedByChecksumDocument(t *testing.T) {
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	cases := []struct {
+		name          string
+		sums          string
+		wantErr       string
+		wantDownloads int32
+	}{
+		{"listed", sha256hex(zipData) + "  tool-1.0.0.zip\n", "", 1},
+		{"not listed", sha256hex(zipData) + "  other.zip\n", "read checksum", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("PAQ_DOWNLOAD_CACHE", filepath.Join(t.TempDir(), "cache"))
+
+			var downloads atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/SHA256SUMS") {
+					w.Write([]byte(tc.sums))
+					return
+				}
+				downloads.Add(1)
+				w.Write(zipData)
+			}))
+			defer srv.Close()
+
+			spec := config.Spec{Backend: "url", Source: srv.URL + "/tool-{{version}}.zip", Archive: "zip", StripComponents: 1}
+			spec.Verify.SHA256URL = srv.URL + "/SHA256SUMS"
+			for i := 0; i < 2; i++ {
+				isolateState(t)
+				cfg := &config.Config{
+					Specs: map[string]config.Spec{"tool": spec},
+					Apps:  map[string]config.AppEntry{"tool": {Use: "tool", Version: "1.0.0", Dest: filepath.Join(t.TempDir(), "tool")}},
+				}
+				err := Run(context.Background(), cfg, "tool", nil, nil)
+				if tc.wantErr == "" && err != nil {
+					t.Fatalf("install %d failed: %v", i+1, err)
+				}
+				if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+					t.Fatalf("install %d: error = %v, want one containing %q", i+1, err, tc.wantErr)
+				}
+			}
+			if got := downloads.Load(); got != tc.wantDownloads {
+				t.Errorf("made %d archive downloads, want %d", got, tc.wantDownloads)
+			}
+		})
 	}
 }

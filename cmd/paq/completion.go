@@ -143,10 +143,7 @@ func completeInstalledApps(cmd *cobra.Command, args []string, toComplete string)
 // missing shell argument.
 func requireCompletionShell(root *cobra.Command) {
 	root.InitDefaultCompletionCmd()
-	cmd, _, err := root.Find([]string{"completion"})
-	if err != nil || cmd == root {
-		return
-	}
+	cmd, _, _ := root.Find([]string{"completion"})
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return hintError{
 			msg:  "requires at least 1 argument: the shell (bash, zsh, fish or powershell)",

@@ -84,7 +84,7 @@ backend = "url"
 source = "https://example.com/tool-{{version}}.tar.gz"
 archive = "tar.gz"
 `)
-	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "2.5.0", SHA256: "deadbeef"}); err != nil {
+	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "2.5.0", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "deadbeef"}}); err != nil {
 		t.Fatalf("WriteLockEntry: %v", err)
 	}
 

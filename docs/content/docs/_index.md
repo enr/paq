@@ -183,12 +183,20 @@ on different days can end up with different versions. paq closes that gap
 with a lockfile, `paq.lock.toml`, generated next to the manifest:
 
 - The first time a "latest"-tracking app is installed, paq resolves it live
-  and records the result (version, release tag and sha256) in `paq.lock.toml`.
+  and records the result (version, release tag and this platform's sha256)
+  in `paq.lock.toml`.
   The tag keeps what the version alone loses, such as the Temurin build number
   in `jdk-21.0.12+8`.
 - Every later `paq install` for that app reuses the locked version instead of
   resolving "latest" again — no network call, and the exact same version on
   every machine that shares the manifest and lockfile.
+- The sha256 is recorded per platform (`linux-amd64-gnu`, `darwin-arm64`, ...),
+  since each one downloads a different archive. An install from the lock must
+  get exactly the archive its platform recorded, or it fails; a platform with
+  no hash yet adds its own. If upstream really replaced the archive, remove
+  the app's `[apps.<name>]` entries from `paq.lock.toml` so the next install
+  re-resolves it. A `sha256` written by paq before 0.4.0 names no platform and
+  is ignored.
 - `paq upgrade` always checks upstream regardless of the lock, and refreshes
   the lock entry to whatever it installs.
 
@@ -205,7 +213,7 @@ upgrade` is what moves a pin forward. An entry written by an older paq has no
 
 Set `PAQ_DOWNLOAD_CACHE` to a directory to keep every downloaded archive
 there, named by its sha256. A later install whose archive hash is known
-before the download (from the recipe's checksum, or from the lock entry)
+before the download (from the recipe's checksum, or from this platform's lock entry)
 takes it from the cache instead of the network. A cached archive is
 re-checked against its hash and goes through the same verification as a
 fresh download. The cache is off by default; point it at a directory your CI

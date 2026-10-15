@@ -91,3 +91,20 @@ func TestApplyMap(t *testing.T) {
 		t.Errorf("ApplyMap nil = %q, want amd64", got)
 	}
 }
+
+func TestKey(t *testing.T) {
+	cases := []struct {
+		d    Defaults
+		want string
+	}{
+		{Defaults{OS: "linux", Arch: "amd64", Env: "gnu"}, "linux-amd64-gnu"},
+		{Defaults{OS: "linux", Arch: "arm64", Env: "musl"}, "linux-arm64-musl"},
+		{Defaults{OS: "darwin", Arch: "arm64"}, "darwin-arm64"},
+		{Defaults{OS: "windows", Arch: "amd64"}, "windows-amd64"},
+	}
+	for _, tc := range cases {
+		if got := tc.d.Key(); got != tc.want {
+			t.Errorf("%+v.Key() = %q, want %q", tc.d, got, tc.want)
+		}
+	}
+}

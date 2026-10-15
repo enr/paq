@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/enr/paq/internal/state"
@@ -126,5 +127,34 @@ func TestBareCompletionFailsWithoutWritingToStdout(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("expected nothing on stdout, got %q", stdout.String())
+	}
+}
+
+// TestCompletionWithShellStillWritesScript: the RunE added for the bare
+// command must leave the per-shell subcommands untouched.
+func TestCompletionWithShellStillWritesScript(t *testing.T) {
+	root := &cobra.Command{Use: "paq", SilenceErrors: true, SilenceUsage: true}
+	root.AddCommand(&cobra.Command{Use: "ls", Run: func(*cobra.Command, []string) {}})
+	// Cobra binds the script's writer when it creates the completion
+	// command, so the output is set first.
+	var stdout bytes.Buffer
+	root.SetOut(&stdout)
+	requireCompletionShell(root)
+	root.SetArgs([]string{"completion", "bash"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("paq completion bash: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "bash completion") {
+		t.Errorf("stdout is not a bash completion script:\n%.200s", stdout.String())
+	}
+}
+
+// TestRootCompletionRequiresShell runs the guard on the real command tree,
+// which is what Execute does.
+func TestRootCompletionRequiresShell(t *testing.T) {
+	requireCompletionShell(rootCmd)
+	cmd, _, err := rootCmd.Find([]string{"completion"})
+	if err != nil || cmd == rootCmd || cmd.RunE == nil {
+		t.Fatalf("completion command = %v (err %v), want the default one with a RunE", cmd, err)
 	}
 }

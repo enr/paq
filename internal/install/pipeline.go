@@ -35,8 +35,8 @@ type Hooks struct {
 	// Force bypasses the already-installed check and reinstalls unconditionally.
 	Force bool
 	// RequireVerify fails the install of a recipe that configures no
-	// verification instead of only warning (--require-verify). The
-	// PAQ_REQUIRE_VERIFY environment variable turns it on for every run.
+	// verification instead of only warning (--require-verify or
+	// PAQ_REQUIRE_VERIFY).
 	RequireVerify bool
 	// IgnoreLock skips paq.lock.toml when resolving a "latest"-tracking app,
 	// forcing a live resolution even if a lock entry exists. Set by `paq
@@ -80,17 +80,6 @@ func lockedEntryFor(cfg *config.Config, appName string) (config.LockEntry, bool)
 		return config.LockEntry{}, false
 	}
 	return entry, true
-}
-
-// requireVerifyEnv reports whether PAQ_REQUIRE_VERIFY turns strict
-// verification on. Any value but "", "0" or "false" does: a typo must not
-// silently disable a security setting.
-func requireVerifyEnv() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("PAQ_REQUIRE_VERIFY"))) {
-	case "", "0", "false":
-		return false
-	}
-	return true
 }
 
 // Run executes the complete pipeline to install a single app.
@@ -206,7 +195,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// validated (integrity/signature). Verification is the main security
 	// feature, so its absence must stay visible. In strict mode it is fatal.
 	if !spec.Verify.Enabled() {
-		if hooks.RequireVerify || requireVerifyEnv() {
+		if hooks.RequireVerify {
 			return fmt.Errorf("%q has no verification configured and strict verification is on (--require-verify or PAQ_REQUIRE_VERIFY): refusing to install it", specName)
 		}
 		warn(fmt.Sprintf("%q has no verification configured: integrity and signature cannot be checked", specName))
@@ -228,9 +217,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// version, both already deterministic): only then is there a new result
 	// worth pinning in paq.lock.toml once the install succeeds.
 	resolvedLive := false
-	// lockedSHA256 is the artifact hash paq.lock.toml recorded for the locked
-	// version, if one was used: a download-cache key when the recipe itself
-	// gives no checksum.
+	// usedLock marks that the version came from a paq.lock.toml entry, and
+	// lockedSHA256 is the hash that entry recorded for this platform, if any:
+	// the downloaded archive must match it.
+	usedLock := false
 	var lockedSHA256 string
 	switch {
 	case app.Version == "" && spec.DefaultVersion != "":
@@ -238,7 +228,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	case app.TracksLatest(spec):
 		if locked, ok := lockedEntryFor(cfg, appName); ok && !hooks.IgnoreLock {
 			dbg("using version %s (tag %q) locked in paq.lock.toml for %q", locked.Version, locked.Tag, appName)
-			lockedSHA256 = locked.SHA256
+			usedLock = true
+			lockedSHA256 = locked.SHA256ByPlatform[plat.Key()]
 			if locked.Tag != "" {
 				versionProvider = version.FixedProvider{Version: locked.Version, Tag: locked.Tag}
 			} else {
@@ -554,14 +545,32 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 	}
 
+	verifyPlan := verify.Plan{
+		ArtifactName:    assetName,
+		SHA256Literal:   spec.Verify.SHA256,
+		SHA256AssetPath: checksumPath,
+		SHA256Selector:  spec.Verify.SHA256JSON,
+		SHA512Literal:   spec.Verify.SHA512,
+		SHA512AssetPath: checksum512Path,
+		MinisignPubKey:  spec.Verify.Minisign.PublicKey,
+		MinisignSigPath: sigPath,
+	}
+
 	// 9. Download the artifact, or take it from the download cache
-	// (PAQ_DOWNLOAD_CACHE) when its sha256 is known upfront and an archive
-	// with that hash is cached. A cached archive goes through exactly the
-	// same verification below as a fresh download.
+	// (PAQ_DOWNLOAD_CACHE) when its sha256 is known upfront (from the recipe,
+	// else from the lock entry) and an archive with that hash is cached. A
+	// cached archive goes through exactly the same verification below as a
+	// fresh download.
 	cacheDir := download.CacheDir()
 	var cacheKey string
 	if cacheDir != "" {
-		cacheKey = expectedSHA256(spec.Verify, checksumPath, assetName, lockedSHA256)
+		cacheKey, err = verifyPlan.ExpectedSHA256()
+		if err != nil {
+			return err
+		}
+		if cacheKey == "" {
+			cacheKey = lockedSHA256
+		}
 		dbg("download cache %s, key %q", cacheDir, cacheKey)
 	}
 	artifactPath, cached := "", false
@@ -588,17 +597,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	}
 
 	// 10. Verify SHA256/SHA512 integrity.
-	verifyPlan := verify.Plan{
-		ArtifactPath:    artifactPath,
-		ArtifactName:    assetName,
-		SHA256Literal:   spec.Verify.SHA256,
-		SHA256AssetPath: checksumPath,
-		SHA256Selector:  spec.Verify.SHA256JSON,
-		SHA512Literal:   spec.Verify.SHA512,
-		SHA512AssetPath: checksum512Path,
-		MinisignPubKey:  spec.Verify.Minisign.PublicKey,
-		MinisignSigPath: sigPath,
-	}
+	verifyPlan.ArtifactPath = artifactPath
 
 	// Checksum verification only (minisign already verified above).
 	if verifyPlan.SHA256Literal != "" || verifyPlan.SHA256AssetPath != "" ||
@@ -610,6 +609,16 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			return err
 		}
 		ok("Integrity OK")
+	}
+
+	// The lock entry pins this platform's archive, not only its version: a
+	// different archive under the same release is refused.
+	if lockedSHA256 != "" {
+		step("Verifying against paq.lock.toml...")
+		if err := verify.CheckFile(artifactPath, lockedSHA256); err != nil {
+			return fmt.Errorf("%s does not match the sha256 paq.lock.toml recorded for %s (if upstream really replaced it, remove the [apps.%s] entries from paq.lock.toml to re-resolve): %w", assetName, plat.Key(), appName, err)
+		}
+		ok("Lock sha256 OK")
 	}
 
 	// 11. Compute the artifact's SHA256 for the state.
@@ -773,10 +782,15 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// Pin the freshly-resolved version in paq.lock.toml, so a later `paq
 	// install` (this machine or another sharing the manifest+lockfile)
 	// reproduces it instead of re-resolving "latest" and possibly landing on
-	// a newer release. Only when this run actually did that live resolution:
-	// reusing an existing lock entry needs no rewrite.
-	if app.TracksLatest(spec) && resolvedLive {
-		if err := config.WriteLockEntry(appName, config.LockEntry{Version: ver, Tag: tag, SHA256: artifactSHA256}); err != nil {
+	// a newer release. Only when this run actually did that live resolution,
+	// or reused a lock entry that has no hash for this platform yet: an entry
+	// already pinning this platform needs no rewrite.
+	if app.TracksLatest(spec) && (resolvedLive || (usedLock && lockedSHA256 == "" && artifactSHA256 != "")) {
+		var sums map[string]string
+		if artifactSHA256 != "" {
+			sums = map[string]string{plat.Key(): artifactSHA256}
+		}
+		if err := config.WriteLockEntry(appName, config.LockEntry{Version: ver, Tag: tag, SHA256ByPlatform: sums}); err != nil {
 			warn(fmt.Sprintf("could not update paq.lock.toml: %v", err))
 		} else {
 			dbg("lock entry updated: %s = %s", appName, ver)
@@ -926,28 +940,6 @@ func expandHome(path string) (string, error) {
 		return "", fmt.Errorf("cannot expand ~: %w", err)
 	}
 	return filepath.Join(home, path[2:]), nil
-}
-
-// expectedSHA256 returns the artifact's sha256 when it is known before the
-// download, from the recipe's literal hash or checksum document, else from
-// the lock entry (lockedSHA256); "" when none gives one.
-func expectedSHA256(v config.VerifyConfig, checksumPath, assetName, lockedSHA256 string) string {
-	switch {
-	case v.SHA256 != "":
-		return strings.ToLower(strings.TrimSpace(v.SHA256))
-	case checksumPath != "":
-		var sum string
-		var err error
-		if v.SHA256JSON != "" {
-			sum, err = verify.ParseSHA256JSON(checksumPath, v.SHA256JSON)
-		} else {
-			sum, err = verify.ParseSHA256File(checksumPath, assetName)
-		}
-		if err == nil {
-			return sum
-		}
-	}
-	return lockedSHA256
 }
 
 func filesha256(path string) (string, error) {

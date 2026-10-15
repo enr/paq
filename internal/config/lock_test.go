@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -50,7 +51,7 @@ func TestLoadLockMissingFileReturnsEmpty(t *testing.T) {
 func TestWriteLockEntryThenLoadRoundTrips(t *testing.T) {
 	isolateManifest(t)
 
-	if err := WriteLockEntry("rg", LockEntry{Version: "14.1.1", SHA256: "abc123"}); err != nil {
+	if err := WriteLockEntry("rg", LockEntry{Version: "14.1.1", Tag: "14.1.1", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "abc123", "darwin-arm64": "def456"}}); err != nil {
 		t.Fatalf("WriteLockEntry: %v", err)
 	}
 
@@ -62,8 +63,9 @@ func TestWriteLockEntryThenLoadRoundTrips(t *testing.T) {
 	if !ok {
 		t.Fatal(`LoadLock.Apps["rg"] missing after WriteLockEntry`)
 	}
-	if entry.Version != "14.1.1" || entry.SHA256 != "abc123" {
-		t.Errorf("entry = %+v, want {Version:14.1.1 SHA256:abc123}", entry)
+	want := LockEntry{Version: "14.1.1", Tag: "14.1.1", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "abc123", "darwin-arm64": "def456"}}
+	if !reflect.DeepEqual(entry, want) {
+		t.Errorf("entry = %+v, want %+v", entry, want)
 	}
 }
 
@@ -215,5 +217,140 @@ func TestSaveLockIsDeterministicallyOrdered(t *testing.T) {
 	batIdx, rgIdx, zippIdx := firstIdx("bat"), firstIdx("rg"), firstIdx("zipp")
 	if !(batIdx < rgIdx && rgIdx < zippIdx) {
 		t.Errorf("lockfile entries not alphabetically ordered:\n%s", data)
+	}
+}
+
+// TestSaveLockWritesPlatformHashesSorted pins the on-disk layout: one
+// [apps.<name>.sha256] table per app, platforms sorted for a stable diff.
+func TestSaveLockWritesPlatformHashesSorted(t *testing.T) {
+	isolateManifest(t)
+
+	if err := WriteLockEntry("rg", LockEntry{Version: "14.1.1", Tag: "14.1.1", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "bbb", "darwin-arm64": "aaa"}}); err != nil {
+		t.Fatalf("WriteLockEntry: %v", err)
+	}
+	path, err := LockPath()
+	if err != nil {
+		t.Fatalf("LockPath: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
+	want := `
+[apps.rg]
+version = "14.1.1"
+tag = "14.1.1"
+
+[apps.rg.sha256]
+darwin-arm64 = "aaa"
+linux-amd64-gnu = "bbb"
+`
+	if !strings.HasSuffix(string(data), want) {
+		t.Errorf("lockfile =\n%s\nwant it to end with:\n%s", data, want)
+	}
+}
+
+// TestLoadLockDropsLegacyPlatformlessSHA256 covers lockfiles written before
+// 0.4.0, whose sha256 is one string with no platform: it must still load,
+// keeping the version and tag, with no hash for any platform.
+func TestLoadLockDropsLegacyPlatformlessSHA256(t *testing.T) {
+	isolateManifest(t)
+
+	path, err := LockPath()
+	if err != nil {
+		t.Fatalf("LockPath: %v", err)
+	}
+	legacy := "[apps.rg]\nversion = \"14.1.1\"\ntag = \"14.1.1\"\nsha256 = \"abc123\"\n"
+	if err := os.WriteFile(path, []byte(legacy), 0644); err != nil {
+		t.Fatalf("write lockfile: %v", err)
+	}
+
+	lock, err := LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	want := LockEntry{Version: "14.1.1", Tag: "14.1.1"}
+	if got := lock.Apps["rg"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("entry = %+v, want %+v", got, want)
+	}
+}
+
+func TestLoadLockRejectsNonStringPlatformHash(t *testing.T) {
+	isolateManifest(t)
+
+	path, err := LockPath()
+	if err != nil {
+		t.Fatalf("LockPath: %v", err)
+	}
+	bad := "[apps.rg]\nversion = \"14.1.1\"\n\n[apps.rg.sha256]\nlinux-amd64-gnu = 42\n"
+	if err := os.WriteFile(path, []byte(bad), 0644); err != nil {
+		t.Fatalf("write lockfile: %v", err)
+	}
+
+	if _, err := LoadLock(); err == nil || !strings.Contains(err.Error(), "apps.rg.sha256.linux-amd64-gnu") {
+		t.Errorf("LoadLock error = %v, want one naming apps.rg.sha256.linux-amd64-gnu", err)
+	}
+}
+
+// TestWriteLockEntryMergesPlatformHashes: another platform installing the
+// same release adds its hash next to the existing ones.
+func TestWriteLockEntryMergesPlatformHashes(t *testing.T) {
+	isolateManifest(t)
+
+	if err := WriteLockEntry("rg", LockEntry{Version: "14.1.1", Tag: "14.1.1", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "aaa"}}); err != nil {
+		t.Fatalf("WriteLockEntry: %v", err)
+	}
+	if err := WriteLockEntry("rg", LockEntry{Version: "14.1.1", Tag: "14.1.1", SHA256ByPlatform: map[string]string{"darwin-arm64": "bbb"}}); err != nil {
+		t.Fatalf("WriteLockEntry (second platform): %v", err)
+	}
+
+	lock, err := LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	want := map[string]string{"linux-amd64-gnu": "aaa", "darwin-arm64": "bbb"}
+	if got := lock.Apps["rg"].SHA256ByPlatform; !reflect.DeepEqual(got, want) {
+		t.Errorf("hashes = %v, want %v", got, want)
+	}
+}
+
+// TestWriteLockEntryNewReleaseDropsOtherPlatformHashes: hashes recorded for
+// the previous release (or another build under the same version, i.e. a
+// different tag) describe other archives, so they must not survive.
+func TestWriteLockEntryNewReleaseDropsOtherPlatformHashes(t *testing.T) {
+	cases := []struct {
+		name     string
+		old, new LockEntry
+	}{
+		{
+			"new version",
+			LockEntry{Version: "14.1.1", Tag: "14.1.1", SHA256ByPlatform: map[string]string{"darwin-arm64": "old"}},
+			LockEntry{Version: "14.2.0", Tag: "14.2.0", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "new"}},
+		},
+		{
+			"same version, new tag",
+			LockEntry{Version: "21.0.12", Tag: "jdk-21.0.12+8", SHA256ByPlatform: map[string]string{"darwin-arm64": "old"}},
+			LockEntry{Version: "21.0.12", Tag: "jdk-21.0.12+9", SHA256ByPlatform: map[string]string{"linux-amd64-gnu": "new"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateManifest(t)
+
+			if err := WriteLockEntry("rg", tc.old); err != nil {
+				t.Fatalf("WriteLockEntry (old): %v", err)
+			}
+			if err := WriteLockEntry("rg", tc.new); err != nil {
+				t.Fatalf("WriteLockEntry (new): %v", err)
+			}
+
+			lock, err := LoadLock()
+			if err != nil {
+				t.Fatalf("LoadLock: %v", err)
+			}
+			if got := lock.Apps["rg"]; !reflect.DeepEqual(got, tc.new) {
+				t.Errorf("entry = %+v, want %+v", got, tc.new)
+			}
+		})
 	}
 }

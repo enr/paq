@@ -357,3 +357,34 @@ func TestCosignPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestRequireVerify(t *testing.T) {
+	withFlag(t, &flagInstallRequireVerify, false)
+	for value, want := range map[string]bool{"": false, "0": false, "false": false, " FALSE ": false, "1": true, "true": true, "yes": true} {
+		t.Setenv("PAQ_REQUIRE_VERIFY", value)
+		if got := requireVerify(); got != want {
+			t.Errorf("PAQ_REQUIRE_VERIFY=%q: requireVerify() = %v, want %v", value, got, want)
+		}
+	}
+
+	withFlag(t, &flagInstallRequireVerify, true)
+	t.Setenv("PAQ_REQUIRE_VERIFY", "0")
+	if !requireVerify() {
+		t.Error("--require-verify must win over PAQ_REQUIRE_VERIFY=0")
+	}
+}
+
+// TestHooksCarryRequireVerify: every install.Run caller (install, the
+// parallel install and upgrade, the cosign prompt) builds its Hooks through
+// these two, so strict mode reaches all of them.
+func TestHooksCarryRequireVerify(t *testing.T) {
+	withFlag(t, &flagInstallRequireVerify, false)
+	t.Setenv("PAQ_REQUIRE_VERIFY", "1")
+
+	if !appHooks("tool", "").RequireVerify {
+		t.Error("appHooks: RequireVerify = false with PAQ_REQUIRE_VERIFY=1")
+	}
+	if !lockedAppHooks("", &sync.Mutex{}).RequireVerify {
+		t.Error("lockedAppHooks: RequireVerify = false with PAQ_REQUIRE_VERIFY=1")
+	}
+}
