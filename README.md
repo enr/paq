@@ -124,7 +124,8 @@ paq install terraform@1.9.8 --no-save --dest '/opt/paq/terraform-{{version}}/ter
 
 ### Reproducible installs (paq.lock.toml)
 
-An app pinned to `version = "latest"` resolves to whatever release is newest
+An app that tracks `"latest"` (`version = "latest"`, or no `version` on a
+recipe without `default_version`) resolves to whatever release is newest
 *at install time* — two machines running `paq install` from the same manifest
 on different days can end up with different versions. paq closes that gap
 with a lockfile, `paq.lock.toml`, generated next to the manifest:
@@ -134,7 +135,7 @@ with a lockfile, `paq.lock.toml`, generated next to the manifest:
   in `paq.lock.toml`.
   The tag keeps what the version alone loses, such as the Temurin build number.
 - Every later `paq install` for that app reuses the locked version instead of
-  resolving "latest" again — no network call, and the exact same version on
+  resolving "latest" again — no upstream lookup, and the exact same version on
   every machine that shares the manifest and lockfile.
 - The sha256 is recorded per platform (`linux-amd64-gnu`, `darwin-arm64`, ...),
   since each one downloads a different archive. An install from the lock must
@@ -150,8 +151,11 @@ teammate's `paq install` reproduces your setup exactly. It only pins apps
 that track `"latest"`; a fixed version or a spec's `default_version` is
 already deterministic and gets no entry. `paq info <app>` shows an app's
 locked version, if any. The file is generated — don't hand-edit it; `paq
-upgrade` is what moves a pin forward (and adds the `tag` to an entry written
-by an older paq).
+upgrade` is what moves a pin forward, and `paq lock delete <app>` drops one.
+An install from an entry written by an older paq records the entry again with
+its `tag` and this platform's sha256; if the recipe's asset name needs the
+build number the old entry lacks, that install fails: `paq lock delete <app>`,
+then install again.
 
 ### Download cache
 
@@ -246,7 +250,7 @@ paq doctor
 paq doctor --fix    # add the bin dir to your user PATH (Windows)
 paq doctor --json   # machine-readable report, e.g. for a CI health gate
 
-# Shell completion (app and tool names are completed dynamically)
+# Shell completion (app, tool and locked app names are completed dynamically)
 paq completion bash   # or zsh, fish, powershell
 ```
 
@@ -271,7 +275,7 @@ when stderr is a terminal (none in CI logs or pipes); data goes to stdout.
 | `0` | Success |
 | `1` | Generic failure (network, missing config, app/spec not found, ...) |
 | `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
-| `4` | Checksum or signature verification failed |
+| `4` | Checksum or signature verification failed, or the archive does not match `paq.lock.toml` |
 
 ## Adding a custom recipe
 
@@ -281,8 +285,11 @@ the same fields as the embedded ones and is installable like any registry tool �
 `paq install <name>` auto-imports it into the manifest. If a user recipe shares
 its name with an embedded one, the user recipe wins, so you can also patch a
 stale embedded recipe without waiting for a release. The embedded registry
-includes `ripgrep`, `bat`, `delta`, `hugo`, `fresh`, `micro`, `zipp`, `jdk`,
-`maven`, and `temurin-11`/`temurin-17`/`temurin-21` as reference implementations.
+currently ships `bat`, `bun`, `cosign`, `delta`, `deno`, `fd`, `fresh`, `gh`,
+`gip`, `go`, `hugo`, `inner`, `jdk`, `jq`, `maven`, `micro`, `node`, `nub`,
+`porffor`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
+`temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`; run `paq registry list`
+for the definitive list of what your binary knows about.
 
 A recipe for a GitHub-hosted tool:
 
@@ -596,12 +603,13 @@ explicit opt-in to the newest release.
 | `{{os}}` | `linux`, `darwin`, `windows` |
 | `{{arch}}` | `amd64`, `arm64` |
 | `{{vendor}}` | `unknown`, `apple`, `pc` |
-| `{{env}}` | `gnu` (linux), `` (others) |
+| `{{env}}` | `gnu` (linux), `musl` (musl-based linux, e.g. Alpine), `` (others) |
 | `{{ext}}` | `.exe` (windows), `` (others) |
 | `{{version}}` | Resolved version, e.g. `14.1.1` (every numeric component: `21.0.12.1` for Temurin's `jdk-21.0.12.1+1`) |
 | `{{version_major}}` | e.g. `14` |
 | `{{version_minor}}` | e.g. `1` |
 | `{{version_patch}}` | e.g. `1` |
+| `{{version_build}}` | Build number after `+` in the release tag, e.g. `10` for `21.0.11+10` (empty when absent) |
 | `{{rust_target}}` | e.g. `x86_64-unknown-linux-gnu` |
 | `{{asset}}` | Resolved asset filename |
 
@@ -640,7 +648,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Bootstrap a known release; self-update takes it to the latest one below.
-ARG PAQ_VERSION=v0.2.0
+ARG PAQ_VERSION=v0.3.0
 ARG TARGETARCH
 RUN curl -fsSL -o /tmp/paq.zip \
       "https://github.com/enr/paq/releases/download/${PAQ_VERSION}/paq-${PAQ_VERSION}-linux-${TARGETARCH:-amd64}.zip" \

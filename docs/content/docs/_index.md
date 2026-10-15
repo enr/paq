@@ -33,7 +33,7 @@ verify the download.
 
 ```bash
 # Download and extract the binary for your platform (linux/amd64 shown)
-VERSION=v0.0.12
+VERSION=v0.3.0
 curl -LO "https://github.com/enr/paq/releases/download/${VERSION}/paq-${VERSION}-linux-amd64.zip"
 unzip "paq-${VERSION}-linux-amd64.zip"
 install -m 0755 paq ~/.local/bin/paq
@@ -177,7 +177,8 @@ paq install terraform@1.5.7 --no-save --dest '/opt/paq/terraform-{{version}}/ter
 
 ### Reproducible installs (paq.lock.toml)
 
-An app pinned to `version = "latest"` resolves to whatever release is newest
+An app that tracks `"latest"` (`version = "latest"`, or no `version` on a
+recipe without `default_version`) resolves to whatever release is newest
 *at install time* — two machines running `paq install` from the same manifest
 on different days can end up with different versions. paq closes that gap
 with a lockfile, `paq.lock.toml`, generated next to the manifest:
@@ -188,7 +189,7 @@ with a lockfile, `paq.lock.toml`, generated next to the manifest:
   The tag keeps what the version alone loses, such as the Temurin build number
   in `jdk-21.0.12+8`.
 - Every later `paq install` for that app reuses the locked version instead of
-  resolving "latest" again — no network call, and the exact same version on
+  resolving "latest" again — no upstream lookup, and the exact same version on
   every machine that shares the manifest and lockfile.
 - The sha256 is recorded per platform (`linux-amd64-gnu`, `darwin-arm64`, ...),
   since each one downloads a different archive. An install from the lock must
@@ -204,9 +205,11 @@ teammate's `paq install` reproduces your setup exactly. It only pins apps
 that track `"latest"`; a fixed version or a spec's `default_version` is
 already deterministic and gets no entry. `paq info <app>` shows an app's
 locked version, if any. The file is generated — don't hand-edit it; `paq
-upgrade` is what moves a pin forward. An entry written by an older paq has no
-`tag`; if the recipe's asset name needs the build number, refresh it once with
-`paq upgrade <app>`.
+upgrade` is what moves a pin forward, and `paq lock delete <app>` drops one.
+An install from an entry written by an older paq records the entry again with
+its `tag` and this platform's sha256; if the recipe's asset name needs the
+build number the old entry lacks, that install fails: `paq lock delete <app>`,
+then install again.
 
 ### Download cache
 
@@ -236,6 +239,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq upgrade [app...]` | `up`, `u` | Upgrade tools pinned to `latest` to the newest release |
 | `paq outdated` | | List installed tools that have a newer upstream version (without installing) |
 | `paq uninstall <app[@version]>...` | `rm`, `remove` | Uninstall one or more tools |
+| `paq lock delete <app>...` | | Drop apps' entries from `paq.lock.toml` |
 | `paq ls` | `list` | List installed tools |
 | `paq which <app[@version]>` | | Print the installed path(s) of a tool |
 | `paq info <app>` | | Show definition and install state for a manifest app |
@@ -296,9 +300,10 @@ A recipe with no checksum or signature installs with a warning. With
 `--require-verify`, or `PAQ_REQUIRE_VERIFY=1` in the environment (which also
 covers `paq upgrade`), it fails instead, before anything is downloaded. Use it
 for CI images that must not contain unverified binaries. Some embedded
-recipes have nothing to verify against: `bat` and `delta` publish no
-checksum, signature or attestation, and `fd` only publishes GitHub
-attestations (correct from 10.5.0), which the embedded recipe does not enable
+recipes configure no verification, so strict mode refuses them: `bat`,
+`delta` and `porffor` publish no checksum, signature or attestation, the
+`zipp` recipe configures none, and `fd` only publishes GitHub attestations
+(correct from 10.5.0), which the embedded recipe does not enable
 (a manifest recipe can add them: see "GitHub build-provenance attestations"
 under [Adding a custom recipe](#adding-a-custom-recipe)).
 
@@ -498,7 +503,8 @@ paq config show
 ### completion
 
 Prints a shell completion script to stdout. Load it in your shell to complete
-subcommands, flags, and tool names (registry specs, installed apps).
+subcommands, flags, and tool names (registry specs, installed apps, apps in
+`paq.lock.toml` for `paq lock delete`).
 
 ```bash
 # bash (current session)
@@ -540,7 +546,7 @@ assets are always looked up through the API, which also covers private repos.
 | `0` | Success |
 | `1` | Generic failure (network, missing config, app/spec not found, ...) |
 | `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
-| `4` | Checksum or signature verification failed |
+| `4` | Checksum or signature verification failed, or the archive does not match `paq.lock.toml` |
 
 ## Adding a custom recipe
 
@@ -551,10 +557,10 @@ tool — `paq install <name>` auto-imports it into the manifest. If a user recip
 shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
-The embedded registry currently ships `bat`, `bun`, `cosign`, `delta`, `deno`, `fresh`,
-`fd`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `maven`, `micro`, `node`,
-`nub`, `porffor`, `ripgrep`, `runp`, `terraform`, `vscode`, `zipp` and
-`temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
+The embedded registry currently ships `bat`, `bun`, `cosign`, `delta`, `deno`,
+`fd`, `fresh`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `jq`, `maven`,
+`micro`, `node`, `nub`, `porffor`, `ripgrep`, `runp`, `terraform`, `vscode`,
+`zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
 
 A recipe for a GitHub-hosted tool:
@@ -1077,7 +1083,6 @@ checks the filesystem rather than trusting it:
 - `paq which` never prints a path that is gone, and exits non-zero when that
   leaves nothing to print.
 - `paq doctor` names each missing record and exits non-zero.
-
 - `paq install` reinstalls a tool whose record is there but whose files are
   missing, instead of skipping it as already installed.
 

@@ -429,3 +429,26 @@ func TestPipelineDownloadCacheKeyedByLock(t *testing.T) {
 		t.Errorf("installed file: %v", err)
 	}
 }
+
+// TestPipelineUpgradesPre040LockEntry: an entry written by an older paq (no
+// tag, no platform hash) still installs, and is recorded again with its tag
+// and this platform's hash.
+func TestPipelineUpgradesPre040LockEntry(t *testing.T) {
+	isolateState(t)
+	isolateConfig(t)
+
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	cfg, _ := lockedToolConfig(t, zipData, config.LockEntry{Version: "1.0.0"})
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	lock, err := config.LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	want := config.LockEntry{Version: "1.0.0", Tag: "v1.0.0", SHA256ByPlatform: map[string]string{platform.Detect().Key(): sha256hex(zipData)}}
+	if got := lock.Apps["tool"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("lock entry = %+v, want %+v", got, want)
+	}
+}
