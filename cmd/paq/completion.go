@@ -1,9 +1,12 @@
 package main
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -133,6 +136,17 @@ func completeInstalledApps(cmd *cobra.Command, args []string, toComplete string)
 		}
 	}
 	return excludeArgs(filterByPrefix(out, toComplete), args), cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeLockedApps completes with the names that have a paq.lock.toml
+// entry — the set `paq lock delete` accepts.
+func completeLockedApps(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	lock, err := config.LoadLock()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	names := slices.Sorted(maps.Keys(lock.Apps))
+	return excludeArgs(filterByPrefix(names, toComplete), args), cobra.ShellCompDirectiveNoFileComp
 }
 
 // requireCompletionShell makes a bare `paq completion` fail instead of

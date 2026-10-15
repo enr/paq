@@ -28,8 +28,9 @@ var lockDeleteCmd = &cobra.Command{
 release's archive and the install fails against the locked sha256.`,
 	Example: `  paq lock delete rg
   paq lock delete rg bat`,
-	Args: cobra.MinimumNArgs(1),
-	RunE: runLockDelete,
+	Args:              cobra.MinimumNArgs(1),
+	ValidArgsFunction: completeLockedApps,
+	RunE:              runLockDelete,
 }
 
 func init() {

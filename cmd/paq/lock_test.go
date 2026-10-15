@@ -2,8 +2,11 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/enr/paq/internal/config"
 )
@@ -72,5 +75,22 @@ func TestLockDeleteWithoutLockfile(t *testing.T) {
 func TestLockDeleteNeedsAnApp(t *testing.T) {
 	if err := lockDeleteCmd.Args(lockDeleteCmd, nil); err == nil {
 		t.Error("`paq lock delete` with no app: want an args error")
+	}
+}
+
+func TestCompleteLockedApps(t *testing.T) {
+	lockEnv(t, "rg", "bat", "ripgrep-all")
+
+	got, directive := completeLockedApps(lockDeleteCmd, []string{"rg"}, "r")
+	if want := []string{"ripgrep-all"}; !slices.Equal(got, want) {
+		t.Errorf("completions = %v, want %v (prefix-filtered, already-typed rg excluded)", got, want)
+	}
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("directive = %v, want NoFileComp", directive)
+	}
+
+	all, _ := completeLockedApps(lockDeleteCmd, nil, "")
+	if want := []string{"bat", "rg", "ripgrep-all"}; !slices.Equal(all, want) {
+		t.Errorf("completions = %v, want %v (sorted)", all, want)
 	}
 }
