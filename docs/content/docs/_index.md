@@ -488,6 +488,42 @@ The last check timestamp and the latest known version are cached in
 `~/.cache/paq/update-check.json` (Linux/macOS) or
 `%LOCALAPPDATA%\paq\cache\update-check.json` (Windows).
 
+#### In a Dockerfile
+
+`paq self-update` exits successfully when paq is already up to date, so an image can bootstrap a pinned release and then bring it to the latest one, much like `apt-get update`:
+
+```dockerfile
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+# Bootstrap a known release; self-update takes it to the latest one below.
+ARG PAQ_VERSION=v0.3.0
+ARG TARGETARCH
+RUN curl -fsSL -o /tmp/paq.zip \
+      "https://github.com/enr/paq/releases/download/${PAQ_VERSION}/paq-${PAQ_VERSION}-linux-${TARGETARCH:-amd64}.zip" \
+ && unzip -o /tmp/paq.zip paq -d /usr/local/bin \
+ && rm /tmp/paq.zip
+
+# Change PAQ_REFRESH (e.g. --build-arg PAQ_REFRESH=$(date +%s)) to bypass the
+# layer cache and pick up a newer release.
+ARG PAQ_REFRESH
+# The optional GITHUB_TOKEN secret avoids GitHub's unauthenticated API rate limit.
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+    paq self-update
+```
+
+```bash
+docker build \
+  --build-arg PAQ_REFRESH=$(date +%s) \
+  --secret id=github_token,env=GITHUB_TOKEN \
+  -t my-image .
+```
+
+The `self-update` layer is cached like any other, so without a changing `PAQ_REFRESH` (or `--no-cache`) Docker reuses the paq version from the previous build.
+
 ### config show
 
 Shows the configuration exactly as paq evaluates it: the path of the user
