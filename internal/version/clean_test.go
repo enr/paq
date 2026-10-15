@@ -75,6 +75,13 @@ func TestCompare(t *testing.T) {
 		{"1.2", "1.2.1", -1},
 		{"1", "1.0.0", 0},
 
+		// A fourth field counts too (Temurin's "21.0.12.1"), and a missing
+		// one is 0, so "21.0.12" == "21.0.12.0".
+		{"21.0.12.1", "21.0.12", +1},
+		{"21.0.12.2", "21.0.12.1", +1},
+		{"21.0.12", "21.0.12.0", 0},
+		{"21.0.13", "21.0.12.9", +1},
+
 		// Non-numeric fields count as 0 rather than erroring.
 		{"1.x.3", "1.0.3", 0},
 		{"", "0.0.0", 0},

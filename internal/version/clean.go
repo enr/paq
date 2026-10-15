@@ -37,18 +37,25 @@ func Build(raw string) string {
 }
 
 // Compare compares two already-clean versions (e.g. "14.1.1") numerically,
-// field by field (major, minor, patch). Returns <0 if a < b, 0 if equal,
-// >0 if a > b. Missing or non-numeric fields count as 0.
+// field by field, over every dotted field (a fourth one such as Temurin's
+// "21.0.12.1" included). Returns <0 if a < b, 0 if equal, >0 if a > b.
+// Missing or non-numeric fields count as 0.
 func Compare(a, b string) int {
-	aMajor, aMinor, aPatch := Parse(a)
-	bMajor, bMinor, bPatch := Parse(b)
-	if d := compareNumeric(aMajor, bMajor); d != 0 {
-		return d
+	af, bf := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range max(len(af), len(bf)) {
+		if d := compareNumeric(field(af, i), field(bf, i)); d != 0 {
+			return d
+		}
 	}
-	if d := compareNumeric(aMinor, bMinor); d != 0 {
-		return d
+	return 0
+}
+
+// field returns fields[i], or "" (counted as 0) past the end.
+func field(fields []string, i int) string {
+	if i < len(fields) {
+		return fields[i]
 	}
-	return compareNumeric(aPatch, bPatch)
+	return ""
 }
 
 func compareNumeric(a, b string) int {

@@ -2,15 +2,20 @@ package install
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/download"
+	"github.com/enr/paq/internal/platform"
+	"github.com/enr/paq/internal/verify"
 )
 
 // isolateConfig points paq's manifest (and therefore paq.lock.toml, which
@@ -60,7 +65,8 @@ func TestPipelineUsesLockedVersionInsteadOfLatest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "1.0.0"}); err != nil {
+	// The entry already pins this platform's archive: nothing to add to it.
+	if err := config.WriteLockEntry("tool", config.LockEntry{Version: "1.0.0", Tag: "1.0.0", SHA256ByPlatform: map[string]string{platform.Detect().Key(): sha256hex(oldZip)}}); err != nil {
 		t.Fatalf("WriteLockEntry: %v", err)
 	}
 	lockPath, err := config.LockPath()
@@ -217,8 +223,9 @@ func TestPipelineLocksNewlyResolvedLatestVersion(t *testing.T) {
 	if entry.Tag != "3.0.0" {
 		t.Errorf("locked tag = %q, want %q (the raw resolved tag)", entry.Tag, "3.0.0")
 	}
-	if entry.SHA256 != sha256hex(zipData) {
-		t.Errorf("locked sha256 = %q, want the artifact's hash %q", entry.SHA256, sha256hex(zipData))
+	want := map[string]string{platform.Detect().Key(): sha256hex(zipData)}
+	if !reflect.DeepEqual(entry.SHA256ByPlatform, want) {
+		t.Errorf("locked hashes = %v, want %v", entry.SHA256ByPlatform, want)
 	}
 }
 
@@ -302,5 +309,146 @@ func TestPipelineFixedVersionDoesNotWriteLock(t *testing.T) {
 	}
 	if _, ok := lock.Apps["tool"]; ok {
 		t.Error("a pinned version must not get a lock entry: it's already deterministic")
+	}
+}
+
+// lockedToolConfig serves zipData as tool 1.0.0 and returns a config whose
+// "latest"-tracking app is pinned to 1.0.0 by entry in paq.lock.toml.
+func lockedToolConfig(t *testing.T, zipData []byte, entry config.LockEntry) (*config.Config, string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/tool-1.0.0.zip") {
+			w.Write(zipData)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	if err := config.WriteLockEntry("tool", entry); err != nil {
+		t.Fatalf("WriteLockEntry: %v", err)
+	}
+	lock, err := config.LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	dest := filepath.Join(t.TempDir(), "tool")
+	return &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": latestTrackingSpec(srv.URL+"/tool-{{version}}.zip", srv.URL+"/latest.json"),
+		},
+		Apps: map[string]config.AppEntry{"tool": {Use: "tool", Version: "latest", Dest: dest}},
+		Lock: lock,
+	}, dest
+}
+
+// TestPipelineRejectsArchiveNotMatchingLock: the lock entry pins this
+// platform's archive, so a different one served under the same release is a
+// verification failure and nothing is installed.
+func TestPipelineRejectsArchiveNotMatchingLock(t *testing.T) {
+	isolateState(t)
+	isolateConfig(t)
+
+	served := makeFakeZip("tool-1.0.0", "bin/tool", []byte("tampered"))
+	locked := makeFakeZip("tool-1.0.0", "bin/tool", []byte("original"))
+	cfg, dest := lockedToolConfig(t, served, config.LockEntry{
+		Version: "1.0.0", Tag: "1.0.0",
+		SHA256ByPlatform: map[string]string{platform.Detect().Key(): sha256hex(locked)},
+	})
+
+	err := Run(context.Background(), cfg, "tool", nil, nil)
+	if !errors.Is(err, verify.ErrVerification) || !strings.Contains(err.Error(), "paq.lock.toml") {
+		t.Fatalf("Run() error = %v, want a verification failure naming paq.lock.toml", err)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("dest exists after a lock mismatch (stat err = %v), want nothing installed", err)
+	}
+}
+
+// TestPipelineRecordsMissingPlatformHash: an entry written on another
+// platform (or by a pre-0.4.0 paq, with no platform hashes) says nothing
+// about this platform's archive; the install goes ahead and adds this
+// platform's hash next to the others.
+func TestPipelineRecordsMissingPlatformHash(t *testing.T) {
+	isolateState(t)
+	isolateConfig(t)
+
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	cfg, dest := lockedToolConfig(t, zipData, config.LockEntry{
+		Version: "1.0.0", Tag: "1.0.0",
+		SHA256ByPlatform: map[string]string{"plan9-mips": sha256hex([]byte("another archive"))},
+	})
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+		t.Errorf("installed file: %v", err)
+	}
+
+	lock, err := config.LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	want := config.LockEntry{Version: "1.0.0", Tag: "1.0.0", SHA256ByPlatform: map[string]string{
+		"plan9-mips":            sha256hex([]byte("another archive")),
+		platform.Detect().Key(): sha256hex(zipData),
+	}}
+	if got := lock.Apps["tool"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("lock entry = %+v, want %+v", got, want)
+	}
+}
+
+// TestPipelineDownloadCacheKeyedByLock: a recipe with no checksum still gets
+// cache hits through the lock entry's hash for this platform.
+func TestPipelineDownloadCacheKeyedByLock(t *testing.T) {
+	isolateState(t)
+	isolateConfig(t)
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	t.Setenv("PAQ_DOWNLOAD_CACHE", cacheDir)
+
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	archive := filepath.Join(t.TempDir(), "tool-1.0.0.zip")
+	if err := os.WriteFile(archive, zipData, 0644); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+	if err := download.ToCache(cacheDir, archive, sha256hex(zipData)); err != nil {
+		t.Fatalf("ToCache: %v", err)
+	}
+	// The server has nothing: only the cache can satisfy the install.
+	cfg, dest := lockedToolConfig(t, nil, config.LockEntry{
+		Version: "1.0.0", Tag: "1.0.0",
+		SHA256ByPlatform: map[string]string{platform.Detect().Key(): sha256hex(zipData)},
+	})
+	cfg.Specs["tool"] = latestTrackingSpec("http://127.0.0.1:1/tool-{{version}}.zip", "http://127.0.0.1:1/latest.json")
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+		t.Errorf("installed file: %v", err)
+	}
+}
+
+// TestPipelineUpgradesPre040LockEntry: an entry written by an older paq (no
+// tag, no platform hash) still installs, and is recorded again with its tag
+// and this platform's hash.
+func TestPipelineUpgradesPre040LockEntry(t *testing.T) {
+	isolateState(t)
+	isolateConfig(t)
+
+	zipData := makeFakeZip("tool-1.0.0", "bin/tool", []byte("payload"))
+	cfg, _ := lockedToolConfig(t, zipData, config.LockEntry{Version: "1.0.0"})
+
+	if err := Run(context.Background(), cfg, "tool", nil, nil); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	lock, err := config.LoadLock()
+	if err != nil {
+		t.Fatalf("LoadLock: %v", err)
+	}
+	want := config.LockEntry{Version: "1.0.0", Tag: "v1.0.0", SHA256ByPlatform: map[string]string{platform.Detect().Key(): sha256hex(zipData)}}
+	if got := lock.Apps["tool"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("lock entry = %+v, want %+v", got, want)
 	}
 }

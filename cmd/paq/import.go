@@ -35,7 +35,7 @@ var importCmd = &cobra.Command{
 func init() {
 	importCmd.Flags().StringVarP(&flagImportAs, "as", "a", "", "Name for the manifest entry (default: spec name)")
 	importCmd.Flags().StringVar(&flagImportDest, "dest", "", "Install destination (default: derived from the spec)")
-	importCmd.Flags().StringVar(&flagImportVersion, "version", "", `Version to pin (default: "latest")`)
+	importCmd.Flags().StringVar(&flagImportVersion, "version", "", `Version to pin (default: the recipe's default_version, or "latest" when it has none)`)
 	importCmd.Flags().BoolVarP(&flagImportWrite, "write", "w", false, "Add the entry to the manifest instead of printing it")
 	importCmd.Flags().BoolVarP(&flagImportForce, "force", "f", false, "Overwrite an existing entry (requires --write)")
 	rootCmd.AddCommand(importCmd)

@@ -3,6 +3,7 @@ package verify
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrVerification marks the failures that mean "the artifact did not match
@@ -50,6 +51,28 @@ type Plan struct {
 	ArtifactPath string
 }
 
+// ExpectedSHA256 returns the artifact's sha256 the plan expects, lowercase,
+// from the literal or the checksum document; "" when it sets neither. It
+// needs no artifact, so it also serves before the download.
+func (plan Plan) ExpectedSHA256() (string, error) {
+	switch {
+	case plan.SHA256Literal != "":
+		return strings.ToLower(strings.TrimSpace(plan.SHA256Literal)), nil
+	case plan.SHA256AssetPath != "":
+		parse := ParseSHA256File
+		arg := plan.ArtifactName
+		if plan.SHA256Selector != "" {
+			parse, arg = ParseSHA256JSON, plan.SHA256Selector
+		}
+		hash, err := parse(plan.SHA256AssetPath, arg)
+		if err != nil {
+			return "", fmt.Errorf("read checksum: %w", err)
+		}
+		return strings.ToLower(hash), nil
+	}
+	return "", nil
+}
+
 // Run performs verification in the correct order:
 // 1. If configured: verify the checksum file's minisign signature.
 // 2. Verify the artifact's sha256 (from a literal or from the checksum file).
@@ -66,22 +89,11 @@ func Run(plan Plan) error {
 	}
 
 	// Step 2: verify the artifact's sha256.
-	switch {
-	case plan.SHA256Literal != "":
-		if err := CheckFile(plan.ArtifactPath, plan.SHA256Literal); err != nil {
-			return fmt.Errorf("integrity check failed: %w", err)
-		}
-
-	case plan.SHA256AssetPath != "":
-		parse := ParseSHA256File
-		arg := plan.ArtifactName
-		if plan.SHA256Selector != "" {
-			parse, arg = ParseSHA256JSON, plan.SHA256Selector
-		}
-		hash, err := parse(plan.SHA256AssetPath, arg)
-		if err != nil {
-			return fmt.Errorf("read checksum: %w", err)
-		}
+	hash, err := plan.ExpectedSHA256()
+	if err != nil {
+		return err
+	}
+	if hash != "" {
 		if err := CheckFile(plan.ArtifactPath, hash); err != nil {
 			return fmt.Errorf("integrity check failed: %w", err)
 		}

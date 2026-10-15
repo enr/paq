@@ -53,6 +53,15 @@ func Detect() Defaults {
 	}
 }
 
+// Key names the platform in paq.lock.toml: "os-arch", plus "-env" where the
+// C library selects a different archive (e.g. "linux-amd64-musl", "darwin-arm64").
+func (d Defaults) Key() string {
+	if d.Env == "" {
+		return d.OS + "-" + d.Arch
+	}
+	return d.OS + "-" + d.Arch + "-" + d.Env
+}
+
 // isMusl reports whether the system's C library is musl, by the presence of
 // its dynamic loader.
 func isMusl() bool {

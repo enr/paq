@@ -1,9 +1,12 @@
 package main
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -135,6 +138,17 @@ func completeInstalledApps(cmd *cobra.Command, args []string, toComplete string)
 	return excludeArgs(filterByPrefix(out, toComplete), args), cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeLockedApps completes with the names that have a paq.lock.toml
+// entry — the set `paq lock delete` accepts.
+func completeLockedApps(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	lock, err := config.LoadLock()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	names := slices.Sorted(maps.Keys(lock.Apps))
+	return excludeArgs(filterByPrefix(names, toComplete), args), cobra.ShellCompDirectiveNoFileComp
+}
+
 // requireCompletionShell makes a bare `paq completion` fail instead of
 // printing its help to stdout with exit 0: that help would otherwise end up
 // in a redirect such as `paq completion > paq.bash` and be sourced as a
@@ -143,10 +157,7 @@ func completeInstalledApps(cmd *cobra.Command, args []string, toComplete string)
 // missing shell argument.
 func requireCompletionShell(root *cobra.Command) {
 	root.InitDefaultCompletionCmd()
-	cmd, _, err := root.Find([]string{"completion"})
-	if err != nil || cmd == root {
-		return
-	}
+	cmd, _, _ := root.Find([]string{"completion"})
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return hintError{
 			msg:  "requires at least 1 argument: the shell (bash, zsh, fish or powershell)",

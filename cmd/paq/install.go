@@ -86,7 +86,6 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 		hooks := appHooks(name, "")
 		hooks.Force = flagInstallForce
-		hooks.RequireVerify = flagInstallRequireVerify
 		if ui.IsTTY() && !ui.Global.JSON {
 			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
 		}
@@ -134,7 +133,6 @@ func runInstall(cmd *cobra.Command, args []string) error {
 func installParallel(ctx context.Context, cfg *config.Config, names []string) error {
 	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks) error {
 		hooks.Force = flagInstallForce
-		hooks.RequireVerify = flagInstallRequireVerify
 		return install.Run(ctx, cfg, name, nil, hooks)
 	})
 }
@@ -337,13 +335,28 @@ func validateAppName(cfg *config.Config, name string) error {
 // appHooks builds the Hooks for a single app (used for single-app install).
 func appHooks(name, prefix string) *install.Hooks {
 	return &install.Hooks{
-		OnStep:  func(msg string) { ui.Step("%s%s", prefix, msg) },
-		OnOK:    func(msg string) { ui.OK("%s%s", prefix, msg) },
-		OnFail:  func(err error) { ui.Fail("%s%v", prefix, err) },
-		OnInfo:  func(msg string) { ui.Info("%s%s", prefix, msg) },
-		OnWarn:  func(msg string) { ui.Warn("%s%s", prefix, msg) },
-		OnDebug: func(msg string) { ui.Debug("%s%s", prefix, msg) },
+		OnStep:        func(msg string) { ui.Step("%s%s", prefix, msg) },
+		OnOK:          func(msg string) { ui.OK("%s%s", prefix, msg) },
+		OnFail:        func(err error) { ui.Fail("%s%v", prefix, err) },
+		OnInfo:        func(msg string) { ui.Info("%s%s", prefix, msg) },
+		OnWarn:        func(msg string) { ui.Warn("%s%s", prefix, msg) },
+		OnDebug:       func(msg string) { ui.Debug("%s%s", prefix, msg) },
+		RequireVerify: requireVerify(),
 	}
+}
+
+// requireVerify reports whether strict verification is on: --require-verify,
+// or PAQ_REQUIRE_VERIFY set to any value but "", "0" or "false" (a typo must
+// not silently disable a security setting).
+func requireVerify() bool {
+	if flagInstallRequireVerify {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PAQ_REQUIRE_VERIFY"))) {
+	case "", "0", "false":
+		return false
+	}
+	return true
 }
 
 // cosignPrompt returns the Hooks.CosignMissing callback for an interactive
@@ -375,12 +388,13 @@ func cosignPrompt(cfg *config.Config, app string, r io.Reader) func(context.Cont
 // interleaved output during parallel operations (install/upgrade of multiple apps).
 func lockedAppHooks(prefix string, mu *sync.Mutex) *install.Hooks {
 	return &install.Hooks{
-		OnStep:  func(msg string) { mu.Lock(); ui.Step("%s%s", prefix, msg); mu.Unlock() },
-		OnOK:    func(msg string) { mu.Lock(); ui.OK("%s%s", prefix, msg); mu.Unlock() },
-		OnFail:  func(err error) { mu.Lock(); ui.Fail("%s%v", prefix, err); mu.Unlock() },
-		OnInfo:  func(msg string) { mu.Lock(); ui.Info("%s%s", prefix, msg); mu.Unlock() },
-		OnWarn:  func(msg string) { mu.Lock(); ui.Warn("%s%s", prefix, msg); mu.Unlock() },
-		OnDebug: func(msg string) { mu.Lock(); ui.Debug("%s%s", prefix, msg); mu.Unlock() },
+		OnStep:        func(msg string) { mu.Lock(); ui.Step("%s%s", prefix, msg); mu.Unlock() },
+		OnOK:          func(msg string) { mu.Lock(); ui.OK("%s%s", prefix, msg); mu.Unlock() },
+		OnFail:        func(err error) { mu.Lock(); ui.Fail("%s%v", prefix, err); mu.Unlock() },
+		OnInfo:        func(msg string) { mu.Lock(); ui.Info("%s%s", prefix, msg); mu.Unlock() },
+		OnWarn:        func(msg string) { mu.Lock(); ui.Warn("%s%s", prefix, msg); mu.Unlock() },
+		OnDebug:       func(msg string) { mu.Lock(); ui.Debug("%s%s", prefix, msg); mu.Unlock() },
+		RequireVerify: requireVerify(),
 	}
 }
 

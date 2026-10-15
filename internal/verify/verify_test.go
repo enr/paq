@@ -267,3 +267,46 @@ func TestErrVerificationDoesNotTagUnperformableChecks(t *testing.T) {
 		}
 	})
 }
+
+// TestPlanExpectedSHA256 covers each source of the expected hash, without an
+// artifact: the pipeline asks for it before the download.
+func TestPlanExpectedSHA256(t *testing.T) {
+	sum := sha256Hex([]byte("artifact"))
+	upper := strings.ToUpper(sum)
+	coreutils := writeTempFile(t, "SHA256SUMS", []byte(upper+"  artifact.tar.gz\n"+sha256Hex([]byte("other"))+"  other.tar.gz\n"))
+	jsonDoc := writeTempFile(t, "release.json", []byte(`{"files":{"linux":{"sha256":"`+sum+`"}}}`))
+
+	cases := []struct {
+		name string
+		plan Plan
+		want string
+	}{
+		{"none", Plan{ArtifactName: "artifact.tar.gz"}, ""},
+		{"literal, normalized", Plan{SHA256Literal: " " + upper + " "}, sum},
+		{"checksum file, by name", Plan{SHA256AssetPath: coreutils, ArtifactName: "artifact.tar.gz"}, sum},
+		{"checksum json, by selector", Plan{SHA256AssetPath: jsonDoc, SHA256Selector: "files.linux.sha256", ArtifactName: "artifact.tar.gz"}, sum},
+		{"literal wins over document", Plan{SHA256Literal: sum, SHA256AssetPath: filepath.Join(t.TempDir(), "missing")}, sum},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.plan.ExpectedSHA256()
+			if err != nil {
+				t.Fatalf("ExpectedSHA256: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("ExpectedSHA256() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPlanExpectedSHA256UnreadableDocument(t *testing.T) {
+	doc := writeTempFile(t, "SHA256SUMS", []byte(sha256Hex([]byte("other"))+"  other.tar.gz\n"))
+	_, err := Plan{SHA256AssetPath: doc, ArtifactName: "artifact.tar.gz"}.ExpectedSHA256()
+	if err == nil || !strings.HasPrefix(err.Error(), "read checksum:") {
+		t.Errorf("error = %v, want a read checksum error", err)
+	}
+	if errors.Is(err, ErrVerification) {
+		t.Error("a checksum document without the artifact is an unperformable check, not a mismatch")
+	}
+}
