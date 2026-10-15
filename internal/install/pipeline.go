@@ -616,7 +616,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if lockedSHA256 != "" {
 		step("Verifying against paq.lock.toml...")
 		if err := verify.CheckFile(artifactPath, lockedSHA256); err != nil {
-			return fmt.Errorf("%s does not match the sha256 paq.lock.toml recorded for %s (if upstream really replaced it, remove the [apps.%s] entries from paq.lock.toml to re-resolve): %w", assetName, plat.Key(), appName, err)
+			return fmt.Errorf("%s does not match the sha256 paq.lock.toml recorded for %s (if upstream really replaced it, `paq lock delete %s` lets the next install re-resolve it): %w", assetName, plat.Key(), appName, err)
 		}
 		ok("Lock sha256 OK")
 	}

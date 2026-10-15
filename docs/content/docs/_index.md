@@ -193,10 +193,9 @@ with a lockfile, `paq.lock.toml`, generated next to the manifest:
 - The sha256 is recorded per platform (`linux-amd64-gnu`, `darwin-arm64`, ...),
   since each one downloads a different archive. An install from the lock must
   get exactly the archive its platform recorded, or it fails; a platform with
-  no hash yet adds its own. If upstream really replaced the archive, remove
-  the app's `[apps.<name>]` entries from `paq.lock.toml` so the next install
-  re-resolves it. A `sha256` written by paq before 0.4.0 names no platform and
-  is ignored.
+  no hash yet adds its own. If upstream really replaced the archive, `paq lock
+  delete <app>` drops the entry so the next install re-resolves it. A `sha256`
+  written by paq before 0.4.0 names no platform and is ignored.
 - `paq upgrade` always checks upstream regardless of the lock, and refreshes
   the lock entry to whatever it installs.
 
@@ -407,6 +406,19 @@ paq uninstall rg --dry-run    # show what would be removed
 |------|-------------|
 | `--dry-run` | Show what would be removed without removing anything |
 | `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions) |
+
+### lock
+
+`paq lock delete` drops apps' entries from `paq.lock.toml` (see [Reproducible
+installs](#reproducible-installs-paqlocktoml)), so the next `paq install`
+resolves "latest" again and records a fresh entry. Use it when upstream
+replaced a release's archive and the install fails against the locked sha256.
+A name with no entry is reported as an error.
+
+```bash
+paq lock delete rg
+paq lock delete rg bat
+```
 
 ### which
 

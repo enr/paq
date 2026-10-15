@@ -152,8 +152,8 @@ func TestDeleteLockEntry(t *testing.T) {
 	if err := WriteLockEntry("bat", LockEntry{Version: "0.24.0"}); err != nil {
 		t.Fatalf("WriteLockEntry: %v", err)
 	}
-	if err := DeleteLockEntry("rg"); err != nil {
-		t.Fatalf("DeleteLockEntry: %v", err)
+	if deleted, err := DeleteLockEntry("rg"); err != nil || !deleted {
+		t.Fatalf("DeleteLockEntry = %v, %v; want true, nil", deleted, err)
 	}
 
 	lock, err := LoadLock()
@@ -168,21 +168,21 @@ func TestDeleteLockEntry(t *testing.T) {
 	}
 }
 
-// DeleteLockEntry must be a no-op, not an error, both for an unknown app and
+// DeleteLockEntry must report false, not an error, both for an unknown app and
 // for a lockfile that doesn't exist yet — mirrors how the rest of the package
 // treats "nothing to do" as success.
 func TestDeleteLockEntryNoOpOnMissingEntryOrFile(t *testing.T) {
 	isolateManifest(t)
 
-	if err := DeleteLockEntry("rg"); err != nil {
-		t.Errorf("DeleteLockEntry on a missing lockfile: %v, want nil", err)
+	if deleted, err := DeleteLockEntry("rg"); err != nil || deleted {
+		t.Errorf("DeleteLockEntry on a missing lockfile = %v, %v; want false, nil", deleted, err)
 	}
 
 	if err := WriteLockEntry("bat", LockEntry{Version: "0.24.0"}); err != nil {
 		t.Fatalf("WriteLockEntry: %v", err)
 	}
-	if err := DeleteLockEntry("rg"); err != nil {
-		t.Errorf("DeleteLockEntry on an unknown entry: %v, want nil", err)
+	if deleted, err := DeleteLockEntry("rg"); err != nil || deleted {
+		t.Errorf("DeleteLockEntry on an unknown entry = %v, %v; want false, nil", deleted, err)
 	}
 }
 

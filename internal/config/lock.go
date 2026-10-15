@@ -123,20 +123,20 @@ func WriteLockEntry(appName string, entry LockEntry) error {
 	return saveLock(lock)
 }
 
-// DeleteLockEntry removes appName's lock entry, if any. A no-op (no error)
-// when the lockfile doesn't exist or has no entry for it.
-func DeleteLockEntry(appName string) error {
+// DeleteLockEntry removes appName's lock entry and reports whether there was
+// one. A missing lockfile or entry is not an error: it reports false.
+func DeleteLockEntry(appName string) (bool, error) {
 	lockMu.Lock()
 	defer lockMu.Unlock()
 	lock, err := LoadLock()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, ok := lock.Apps[appName]; !ok {
-		return nil
+		return false, nil
 	}
 	delete(lock.Apps, appName)
-	return saveLock(lock)
+	return true, saveLock(lock)
 }
 
 // saveLock writes the lockfile atomically (temp file + rename), with entries
