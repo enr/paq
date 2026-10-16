@@ -1,7 +1,7 @@
 # paq manifest used by e2e/Dockerfile.devtools. Every version is pinned.
 # Multi-version tools (Node, JDK) install to /opt/paq/<tool>-<version>; the
 # Dockerfile links /opt/paq/<app> (e.g. /opt/paq/node-20) to each of them.
-# Recipes for gradle and awscli are in e2e/devtools-registry.toml.
+# Recipes for gradle, awscli and fd are in e2e/devtools-registry.toml.
 
 [defaults]
 bin = "/usr/local/bin"
@@ -41,3 +41,7 @@ dest = "/opt/paq/gradle"
 use = "awscli"
 version = "2.37.9"
 dest = "/opt/paq/awscli"
+
+[apps.fd]
+use = "fd"
+version = "10.5.0"

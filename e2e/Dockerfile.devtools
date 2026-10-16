@@ -1,5 +1,5 @@
-# Debian image with Node 20/24, Temurin JDK 17/21, Maven, Gradle and the AWS
-# CLI, all installed by the paq release binary from e2e/devtools.toml (apps)
+# Debian image with Node 20/24, Temurin JDK 17/21, Maven, Gradle, the AWS CLI
+# and fd, all installed by the paq release binary from e2e/devtools.toml (apps)
 # and e2e/devtools-registry.toml (extra recipes). Build from the repository root:
 #
 #   docker build -t paq-devtools -f e2e/Dockerfile.devtools .
