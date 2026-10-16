@@ -1,0 +1,39 @@
+# Recipes for tools missing from paq's embedded registry, used by
+# e2e/Dockerfile.devtools. The Dockerfile prepends this file to the manifest
+# (e2e/devtools.toml): paq reads user recipes from the manifest's [specs.*].
+
+# Gradle: official distribution, verified against the .sha256 file Gradle
+# publishes next to each zip.
+[specs.gradle]
+backend = "url"
+source = "https://services.gradle.org/distributions/gradle-{{version}}-bin.zip"
+archive = "zip"
+strip_components = 1
+latest_strategy = "json"
+latest_url = "https://services.gradle.org/versions/current"
+latest_json = "version"
+
+[specs.gradle.verify]
+sha256_asset = "{{asset}}.sha256"
+
+# AWS CLI v2: versioned zip, run in place from dist/ (AWS's install script only
+# copies dist/ and adds symlinks). AWS publishes no checksum file, only a PGP
+# signature paq cannot check, so the sha256 is pinned here for one version and
+# one arch. When bumping the version, verify the new zip and update it:
+#
+#   curl -fsSLO https://awscli.amazonaws.com/awscli-exe-linux-x86_64-<ver>.zip{,.sig}
+#   gpg --verify awscli-exe-linux-x86_64-<ver>.zip.sig    # AWS CLI Team key, FB5DB77FD5C118B80511ADA8A6310ACC4672475C
+#   sha256sum awscli-exe-linux-x86_64-<ver>.zip
+[specs.awscli]
+backend = "url"
+source = "https://awscli.amazonaws.com/awscli-exe-linux-{{arch}}-{{version}}.zip"
+archive = "zip"
+strip_components = 1
+platforms = ["linux/amd64"]
+
+[specs.awscli.arch]
+amd64 = "x86_64"
+
+[specs.awscli.verify]
+# awscli-exe-linux-x86_64-2.37.9.zip
+sha256 = "6b3a6a3d7bb3997928f0bdf7b866914224abf242c2e54e1dcebbe84bee64f356"
