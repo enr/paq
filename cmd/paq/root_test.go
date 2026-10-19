@@ -1,10 +1,12 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
 )
 
@@ -109,5 +111,92 @@ func TestApplyConfigPathOverride(t *testing.T) {
 	}
 	if config.PathOverride != "" {
 		t.Errorf("PathOverride = %q, want empty once neither --config nor PAQ_CONFIG is set", config.PathOverride)
+	}
+}
+
+// withLocalModeReset saves and restores every global local mode touches.
+func withLocalModeReset(t *testing.T) {
+	t.Helper()
+	savedFlag, savedConfig := flagLocal, flagConfig
+	savedOverride, savedRoot, savedState := config.PathOverride, config.ProjectRoot, state.PathOverride
+	t.Cleanup(func() {
+		flagLocal, flagConfig = savedFlag, savedConfig
+		config.PathOverride, config.ProjectRoot, state.PathOverride = savedOverride, savedRoot, savedState
+	})
+	flagLocal, flagConfig = false, ""
+	t.Setenv("PAQ_LOCAL", "")
+	t.Setenv("PAQ_CONFIG", "")
+}
+
+// TestApplyConfigPathOverrideLocal verifies --local finds the nearest
+// paq.toml upwards and moves manifest and state next to it, ignoring
+// PAQ_CONFIG.
+func TestApplyConfigPathOverrideLocal(t *testing.T) {
+	withLocalModeReset(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "paq.toml"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+	t.Setenv("PAQ_CONFIG", filepath.Join(root, "ignored.toml"))
+
+	flagLocal = true
+	if err := applyConfigPathOverride(); err != nil {
+		t.Fatalf("applyConfigPathOverride: %v", err)
+	}
+	if config.ProjectRoot != root {
+		t.Errorf("ProjectRoot = %q, want %q", config.ProjectRoot, root)
+	}
+	if want := filepath.Join(root, "paq.toml"); config.PathOverride != want {
+		t.Errorf("PathOverride = %q, want %q", config.PathOverride, want)
+	}
+	if want := filepath.Join(root, ".paq", "state.json"); state.PathOverride != want {
+		t.Errorf("state.PathOverride = %q, want %q", state.PathOverride, want)
+	}
+
+	// Leaving local mode clears the overrides again.
+	flagLocal = false
+	t.Setenv("PAQ_CONFIG", "")
+	if err := applyConfigPathOverride(); err != nil {
+		t.Fatalf("applyConfigPathOverride: %v", err)
+	}
+	if config.ProjectRoot != "" || state.PathOverride != "" || config.PathOverride != "" {
+		t.Errorf("overrides not cleared: root %q, state %q, config %q", config.ProjectRoot, state.PathOverride, config.PathOverride)
+	}
+}
+
+// TestApplyConfigPathOverrideLocalWithoutManifest verifies PAQ_LOCAL enables
+// local mode and, with no paq.toml anywhere upwards, roots the project at the
+// working directory.
+func TestApplyConfigPathOverrideLocalWithoutManifest(t *testing.T) {
+	withLocalModeReset(t)
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+	t.Setenv("PAQ_LOCAL", "1")
+
+	if err := applyConfigPathOverride(); err != nil {
+		t.Fatalf("applyConfigPathOverride: %v", err)
+	}
+	if config.ProjectRoot != cwd {
+		t.Errorf("ProjectRoot = %q, want the working directory %q", config.ProjectRoot, cwd)
+	}
+}
+
+func TestApplyConfigPathOverrideLocalRejectsConfig(t *testing.T) {
+	withLocalModeReset(t)
+	flagLocal, flagConfig = true, "other.toml"
+
+	if err := applyConfigPathOverride(); err == nil {
+		t.Error("expected --config to be rejected together with --local")
 	}
 }
