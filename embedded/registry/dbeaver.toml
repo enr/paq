@@ -1,0 +1,37 @@
+# DBeaver Community Edition, portable archive (bundles its own JRE).
+#
+# Releases are taken from GitHub: the versioned links on dbeaver.io/files
+# redirect to the GitHub release assets anyway, and the github backend gives
+# "latest" resolution (with the minimum release age) for free.
+#
+# GitHub ships no checksum file; the sha256 (hash only) is published by
+# DBeaver's own download host, one file per asset.
+#
+# darwin is left out of "platforms": macOS is distributed only as a .dmg,
+# which is not an archive paq can extract.
+
+[dbeaver]
+backend = "github"
+repo = "dbeaver/dbeaver"
+# Tags carry no "v" prefix (e.g. "26.2.3").
+tag = "{{version}}"
+asset = "dbeaver-ce-{{version}}-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+strip_components = 1
+platforms = [
+  "linux/amd64",
+  "linux/arm64",
+  "windows/amd64",
+  "windows/arm64",
+]
+
+[dbeaver.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+[dbeaver.windows]
+asset = "dbeaver-ce-{{version}}-{{os}}-{{arch}}.zip"
+archive = "zip"
+
+[dbeaver.verify]
+sha256_url = "https://downloads.dbeaver.net/community/{{version}}/checksum/{{asset}}.sha256"
