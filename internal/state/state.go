@@ -44,10 +44,19 @@ type State struct {
 	Packages []InstalledApp `json:"packages"`
 }
 
+// PathOverride, when non-empty, is used verbatim as the state.json path. Set
+// once at startup in local mode (--local, see cmd/paq/root.go), which keeps
+// a project's install state next to its manifest.
+var PathOverride string
+
 // StatePath returns the path of the state.json file.
+// With PathOverride set: PathOverride
 // On Linux/macOS: ${XDG_STATE_HOME:-~/.local/state}/paq/state.json
 // On Windows: %LOCALAPPDATA%\paq\state.json
 func StatePath() (string, error) {
+	if PathOverride != "" {
+		return PathOverride, nil
+	}
 	if runtime.GOOS == "windows" {
 		local := os.Getenv("LOCALAPPDATA")
 		if local == "" {

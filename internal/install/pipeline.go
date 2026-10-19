@@ -318,6 +318,10 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	if err != nil {
 		return fmt.Errorf("resolve dest: %w", err)
 	}
+	dest, err = config.AbsDest(dest)
+	if err != nil {
+		return fmt.Errorf("resolve dest: %w", err)
+	}
 
 	// 6. Resolve the artifact URL.
 	step(fmt.Sprintf("Resolving download URL for %s...", appName))

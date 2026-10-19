@@ -406,3 +406,16 @@ func setStateHome(t *testing.T, dir string) {
 	t.Setenv("XDG_STATE_HOME", dir)
 	t.Setenv("LOCALAPPDATA", dir)
 }
+
+// TestStatePathOverride verifies local mode's override wins over the
+// XDG/LOCALAPPDATA-derived path.
+func TestStatePathOverride(t *testing.T) {
+	saved := PathOverride
+	t.Cleanup(func() { PathOverride = saved })
+	setStateHome(t, t.TempDir())
+
+	PathOverride = filepath.Join(t.TempDir(), ".paq", "state.json")
+	if got, err := StatePath(); err != nil || got != PathOverride {
+		t.Errorf("StatePath() = %q, %v, want %q", got, err, PathOverride)
+	}
+}

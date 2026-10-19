@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/httpretry"
+	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -38,6 +41,7 @@ var (
 	flagVerbose bool
 	flagDebug   bool
 	flagConfig  string
+	flagLocal   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -100,6 +104,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Print detailed debug output to stderr (implies --verbose)")
 	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "Path to the manifest file (default: ~/.config/paq/config.toml, or $PAQ_CONFIG)")
+	rootCmd.PersistentFlags().BoolVar(&flagLocal, "local", false, "Project-local mode: use the nearest paq.toml and keep state and default install dirs under .paq/ next to it (also $PAQ_LOCAL)")
 
 	// Surface httpretry's retries under --debug: reads ui.Global.Debug at call
 	// time (set once here, evaluated on every retry), so a slow or flaky
@@ -124,7 +129,27 @@ func init() {
 // the XDG-derived default (multiple profiles, CI, a dotfiles-managed path).
 // Always assigns (clearing the override when neither is set) so the package
 // global doesn't leak a stale value across commands within the same process.
+//
+// In local mode (--local, or PAQ_LOCAL set to any value but "", "0" or
+// "false") the manifest is the nearest paq.toml instead, and the state DB and
+// the default install dirs move under .paq/ next to it. PAQ_CONFIG is ignored
+// there; an explicit --config conflicts with it.
 func applyConfigPathOverride() error {
+	config.ProjectRoot, state.PathOverride = "", ""
+	if localMode() {
+		if flagConfig != "" {
+			return fmt.Errorf("--config cannot be combined with --local")
+		}
+		root, err := findProjectRoot()
+		if err != nil {
+			return fmt.Errorf("resolve --local: %w", err)
+		}
+		config.ProjectRoot = root
+		config.PathOverride = filepath.Join(root, localManifestName)
+		state.PathOverride = filepath.Join(root, ".paq", "state.json")
+		return nil
+	}
+
 	path := flagConfig
 	if path == "" {
 		path = os.Getenv("PAQ_CONFIG")
@@ -139,4 +164,38 @@ func applyConfigPathOverride() error {
 	}
 	config.PathOverride = resolved
 	return nil
+}
+
+// localManifestName is the manifest file that marks a project root in local mode.
+const localManifestName = "paq.toml"
+
+// localMode reports whether local mode is on: --local, or PAQ_LOCAL set to
+// any value but "", "0" or "false".
+func localMode() bool {
+	if flagLocal {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PAQ_LOCAL"))) {
+	case "", "0", "false":
+		return false
+	}
+	return true
+}
+
+// findProjectRoot returns the nearest directory, from the working directory
+// upwards, that holds a paq.toml; the working directory itself when none does,
+// so a first `paq --local install <tool>` creates the manifest there.
+func findProjectRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(dir, localManifestName)); err == nil {
+			return dir, nil
+		}
+		if filepath.Dir(dir) == dir {
+			return cwd, nil
+		}
+	}
 }

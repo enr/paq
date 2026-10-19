@@ -72,6 +72,8 @@ then run `paq install` to install everything it declares.
   and each platform's archive hash, for every machine sharing the manifest.
 - **Several versions side by side**, through distinct manifest entries or a
   one-off `paq install tool@x.y.z --no-save --dest ...`.
+- **Project-local installs**: `paq --local install` reads the project's
+  `paq.toml` and keeps the tools, and their install state, under `.paq/`.
 - **Your own recipes** in the manifest, overriding the embedded ones, plus an
   external registry snapshot updated independently of the binary.
 - **CI-friendly**: `--json` output, distinct exit codes, an opt-in download
@@ -81,6 +83,8 @@ then run `paq install` to install everything it declares.
 
 - [Configuration](https://enr.github.io/paq/docs/#configuration): manifest,
   default directories, `version` modes, lockfile, download cache
+- [Project-local installs](https://enr.github.io/paq/docs/#project-local-installs---local):
+  per-project tools with `--local`
 - [Commands](https://enr.github.io/paq/docs/#commands): full reference, flags
   and exit codes
 - [Adding a custom recipe](https://enr.github.io/paq/docs/#adding-a-custom-recipe):

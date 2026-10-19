@@ -108,6 +108,54 @@ PAQ_CONFIG=~/dotfiles/paq-work.toml paq ls
 Only the manifest path moves; the state DB and registry cache still follow
 `XDG_STATE_HOME`/`XDG_CACHE_HOME` as usual.
 
+### Project-local installs (--local)
+
+A project can pin its own tools (a given Node.js, say) and install them inside
+its own directory, kept apart from your user-wide tools. Commit a `paq.toml` at
+the project root:
+
+```toml
+[apps.node]
+use = "node"
+version = "22.11.0"
+dest = ".paq/node"
+```
+
+and run paq with `--local`, or with `PAQ_LOCAL=1` in the environment (any value
+but empty, `0` or `false`):
+
+```bash
+paq --local install    # installs node into <project>/.paq/node
+paq --local ls         # lists only this project's tools
+```
+
+In local mode:
+
+- The manifest is the nearest `paq.toml`, searched from the current directory
+  upwards (like git), so paq works from any subdirectory of the project. With
+  no `paq.toml` anywhere above, the current directory is the project root and
+  `paq --local install <tool>` creates the manifest there.
+- `paq.lock.toml` lives next to `paq.toml`, as usual: commit both.
+- The state DB is `<project>/.paq/state.json`: `ls`, `doctor`, `uninstall`
+  and `upgrade` see only the project's tools, and two projects installing the
+  same tool and version never collide.
+- The built-in default directories become `.paq/bin` and `.paq/opt`, so an
+  entry without `dest` (and the one `paq import`/`paq install <tool>` writes)
+  lands under `.paq/`. A `[defaults]` table in `paq.toml` still overrides them.
+- A relative `dest` (in the manifest or from `--dest`) is resolved against the
+  project root, not the current directory.
+- The user manifest and `PAQ_CONFIG` are ignored; `--config` cannot be combined
+  with `--local`. The registry cache and the download cache stay shared.
+
+Add `.paq/` to the project's `.gitignore`. paq does not touch `PATH`: put the
+project's tools on it with your own tooling, e.g. with [direnv](https://direnv.net/)
+in an `.envrc` that also turns local mode on:
+
+```bash
+export PAQ_LOCAL=1
+PATH_add .paq/node/bin
+```
+
 ### Default install directories
 
 An optional `[defaults]` table sets the base directories used to derive an
@@ -558,6 +606,7 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 | Flag | Description |
 |------|-------------|
 | `--config <path>` | Use this manifest file instead of the default location (also `PAQ_CONFIG`) |
+| `--local` | Project-local mode: use the nearest `paq.toml` and keep state and default install dirs under `.paq/` next to it (also `PAQ_LOCAL`); see [Project-local installs](#project-local-installs---local) |
 | `--no-color` | Disable color output |
 | `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `which`, `doctor`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
@@ -1108,7 +1157,11 @@ public_key = "RWQ...your-minisign-public-key..."
 ## State
 
 Install state is stored in `~/.local/state/paq/state.json` (Linux/macOS) or
-`%LOCALAPPDATA%\paq\state.json` (Windows).
+`%LOCALAPPDATA%\paq\state.json` (Windows). In local mode it is
+`<project>/.paq/state.json` instead (see [Project-local
+installs](#project-local-installs---local)). Destinations are recorded as
+absolute paths: outside local mode a relative `dest` is resolved against the
+current directory.
 
 paq does not watch that directory, so removing an installed file by hand leaves
 a record claiming the tool is still there. Every command that reads the state

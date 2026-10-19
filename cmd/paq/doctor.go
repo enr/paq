@@ -210,6 +210,10 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("resolve bin dir: %w", err)
 		}
+		resolvedBin, err = config.AbsDest(resolvedBin)
+		if err != nil {
+			return fmt.Errorf("resolve bin dir: %w", err)
+		}
 		inPath := false
 		for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 			if dir == resolvedBin {

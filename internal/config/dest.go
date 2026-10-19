@@ -1,6 +1,15 @@
 package config
 
-import "runtime"
+import (
+	"path/filepath"
+	"runtime"
+)
+
+// ProjectRoot, when non-empty, switches paq to project-local mode (--local):
+// the default install directories live under <root>/.paq and relative
+// destinations are resolved against the root. Set once at startup from
+// --local or PAQ_LOCAL (see cmd/paq/root.go).
+var ProjectRoot string
 
 // DefaultDest derives a default destination from the spec, used both by
 // `paq import` (to generate the dest field) and by the install pipeline
@@ -30,6 +39,7 @@ func DefaultDest(spec Spec, key string, d Defaults) string {
 //   - Windows: ~/AppData/Local/paq/{bin,opt}, which resolves to %LOCALAPPDATA%\paq,
 //     the same root paq already uses for state. The "~/" prefix is used
 //     (expanded at install time) to keep the path portable.
+//   - local mode: .paq/{bin,opt}, relative to the project root, on every OS.
 func DefaultDestRoots(d Defaults) (binDir, optDir string) {
 	binDir, optDir = builtinDestRoots()
 	if d.Bin != "" {
@@ -42,8 +52,28 @@ func DefaultDestRoots(d Defaults) (binDir, optDir string) {
 }
 
 func builtinDestRoots() (binDir, optDir string) {
+	if ProjectRoot != "" {
+		// Relative, so the dest that `paq import` and auto-save write into a
+		// project manifest stays valid on every checkout: AbsDest anchors it
+		// to the project root at install time.
+		return ".paq/bin", ".paq/opt"
+	}
 	if runtime.GOOS == "windows" {
 		return "~/AppData/Local/paq/bin", "~/AppData/Local/paq/opt"
 	}
 	return "~/.local/bin", "~/.local/opt"
+}
+
+// AbsDest makes a resolved install destination absolute, so the state DB
+// records where the files really are whatever directory a later command runs
+// from: a relative path is taken against the project root in local mode, and
+// against the working directory otherwise.
+func AbsDest(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	if ProjectRoot != "" {
+		return filepath.Join(ProjectRoot, path), nil
+	}
+	return filepath.Abs(path)
 }
