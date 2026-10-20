@@ -1,0 +1,17 @@
+[rclone]
+backend = "github"
+repo = "rclone/rclone"
+asset = "rclone-v{{version}}-{{os}}-{{arch}}.zip"
+archive = "zip"
+strip_components = 1  # the zip holds a single rclone-v<version>-<os>-<arch>/ directory
+chmod = "0755"
+binaries = [
+  { from = "rclone{{ext}}" },
+]
+
+[rclone.os]
+darwin = "osx"
+
+# SHA256SUMS is PGP clearsigned; paq reads the hash lines and skips the armor.
+[rclone.verify]
+sha256_asset = "SHA256SUMS"

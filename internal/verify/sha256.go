@@ -34,10 +34,12 @@ func CheckFile(filePath string, expected string) error {
 }
 
 // ParseSHA256File reads a sha256 checksum file and returns the hash for fileName.
-// Supports two formats:
+// Supports three formats:
 //   - bare hash: the file contains exactly one line with a single field, the
 //     hash refers to the only artifact (layout used by Oracle JDK);
-//   - "<hash>  <filename>" / "<hash> *<filename>": line with file name (coreutils layout).
+//   - "<hash>  <filename>" / "<hash> *<filename>": line with file name (coreutils layout);
+//   - "SHA256 (<filename>) = <hash>": BSD tag layout (`sha256sum --tag`, yq's
+//     checksums-bsd); lines tagged with other algorithms are skipped.
 //
 // Bare-hash mode only applies when the file has exactly one non-empty,
 // non-comment line; a stray one-field line among several is skipped instead
@@ -62,9 +64,15 @@ func ParseSHA256File(checksumPath string, fileName string) (string, error) {
 		if len(parts) < 2 {
 			continue
 		}
-		name := strings.TrimPrefix(parts[1], "*")
+		name, hash := strings.TrimPrefix(parts[1], "*"), parts[0]
+		if len(parts) == 4 && parts[2] == "=" && strings.HasPrefix(parts[1], "(") && strings.HasSuffix(parts[1], ")") {
+			if parts[0] != "SHA256" {
+				continue
+			}
+			name, hash = strings.TrimSuffix(strings.TrimPrefix(parts[1], "("), ")"), parts[3]
+		}
 		if filepath.Base(name) == wantBase {
-			hash := strings.ToLower(parts[0])
+			hash = strings.ToLower(hash)
 			// Validated like the bare-hash case: without this a malformed
 			// line is reported as a checksum mismatch, pointing at the
 			// artifact instead of at the checksum file.

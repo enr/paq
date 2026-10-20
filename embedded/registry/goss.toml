@@ -1,0 +1,20 @@
+[goss]
+backend = "github"
+repo = "goss-org/goss"
+asset = "goss_{{version}}_{{os}}_{{arch}}.tar.gz"
+archive = "tar.gz"
+chmod = "0755"
+binaries = [
+  { from = "goss{{ext}}" },
+]
+
+[goss.arch]
+amd64 = "x86_64"
+
+# Windows ships a .zip, and only for x86_64.
+[goss.windows]
+asset = "goss_{{version}}_{{os}}_{{arch}}.zip"
+archive = "zip"
+
+[goss.verify]
+sha256_asset = "goss_{{version}}_SHA256SUMS"
