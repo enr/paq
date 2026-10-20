@@ -1,0 +1,16 @@
+# yq publishes bare executables, not archives: the downloaded asset IS the
+# binary, so the recipe uses "binaries" (with no "from") and no "archive".
+
+[yq]
+backend = "github"
+repo = "mikefarah/yq"
+asset = "yq_{{os}}_{{arch}}{{ext}}"
+chmod = "0755"
+binaries = [
+  { to = "yq{{ext}}" },
+]
+
+# "checksums" lists every hash algorithm in columns per file; "checksums-bsd"
+# carries the same hashes one "SHA256 (<file>) = <hash>" line at a time.
+[yq.verify]
+sha256_asset = "checksums-bsd"

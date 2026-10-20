@@ -643,9 +643,9 @@ shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
 The embedded registry currently ships `bat`, `bun`, `cosign`, `dbeaver`,
-`delta`, `deno`, `fd`, `fresh`, `gh`, `gip`, `go`, `hugo`, `inner`, `jdk`, `jq`,
+`delta`, `deno`, `fd`, `fresh`, `gh`, `gip`, `go`, `goss`, `hugo`, `inner`, `jdk`, `jq`,
 `maven`, `micro`, `node`, `nub`, `porffor`, `ripgrep`, `runp`, `terraform`,
-`vscode`, `zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
+`vscode`, `yq`, `zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
 
 A recipe for a GitHub-hosted tool:
@@ -759,6 +759,10 @@ source = "https://example.com/releases/mytool-{{version}}-{{os}}-{{arch}}.tar.gz
 archive = "tar.gz"
 strip_components = 1
 ```
+
+A SHA-256 checksum file may hold a single bare hash, `<hash>  <filename>` lines
+(the `sha256sum` layout), or BSD tag lines, `SHA256 (<filename>) = <hash>`
+(`sha256sum --tag`); in the last layout, lines for other algorithms are skipped.
 
 Some projects publish checksums only through an API, with no checksum file next
 to the artifact. `sha256_url` takes an absolute (templated) URL instead of a

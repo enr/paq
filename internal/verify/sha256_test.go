@@ -143,3 +143,25 @@ func TestParseSHA256FileNameNotFound(t *testing.T) {
 		t.Error("expected error for missing filename")
 	}
 }
+
+// TestParseSHA256FileBSDTag checks the BSD tag layout (yq's checksums-bsd):
+// the SHA256 line is picked out of the lines for every other algorithm, and a
+// file name equal to the asset's but under another algorithm is not mistaken
+// for it.
+func TestParseSHA256FileBSDTag(t *testing.T) {
+	content := "MD5   (yq_linux_amd64) = 68805e59b9175d020d8244ace734824f\n" +
+		"SHA256 (yq_linux_arm64) = " + otherFakeSHA256 + "\n" +
+		"SHA256 (yq_linux_amd64) = " + strings.ToUpper(fakeSHA256) + "\n"
+
+	dir := t.TempDir()
+	f := filepath.Join(dir, "checksums-bsd")
+	os.WriteFile(f, []byte(content), 0644)
+
+	hash, err := ParseSHA256File(f, "yq_linux_amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != fakeSHA256 {
+		t.Errorf("hash = %q, want %s", hash, fakeSHA256)
+	}
+}
