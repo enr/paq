@@ -32,6 +32,10 @@ type Spec struct {
 	Repo    string `toml:"repo"`
 	Asset   string `toml:"asset"`
 	Source  string `toml:"source"`
+	// Package is the npm package name for the "npm" backend (e.g. "esbuild",
+	// "@biomejs/biome"): the binary comes from the platform package it lists
+	// in its optionalDependencies.
+	Package string `toml:"package"`
 	// Tag is the template of the release tag for pinned versions, for repos
 	// whose tags are not "v" + version (e.g. "bun-v{{version}}").
 	// Empty = default behavior ("v" + version).

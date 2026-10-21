@@ -194,7 +194,8 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	// Warn if the spec configures no verification: the download cannot be
 	// validated (integrity/signature). Verification is the main security
 	// feature, so its absence must stay visible. In strict mode it is fatal.
-	if !spec.Verify.Enabled() {
+	// The npm backend always verifies the sha512 the registry records.
+	if !spec.Verify.Enabled() && spec.Backend != "npm" {
 		if hooks.RequireVerify {
 			return fmt.Errorf("%q has no verification configured and strict verification is on (--require-verify or PAQ_REQUIRE_VERIFY): refusing to install it", specName)
 		}
@@ -241,6 +242,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 				Strategy:   spec.LatestStrategy,
 				Backend:    spec.Backend,
 				Repo:       spec.Repo,
+				Package:    spec.Package,
 				Source:     spec.Source,
 				ArchPkg:    spec.ArchPkg,
 				URL:        spec.LatestURL,
@@ -336,6 +338,14 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 	case "url":
 		ub := backend.URLBackend{Source: spec.Source}
 		downloadURL, err = ub.Resolve(vars)
+	case "npm":
+		nb := backend.NpmBackend{Package: spec.Package, HTTPClient: client}
+		var integrity string
+		downloadURL, integrity, err = nb.Resolve(ctx, ver, plat.OS, plat.Arch, plat.Env)
+		// The registry's integrity is checked like a verify.sha512 literal.
+		if spec.Verify.SHA512 == "" {
+			spec.Verify.SHA512 = integrity
+		}
 	default:
 		err = fmt.Errorf("unknown backend: %q", spec.Backend)
 	}

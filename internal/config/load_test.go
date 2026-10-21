@@ -52,6 +52,10 @@ func TestEmbeddedRegistrySpecsAreStructurallyValid(t *testing.T) {
 			if s.Source == "" {
 				t.Errorf("%s: url backend with no source", name)
 			}
+		case "npm":
+			if s.Package == "" {
+				t.Errorf("%s: npm backend with no package", name)
+			}
 		default:
 			t.Errorf("%s: unknown backend %q", name, s.Backend)
 		}
