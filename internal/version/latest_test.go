@@ -17,6 +17,17 @@ func TestLatestProviderGitHub(t *testing.T) {
 	}
 }
 
+func TestLatestProviderNpm(t *testing.T) {
+	p := LatestProvider(LatestRequest{Backend: "npm", Package: "@biomejs/biome"})
+	j, ok := p.(JSONProvider)
+	if !ok {
+		t.Fatalf("expected JSONProvider, got %T", p)
+	}
+	if j.URL != "https://registry.npmjs.org/@biomejs%2fbiome/latest" || j.Selector != "version" {
+		t.Fatalf("unexpected provider: %+v", j)
+	}
+}
+
 func TestLatestProviderNotImplemented(t *testing.T) {
 	for _, backend := range []string{"url", "maven", "", "unknown"} {
 		p := LatestProvider(LatestRequest{Backend: backend})
@@ -54,6 +65,7 @@ func TestLatestRequestResolvable(t *testing.T) {
 	}{
 		{LatestRequest{Backend: "github", Repo: "x/y"}, true},
 		{LatestRequest{Strategy: "arch-linux", ArchPkg: "rg"}, true},
+		{LatestRequest{Backend: "npm", Package: "esbuild"}, true},
 		{LatestRequest{Backend: "url"}, false},
 		{LatestRequest{Strategy: "nope", Backend: "github"}, false},
 		{LatestRequest{}, false},

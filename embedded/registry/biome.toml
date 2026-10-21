@@ -1,0 +1,8 @@
+# Installed from npm: one package per platform (@biomejs/cli-linux-x64, ...,
+# plus -musl builds), chosen from the optionalDependencies of @biomejs/biome.
+[biome]
+backend = "npm"
+package = "@biomejs/biome"
+archive = "tar.gz"
+extract = "biome{{ext}}"
+chmod = "0755"

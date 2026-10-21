@@ -1,6 +1,6 @@
 # paq
 
-`paq` installs and manages CLI tools from GitHub releases and direct URLs, driven by a simple TOML configuration.
+`paq` installs and manages CLI tools from GitHub releases, direct URLs and the npm registry, driven by a simple TOML configuration.
 
 paq is built for one job: **installing tools and applications, fast**, without
 touching the rest of your environment. It drops binaries into plain directories

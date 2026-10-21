@@ -1,0 +1,8 @@
+# esbuild ships its binaries only through npm: one package per platform
+# (@esbuild/linux-x64, ...), chosen from the optionalDependencies of "esbuild".
+[esbuild]
+backend = "npm"
+package = "esbuild"
+archive = "tar.gz"
+extract = "esbuild{{ext}}"
+chmod = "0755"

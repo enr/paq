@@ -2123,3 +2123,104 @@ func TestPipelineDownloadCacheKeyedByChecksumDocument(t *testing.T) {
 		})
 	}
 }
+
+// npmTestServer serves an npm registry with one package, "tool", whose only
+// platform package (no os/cpu restriction, so it matches every platform)
+// holds package/bin/tool. integrity is what the registry records for it.
+func npmTestServer(t *testing.T, tgz []byte, integrity string) *http.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tool/latest":
+			json.NewEncoder(w).Encode(map[string]string{"version": "1.2.3"})
+		case "/tool/1.2.3":
+			json.NewEncoder(w).Encode(map[string]any{
+				"name": "tool", "version": "1.2.3",
+				"optionalDependencies": map[string]string{"@tool/any": "1.2.3"},
+			})
+		case "/@tool/any/1.2.3":
+			json.NewEncoder(w).Encode(map[string]any{
+				"name": "@tool/any", "version": "1.2.3",
+				"dist": map[string]string{
+					"tarball":   "https://registry.npmjs.org/@tool/any/-/any-1.2.3.tgz",
+					"integrity": integrity,
+				},
+			})
+		case "/@tool/any/-/any-1.2.3.tgz":
+			w.Write(tgz)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return &http.Client{Transport: &redirectTransport{base: srv.URL, inner: http.DefaultTransport}}
+}
+
+func makeNpmTarball(content []byte) []byte {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.WriteHeader(&tar.Header{Name: "package/package.json", Mode: 0644, Size: 2})
+	tw.Write([]byte("{}"))
+	tw.WriteHeader(&tar.Header{Name: "package/bin/tool", Mode: 0755, Size: int64(len(content))})
+	tw.Write(content)
+	tw.Close()
+	gz.Close()
+	return buf.Bytes()
+}
+
+func npmSpecAndApp(dest string) *config.Config {
+	return &config.Config{
+		Specs: map[string]config.Spec{
+			"tool": {Backend: "npm", Package: "tool", Archive: "tar.gz", Extract: "tool", Chmod: "0755"},
+		},
+		Apps: map[string]config.AppEntry{
+			"tool": {Version: "latest", Dest: dest},
+		},
+	}
+}
+
+// TestPipelineNpmBackend verifies an install through the npm backend: "latest"
+// from the dist-tag, the platform package's tarball, its registry integrity
+// checked with no [verify] block (and so no missing-verification warning).
+func TestPipelineNpmBackend(t *testing.T) {
+	isolateState(t)
+	content := []byte("fake-tool-binary")
+	tgz := makeNpmTarball(content)
+	sum := sha512.Sum512(tgz)
+	client := npmTestServer(t, tgz, "sha512-"+base64.StdEncoding.EncodeToString(sum[:]))
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	var warnings []string
+	hooks := &Hooks{HTTPClient: client, OnWarn: func(msg string) { warnings = append(warnings, msg) }}
+	if err := Run(context.Background(), npmSpecAndApp(dest), "tool", nil, hooks); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("dest not found: %v", err)
+	}
+	if !bytes.Equal(data, content) {
+		t.Errorf("dest content = %q, want %q", data, content)
+	}
+	if len(warnings) > 0 {
+		t.Errorf("unexpected warnings: %q", warnings)
+	}
+}
+
+// TestPipelineNpmIntegrityMismatch verifies that a tarball not matching the
+// registry's integrity is refused.
+func TestPipelineNpmIntegrityMismatch(t *testing.T) {
+	isolateState(t)
+	other := sha512.Sum512([]byte("something else"))
+	client := npmTestServer(t, makeNpmTarball([]byte("fake-tool-binary")), "sha512-"+base64.StdEncoding.EncodeToString(other[:]))
+
+	dest := filepath.Join(t.TempDir(), "tool")
+	err := Run(context.Background(), npmSpecAndApp(dest), "tool", nil, &Hooks{HTTPClient: client})
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("err = %v, want an integrity check failure", err)
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Errorf("dest exists after a failed verification")
+	}
+}

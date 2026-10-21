@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/enr/paq/internal/backend"
 )
 
 // ErrLatestNotImplemented is returned when a backend does not (yet) support
@@ -21,6 +23,7 @@ type LatestRequest struct {
 	Strategy string // explicit strategy; when set it takes precedence over the backend (e.g. "arch-linux")
 	Backend  string // e.g. "github", "url", "maven"
 	Repo     string // coordinates for the "github" backend (e.g. "BurntSushi/ripgrep")
+	Package  string // package name for the "npm" backend (e.g. "esbuild")
 	Source   string // coordinates for URL-based backends (e.g. Maven base URL)
 	ArchPkg  string // package name in the official Arch repos (strategy "arch-linux")
 	URL      string // document URL for strategy "json"
@@ -41,7 +44,7 @@ func (req LatestRequest) Resolvable() bool {
 	if req.Strategy != "" {
 		return req.Strategy == "arch-linux" || req.Strategy == "json"
 	}
-	return req.Backend == "github"
+	return req.Backend == "github" || req.Backend == "npm"
 }
 
 // LatestProvider is the extension point for the "latest version" strategy.
@@ -55,6 +58,7 @@ func (req LatestRequest) Resolvable() bool {
 //
 // With no explicit strategy the backend is used. Supported backends:
 //   - "github": resolves from the GitHub releases API (GitHubReleaseProvider).
+//   - "npm": the package's "latest" dist-tag on the npm registry (JSONProvider).
 //
 // For any unhandled strategy/backend resolution is not implemented: it returns
 // a Provider that fails with ErrLatestNotImplemented. To add support for a new
@@ -75,6 +79,8 @@ func LatestProvider(req LatestRequest) Provider {
 	switch req.Backend {
 	case "github":
 		return GitHubReleaseProvider{Repo: req.Repo, MinimumAge: req.MinimumAge, HTTPClient: req.HTTPClient}
+	case "npm":
+		return JSONProvider{URL: backend.NpmManifestURL(req.Package, "latest"), Selector: "version", HTTPClient: req.HTTPClient}
 	default:
 		return notImplementedProvider{backend: req.Backend}
 	}

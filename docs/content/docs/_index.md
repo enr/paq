@@ -2,8 +2,8 @@
 title: "Documentation"
 ---
 
-`paq` installs and manages CLI tools from GitHub releases and direct URLs,
-driven by a simple TOML configuration.
+`paq` installs and manages CLI tools from GitHub releases, direct URLs and the
+npm registry, driven by a simple TOML configuration.
 
 paq is built for one job: **installing tools and applications, fast**, without
 touching the rest of your environment. It drops binaries into plain directories
@@ -642,8 +642,8 @@ tool — `paq install <name>` auto-imports it into the manifest. If a user recip
 shares its name with an embedded one, the **user recipe wins**, so you can also
 patch a stale embedded recipe without waiting for a release.
 
-The embedded registry currently ships `bat`, `bun`, `cosign`, `dbeaver`,
-`delta`, `deno`, `fd`, `fresh`, `gh`, `gip`, `go`, `goss`, `hugo`, `inner`, `jdk`, `jq`,
+The embedded registry currently ships `bat`, `biome`, `bun`, `cosign`, `dbeaver`,
+`delta`, `deno`, `esbuild`, `fd`, `fresh`, `gh`, `gip`, `go`, `goss`, `hugo`, `inner`, `jdk`, `jq`,
 `maven`, `micro`, `node`, `nub`, `porffor`, `rclone`, `ripgrep`, `runp`, `terraform`,
 `vscode`, `yq`, `zipp` and `temurin-11`/`temurin-17`/`temurin-21`/`temurin-26`. Run
 `paq registry list` for the definitive list of what your binary knows about.
@@ -759,6 +759,29 @@ source = "https://example.com/releases/mytool-{{version}}-{{os}}-{{arch}}.tar.gz
 archive = "tar.gz"
 strip_components = 1
 ```
+
+A recipe for a native binary published on **npm**, the way esbuild, biome or
+turbo ship theirs: the package lists one package per platform in its
+`optionalDependencies` (`@esbuild/linux-x64`, `@esbuild/darwin-arm64`, ...),
+each declaring the `os`, `cpu` and `libc` it runs on. paq reads them from the
+registry and downloads the one matching the current platform, as `npm install`
+would, so the recipe names only the package. Node is not needed:
+
+```toml
+[specs.esbuild]
+backend = "npm"
+package = "esbuild"            # scoped names work too: "@biomejs/biome"
+archive = "tar.gz"             # npm packages are always .tgz
+extract = "esbuild{{ext}}"     # matched by basename, wherever it sits in the package
+chmod = "0755"
+```
+
+The download is always checked against the sha512 `integrity` the registry
+records for the platform package, so the recipe needs no `[verify]` block.
+`latest` is the package's `latest` dist-tag. On musl systems a platform package
+declaring `libc = ["musl"]` is preferred over one that runs on any libc. Only
+packages that ship a real executable fit: those whose platform packages hold a
+Node addon (`*.node`, e.g. `@swc/core`) still need Node to run.
 
 A SHA-256 checksum file may hold a single bare hash, `<hash>  <filename>` lines
 (the `sha256sum` layout), or BSD tag lines, `SHA256 (<filename>) = <hash>`
@@ -992,7 +1015,8 @@ way, in the registry's shared `templates.toml`.
 
 When an app is pinned to `version = "latest"`, paq resolves the newest version
 through a *latest version strategy*. By default the `github` backend queries the
-GitHub releases API; other backends have no built-in strategy.
+GitHub releases API and the `npm` backend reads the package's `latest`
+dist-tag; the `url` backend has no built-in strategy.
 
 For tools distributed via a direct URL, set `latest_strategy` to pick an
 explicit source. The `arch-linux` strategy reads the version a package has in

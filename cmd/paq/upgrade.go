@@ -199,6 +199,7 @@ func latestRequestFor(spec config.Spec) version.LatestRequest {
 		Strategy: spec.LatestStrategy,
 		Backend:  spec.Backend,
 		Repo:     spec.Repo,
+		Package:  spec.Package,
 		Source:   spec.Source,
 		ArchPkg:  spec.ArchPkg,
 		URL:      spec.LatestURL,
