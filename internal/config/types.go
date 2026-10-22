@@ -59,7 +59,8 @@ type Spec struct {
 	// must have before "latest" resolves to it (e.g. "7d", "6mo", "1y").
 	// Empty = use the user's global default ([defaults] minimum_release_age),
 	// or the built-in default (see version.DefaultMinimumReleaseAge) if that's
-	// unset too. Only enforced when "latest" resolves via the "github" backend.
+	// unset too. Only enforced when "latest" resolves via the "github" or
+	// "npm" backend.
 	MinimumReleaseAge string `toml:"minimum_release_age"`
 	Archive           string `toml:"archive"`
 	Extract           string `toml:"extract"`

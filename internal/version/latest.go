@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/enr/paq/internal/backend"
 )
 
 // ErrLatestNotImplemented is returned when a backend does not (yet) support
@@ -29,8 +27,8 @@ type LatestRequest struct {
 	URL      string // document URL for strategy "json"
 	Selector string // dot-separated path to the version inside that document
 	// MinimumAge restricts "latest" to a release at least this old. Only
-	// honored by the "github" backend (with no explicit strategy), the only
-	// one that exposes per-release publish dates; ignored otherwise.
+	// honored by the "github" and "npm" backends (with no explicit strategy),
+	// the ones that expose per-release publish dates; ignored otherwise.
 	MinimumAge time.Duration
 	// HTTPClient overrides the client used by the resulting Provider; nil
 	// uses that Provider's own default.
@@ -58,7 +56,7 @@ func (req LatestRequest) Resolvable() bool {
 //
 // With no explicit strategy the backend is used. Supported backends:
 //   - "github": resolves from the GitHub releases API (GitHubReleaseProvider).
-//   - "npm": the package's "latest" dist-tag on the npm registry (JSONProvider).
+//   - "npm": the package's "latest" dist-tag on the npm registry (NpmReleaseProvider).
 //
 // For any unhandled strategy/backend resolution is not implemented: it returns
 // a Provider that fails with ErrLatestNotImplemented. To add support for a new
@@ -80,7 +78,7 @@ func LatestProvider(req LatestRequest) Provider {
 	case "github":
 		return GitHubReleaseProvider{Repo: req.Repo, MinimumAge: req.MinimumAge, HTTPClient: req.HTTPClient}
 	case "npm":
-		return JSONProvider{URL: backend.NpmManifestURL(req.Package, "latest"), Selector: "version", HTTPClient: req.HTTPClient}
+		return NpmReleaseProvider{Package: req.Package, MinimumAge: req.MinimumAge, HTTPClient: req.HTTPClient}
 	default:
 		return notImplementedProvider{backend: req.Backend}
 	}

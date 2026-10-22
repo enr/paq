@@ -778,7 +778,8 @@ chmod = "0755"
 
 The download is always checked against the sha512 `integrity` the registry
 records for the platform package, so the recipe needs no `[verify]` block.
-`latest` is the package's `latest` dist-tag. On musl systems a platform package
+`latest` is the package's `latest` dist-tag, subject to the
+[minimum release age](#minimum-release-age). On musl systems a platform package
 declaring `libc = ["musl"]` is preferred over one that runs on any libc. Only
 packages that ship a real executable fit: those whose platform packages hold a
 Node addon (`*.node`, e.g. `@swc/core`) still need Node to run.
@@ -1090,9 +1091,12 @@ To avoid installing or upgrading to a release the moment it's published
 (before wider testing has caught a regression or a compromised release),
 `version = "latest"` only resolves to a release at least `minimum_release_age`
 old. Drafts, prereleases and anything younger are skipped in favor of the
-newest release that qualifies. Only the `github` backend supports it (it's
-the only one that exposes per-release publish dates); it's ignored for other
-backends/strategies.
+newest release that qualifies. The `github` and `npm` backends support it
+(they expose per-release publish dates); it's ignored for other
+backends/strategies. With `npm`, when the `latest` dist-tag is too young, paq
+picks the highest older stable version not above it, as pnpm does: this reads
+the package's full registry metadata, the only document carrying publish
+dates (a few hundred KB compressed for a package with hundreds of versions).
 
 The built-in default is **24 hours**, applied even if you configure nothing.
 Set a global default in `[defaults]`, and override it per tool in the spec:

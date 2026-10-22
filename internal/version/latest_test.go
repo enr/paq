@@ -19,12 +19,12 @@ func TestLatestProviderGitHub(t *testing.T) {
 
 func TestLatestProviderNpm(t *testing.T) {
 	p := LatestProvider(LatestRequest{Backend: "npm", Package: "@biomejs/biome"})
-	j, ok := p.(JSONProvider)
+	n, ok := p.(NpmReleaseProvider)
 	if !ok {
-		t.Fatalf("expected JSONProvider, got %T", p)
+		t.Fatalf("expected NpmReleaseProvider, got %T", p)
 	}
-	if j.URL != "https://registry.npmjs.org/@biomejs%2fbiome/latest" || j.Selector != "version" {
-		t.Fatalf("unexpected provider: %+v", j)
+	if n.Package != "@biomejs/biome" {
+		t.Fatalf("expected package to be propagated, got %q", n.Package)
 	}
 }
 

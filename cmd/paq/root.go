@@ -47,7 +47,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "paq",
 	Short: "paq — install CLI tools from GitHub releases and URLs",
-	Long:  `paq installs and manages CLI tools defined in a registry, downloading from GitHub releases or direct URLs.`,
+	Long:  `paq installs and manages CLI tools defined in a registry, downloading from GitHub releases, direct URLs or the npm registry.`,
 	// Error and usage printing is handled centrally in Execute, so that
 	// colors and consistent hints can be added.
 	SilenceErrors: true,
