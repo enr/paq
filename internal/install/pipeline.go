@@ -253,7 +253,7 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 			if aerr != nil {
 				return fmt.Errorf("spec %q: invalid minimum_release_age: %w", specName, aerr)
 			}
-			if spec.LatestStrategy == "" && spec.Backend == "github" {
+			if spec.LatestStrategy == "" && (spec.Backend == "github" || spec.Backend == "npm") {
 				req.MinimumAge = minAge
 			} else if explicitAge {
 				warn(fmt.Sprintf("%q: minimum_release_age is not supported for backend %q, ignoring", specName, spec.Backend))

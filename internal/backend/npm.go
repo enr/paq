@@ -128,11 +128,17 @@ func (b NpmBackend) Resolve(ctx context.Context, version, goos, goarch, env stri
 	return m.Dist.Tarball, sum, nil
 }
 
+// NpmPackageURL is the registry URL of the full metadata document of pkg,
+// covering every version.
+func NpmPackageURL(pkg string) string {
+	// A scoped name keeps its "@", with the slash escaped as npm itself does.
+	return NpmRegistry + "/" + strings.Replace(pkg, "/", "%2f", 1)
+}
+
 // NpmManifestURL is the registry URL of the manifest of pkg at version (a
 // version or a dist-tag such as "latest").
 func NpmManifestURL(pkg, version string) string {
-	// A scoped name keeps its "@", with the slash escaped as npm itself does.
-	return fmt.Sprintf("%s/%s/%s", NpmRegistry, strings.Replace(pkg, "/", "%2f", 1), version)
+	return NpmPackageURL(pkg) + "/" + version
 }
 
 // fetchNpmManifest gets the manifest of pkg at version from the registry.

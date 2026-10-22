@@ -2131,8 +2131,13 @@ func npmTestServer(t *testing.T, tgz []byte, integrity string) *http.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/tool/latest":
-			json.NewEncoder(w).Encode(map[string]string{"version": "1.2.3"})
+		case "/tool":
+			// The full document, read to enforce the default minimum release age.
+			json.NewEncoder(w).Encode(map[string]any{
+				"dist-tags": map[string]string{"latest": "1.2.3"},
+				"versions":  map[string]any{"1.2.3": map[string]string{}},
+				"time":      map[string]string{"1.2.3": time.Now().Add(-48 * time.Hour).Format(time.RFC3339)},
+			})
 		case "/tool/1.2.3":
 			json.NewEncoder(w).Encode(map[string]any{
 				"name": "tool", "version": "1.2.3",

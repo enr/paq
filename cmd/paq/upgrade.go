@@ -210,8 +210,8 @@ func latestRequestFor(spec config.Spec) version.LatestRequest {
 // resolveLatestVersion resolves the latest upstream version for a spec,
 // selecting the provider from its backend/latest_strategy and enforcing
 // minimum_release_age (--min-age > spec override > global [defaults] >
-// built-in default) when the backend/strategy supports it (currently only
-// "github", with no explicit latest_strategy). pending is the newest release
+// built-in default) when the backend/strategy supports it (currently
+// "github" and "npm", with no explicit latest_strategy). pending is the newest release
 // skipped for being younger than that minimum age (nil if none). warn (may be
 // nil) is called if the spec/defaults explicitly configure
 // minimum_release_age for a backend that can't honor it.
@@ -223,14 +223,18 @@ func resolveLatestVersion(ctx context.Context, cfg *config.Config, spec config.S
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid minimum_release_age: %w", err)
 	}
-	if spec.LatestStrategy == "" && spec.Backend == "github" {
+	if spec.LatestStrategy == "" && (spec.Backend == "github" || spec.Backend == "npm") {
 		req.MinimumAge = minAge
 	} else if explicit && warn != nil {
 		warn("minimum_release_age is not supported for backend %q, ignoring", spec.Backend)
 	}
 	provider := version.LatestProvider(req)
-	if gh, ok := provider.(version.GitHubReleaseProvider); ok {
-		latest, _, pending, err = gh.ResolveWithPending(ctx)
+	switch p := provider.(type) {
+	case version.GitHubReleaseProvider:
+		latest, _, pending, err = p.ResolveWithPending(ctx)
+		return latest, pending, err
+	case version.NpmReleaseProvider:
+		latest, _, pending, err = p.ResolveWithPending(ctx)
 		return latest, pending, err
 	}
 	latest, _, err = provider.Resolve(ctx)
