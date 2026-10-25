@@ -1,51 +1,47 @@
-# paq manifest used by e2e/Dockerfile.devtools: two Node and two JDK lines
-# side by side, plus common CLI tools. Every version is pinned, so paq
-# downloads straight from the release URLs with no GitHub API calls.
+# paq manifest used by e2e/Dockerfile.devtools. Every version is pinned.
+# Multi-version tools (Node, JDK) install to /opt/paq/<tool>-<version>; the
+# Dockerfile links /opt/paq/<app> (e.g. /opt/paq/node-20) to each of them.
+# Recipes for gradle, awscli and fd are in e2e/devtools-registry.toml.
 
 [defaults]
 bin = "/usr/local/bin"
 opt = "/opt/paq"
 
-[apps.node20]
+[apps.node-20]
 use = "node"
 version = "20.20.2"
-dest = "/opt/paq/node20"
+dest = "/opt/paq/node-{{version}}"
 
-[apps.node24]
+[apps.node-24]
 use = "node"
-version = "24.21.0"
-dest = "/opt/paq/node24"
+version = "24.22.0"
+dest = "/opt/paq/node-{{version}}"
 
-[apps.jdk17]
+[apps.jdk-17]
 use = "temurin-17"
-version = "17.0.20+8"
-dest = "/opt/paq/jdk17"
+version = "17.0.20.1+1"
+dest = "/opt/paq/jdk-{{version}}"
 
-[apps.jdk21]
+[apps.jdk-21]
 use = "temurin-21"
-version = "21.0.12+8"
-dest = "/opt/paq/jdk21"
+version = "21.0.12.1+1"
+dest = "/opt/paq/jdk-{{version}}"
 
-[apps.bat]
-use = "bat"
-version = "0.26.1"
+[apps.maven]
+use = "maven"
+version = "3.10.0"
+dest = "/opt/paq/maven"
+
+[apps.gradle]
+use = "gradle"
+version = "9.8.1"
+dest = "/opt/paq/gradle"
+
+[apps.awscli]
+use = "awscli"
+version = "2.37.9"
+dest = "/opt/paq/awscli"
 
 [apps.fd]
 use = "fd"
 version = "10.5.0"
-
-[apps.rg]
-use = "ripgrep"
-version = "15.2.0"
-
-[apps.jq]
-use = "jq"
-version = "1.8.2"
-
-[apps.delta]
-use = "delta"
-version = "0.20.1"
-
-[apps.gh]
-use = "gh"
-version = "2.102.0"

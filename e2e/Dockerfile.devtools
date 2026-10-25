@@ -1,29 +1,42 @@
-# Debian image with Node 20/24, Temurin JDK 17/21 and common CLI tools
-# (bat, fd, ripgrep, jq, delta, gh), all installed by paq from
-# e2e/devtools.toml. Build from the repository root:
+# Debian image with Node 20/24, Temurin JDK 17/21, Maven, Gradle, the AWS CLI
+# and fd, all installed by the paq release binary from e2e/devtools.toml (apps)
+# and e2e/devtools-registry.toml (extra recipes). Build from the repository root:
 #
 #   docker build -t paq-devtools -f e2e/Dockerfile.devtools .
 #
-# Node 24 and JDK 21 are on PATH by default; switch with e.g.
+# Node 24 and JDK 21 are on PATH by default. /opt/paq/node-20, node-24,
+# jdk-17 and jdk-21 link to the installed versions; switch by putting another
+# one first on PATH, e.g. in a build script:
 #
-#   docker run --rm -it -e PATH=/opt/paq/node20/bin:/opt/paq/jdk17/bin:/usr/local/bin:/usr/bin:/bin -e JAVA_HOME=/opt/paq/jdk17 paq-devtools
-
-FROM golang:1.25-bookworm AS build
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -ldflags "-s" -o /paq ./cmd/paq
+#   export JAVA_HOME=/opt/paq/jdk-17 PATH=/opt/paq/node-20/bin:/opt/paq/jdk-17/bin:$PATH
 
 FROM debian:bookworm-slim
+
+ARG PAQ_VERSION=v0.3.0
+# sha256 of paq-v0.3.0-linux-amd64.zip, from the release's SHA256SUMS
+ARG PAQ_SHA256=38c2083d08bf66b58691b4f66877e0f22ca975b761b6c8b60bc49509446c1428
+
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git less xz-utils \
+ && apt-get install -y --no-install-recommends ca-certificates curl git less unzip \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /paq /usr/local/bin/paq
-COPY e2e/devtools.toml /etc/paq/config.toml
-ENV PAQ_CONFIG=/etc/paq/config.toml
-RUN paq install
-ENV JAVA_HOME=/opt/paq/jdk21
-ENV PATH="/opt/paq/node24/bin:/opt/paq/jdk21/bin:${PATH}"
+
+RUN curl -fsSLo /tmp/paq.zip "https://github.com/enr/paq/releases/download/${PAQ_VERSION}/paq-${PAQ_VERSION}-linux-amd64.zip" \
+ && echo "${PAQ_SHA256}  /tmp/paq.zip" | sha256sum -c - \
+ && unzip -q /tmp/paq.zip paq -d /usr/local/bin \
+ && rm /tmp/paq.zip
+
+ENV PAQ_CONFIG=/etc/paq/config.toml \
+    XDG_STATE_HOME=/var/lib \
+    PAQ_NO_UPDATE_CHECK=1
+
+COPY e2e/devtools-registry.toml e2e/devtools.toml /tmp/paq/
+RUN mkdir -p /etc/paq \
+ && cat /tmp/paq/devtools-registry.toml /tmp/paq/devtools.toml > "$PAQ_CONFIG" \
+ && rm -r /tmp/paq \
+ && paq install --require-verify \
+ && for app in node-20 node-24 jdk-17 jdk-21; do ln -s "$(paq which "$app")" "/opt/paq/$app"; done
+
+ENV JAVA_HOME=/opt/paq/jdk-21
+ENV PATH="/opt/paq/node-24/bin:/opt/paq/jdk-21/bin:/opt/paq/maven/bin:/opt/paq/gradle/bin:/opt/paq/awscli/dist:${PATH}"
 WORKDIR /root
 CMD ["/bin/bash"]
