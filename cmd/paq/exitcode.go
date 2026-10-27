@@ -11,9 +11,10 @@ import (
 // elsewhere (Execute/main); the values below let scripts distinguish the
 // most common failure classes without parsing error text.
 const (
-	exitError  = 1 // generic failure (network, missing config, ...)
-	exitUsage  = 2 // wrong CLI usage: unknown flag/command, bad argument count
-	exitVerify = 4 // checksum or signature verification failed
+	exitError      = 1 // generic failure (network, missing config, ...)
+	exitUsage      = 2 // wrong CLI usage: unknown flag/command, bad argument count
+	exitVulnerable = 3 // paq audit found known vulnerabilities in installed tools
+	exitVerify     = 4 // checksum or signature verification failed
 )
 
 // exitCodeFor maps err to a process exit code. Verification failures are
@@ -29,6 +30,8 @@ func exitCodeFor(err error) int {
 		return exitUsage
 	case isVerifyError(err):
 		return exitVerify
+	case errors.Is(err, errVulnerable):
+		return exitVulnerable
 	default:
 		return exitError
 	}

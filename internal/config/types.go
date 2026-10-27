@@ -91,6 +91,9 @@ type Spec struct {
 	// (e.g. "linux/amd64" or "linux"). Empty = no restriction (all allowed).
 	// The arch is optional: "linux" matches all arches.
 	Platforms []string `toml:"platforms"`
+	// OSV maps the tool to a package in the OSV vulnerability database, for
+	// "paq audit". Empty = derived from the backend when possible (see OSVTarget).
+	OSV OSVPackage `toml:"osv"`
 	// OSOverrides contains per-OS field overrides (e.g. [jdk.darwin]).
 	OSOverrides map[string]PlatformOverride `toml:"-"`
 	// MuslOverride contains the field overrides for musl-based Linux systems
@@ -107,6 +110,26 @@ const (
 	OriginRegistry = "registry" // external registry snapshot (paq registry update)
 	OriginUser     = "user"     // [specs.*] in the user manifest
 )
+
+// OSVPackage identifies a package in an OSV ecosystem (e.g. "crates.io",
+// "Go", "npm"), using OSV's own ecosystem names.
+type OSVPackage struct {
+	Ecosystem string `toml:"ecosystem"`
+	Package   string `toml:"package"`
+}
+
+// OSVTarget returns the OSV package the tool's versions are checked against:
+// the explicit osv table, else the npm package for the "npm" backend. ok is
+// false when the tool has no known OSV counterpart.
+func (r Spec) OSVTarget() (pkg OSVPackage, ok bool) {
+	if r.OSV.Ecosystem != "" && r.OSV.Package != "" {
+		return r.OSV, true
+	}
+	if r.Backend == "npm" && r.Package != "" {
+		return OSVPackage{Ecosystem: "npm", Package: r.Package}, true
+	}
+	return OSVPackage{}, false
+}
 
 // SupportsPlatform reports whether the spec supports the os/arch pair (in
 // paq's canonical vocabulary). Empty Platforms = all allowed. An entry

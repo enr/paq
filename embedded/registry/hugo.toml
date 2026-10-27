@@ -1,5 +1,6 @@
 [hugo]
 backend = "github"
+osv = { ecosystem = "Go", package = "github.com/gohugoio/hugo" }
 repo = "gohugoio/hugo"
 asset = "hugo_{{version}}_{{os}}-{{arch}}.tar.gz"
 archive = "tar.gz"

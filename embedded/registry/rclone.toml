@@ -1,5 +1,6 @@
 [rclone]
 backend = "github"
+osv = { ecosystem = "Go", package = "github.com/rclone/rclone" }
 repo = "rclone/rclone"
 asset = "rclone-v{{version}}-{{os}}-{{arch}}.zip"
 archive = "zip"
