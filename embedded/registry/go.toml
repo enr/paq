@@ -1,5 +1,6 @@
 [go]
 backend = "url"
+osv = { ecosystem = "Go", package = "stdlib" }
 source = "https://dl.google.com/go/go{{version}}.{{os}}-{{arch}}.tar.gz"
 archive = "tar.gz"
 strip_components = 1

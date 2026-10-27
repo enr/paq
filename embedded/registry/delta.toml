@@ -1,5 +1,6 @@
 [delta]
 backend = "github"
+osv = { ecosystem = "crates.io", package = "git-delta" }
 repo = "dandavison/delta"
 tag = "{{version}}"  # delta tags have no "v" prefix (e.g. 0.18.2, not v0.18.2)
 asset = "delta-{{version}}-{{rust_target}}.tar.gz"

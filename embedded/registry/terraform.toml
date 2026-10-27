@@ -1,5 +1,6 @@
 [terraform]
 backend = "url"
+osv = { ecosystem = "Go", package = "github.com/hashicorp/terraform" }
 source = "https://releases.hashicorp.com/terraform/{{version}}/terraform_{{version}}_{{os}}_{{arch}}.zip"
 archive = "zip"
 extract = "terraform{{ext}}"

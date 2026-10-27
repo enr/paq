@@ -59,6 +59,10 @@ func hintFor(err error) string {
 		return "the cryptographic signature could not be verified — the file or the configured public key may be wrong. " +
 			"Do NOT trust the binary until this passes."
 
+	case strings.Contains(msg, "known vulnerabilities found"):
+		return "upgrade the affected tools (`paq upgrade`) or pin a fixed version; " +
+			"look up an ID at https://osv.dev/vulnerability/<id>, or list them all with --json."
+
 	// Missing configuration.
 	case strings.Contains(msg, "not found in manifest"):
 		return "add the app to your manifest (~/.config/paq/config.toml), e.g.\n" +

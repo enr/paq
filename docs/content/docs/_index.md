@@ -286,6 +286,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq init` | | Create a commented manifest skeleton at the default config path |
 | `paq upgrade [app...]` | `up`, `u` | Upgrade tools pinned to `latest` to the newest release |
 | `paq outdated` | | List installed tools that have a newer upstream version (without installing) |
+| `paq audit` | | Check installed tools for known vulnerabilities (via [OSV](https://osv.dev)) |
 | `paq uninstall <app[@version]>...` | `rm`, `remove` | Uninstall one or more tools |
 | `paq lock delete <app>...` | | Drop apps' entries from `paq.lock.toml` |
 | `paq ls` | `list` | List installed tools |
@@ -443,6 +444,30 @@ paq outdated
 paq outdated --verbose      # also report why apps were skipped
 paq outdated --min-age 0h   # ignore minimum_release_age for this run
 ```
+
+### audit
+
+Looks up every installed tool version in the [OSV](https://osv.dev)
+vulnerability database and lists the known vulnerabilities affecting it. All
+lookups go in a single request to `api.osv.dev`; nothing else about your
+machine is sent.
+
+```
+APP      VERSION  VULNS
+go       1.22.0   82  GO-2024-2598, GO-2024-2599, GO-2024-2600 (+79 more)
+esbuild  0.24.0   1  GHSA-67mh-4wv8-2f99
+ripgrep  14.1.1   none known
+jq       1.7.1    ? (no OSV mapping)
+```
+
+Only tools whose recipe maps to an OSV package can be checked: recipes using
+the `npm` backend are mapped automatically, the others through an
+[`osv` table](#vulnerability-lookup-osv). The rest are shown with `?`, which
+means "not checked", not "no vulnerabilities". `--json` lists every ID (the
+table shows the first three); look one up at `https://osv.dev/vulnerability/<id>`.
+
+paq exits with code `3` when at least one installed version is vulnerable, so
+`paq audit` can gate a CI job.
 
 ### uninstall
 
@@ -608,7 +633,7 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 | `--config <path>` | Use this manifest file instead of the default location (also `PAQ_CONFIG`) |
 | `--local` | Project-local mode: use the nearest `paq.toml` and keep state and default install dirs under `.paq/` next to it (also `PAQ_LOCAL`); see [Project-local installs](#project-local-installs---local) |
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `which`, `doctor`); fails on commands that don't support it |
+| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `audit`, `which`, `doctor`); fails on commands that don't support it |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
@@ -631,6 +656,7 @@ assets are always looked up through the API, which also covers private repos.
 | `0` | Success |
 | `1` | Generic failure (network, missing config, app/spec not found, ...) |
 | `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
+| `3` | `paq audit` found known vulnerabilities in installed tools |
 | `4` | Checksum or signature verification failed, or the archive does not match `paq.lock.toml` |
 
 ## Adding a custom recipe
@@ -1064,6 +1090,25 @@ since an older version's checksum is no longer published.
 while `latest_strategy` is only consulted for `version = "latest"`. This lets a
 URL-based tool ship a curated, offline-friendly default while still allowing an
 explicit opt-in to the newest release.
+
+### Vulnerability lookup (osv)
+
+`paq audit` checks a tool against the [OSV](https://osv.dev) database only
+when it knows which OSV package the tool is. Recipes using the `npm` backend
+are mapped to their npm package automatically; for the others, name the
+package with an `osv` table, using
+[OSV's ecosystem names](https://ossf.github.io/osv-schema/#affectedpackage-field):
+
+```toml
+[specs.mytool]
+backend = "github"
+repo = "owner/mytool"
+osv = { ecosystem = "crates.io", package = "mytool" } # or "Go", "PyPI", ...
+```
+
+The installed version is queried as is, so map a tool only to a package whose
+versions match its releases (for a Go module, use the module path of the
+major version the recipe installs, e.g. `github.com/cli/cli/v2`).
 
 ### Custom release tags
 

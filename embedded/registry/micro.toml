@@ -4,6 +4,7 @@
 
 [micro]
 backend = "github"
+osv = { ecosystem = "Go", package = "github.com/zyedidia/micro/v2" }
 repo = "micro-editor/micro"
 asset = "micro-{{version}}-{{os}}{{arch}}.tar.gz"
 archive = "tar.gz"

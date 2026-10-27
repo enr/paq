@@ -1,5 +1,6 @@
 [fd]
 backend = "github"
+osv = { ecosystem = "crates.io", package = "fd-find" }
 repo = "sharkdp/fd"
 asset = "fd-v{{version}}-{{rust_target}}.tar.gz"
 archive = "tar.gz"

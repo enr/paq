@@ -266,6 +266,83 @@ func PrintOutdatedTable(entries []OutdatedEntry) error {
 	return nil
 }
 
+// AuditEntry is a row of the "paq audit" table: an installed record and the
+// known vulnerabilities affecting its version.
+type AuditEntry struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// Checked is false when the tool has no OSV mapping: Vulns is then
+	// empty because nothing was looked up, not because nothing is known.
+	Checked bool     `json:"checked"`
+	Vulns   []string `json:"vulns"`
+}
+
+// maxAuditIDs caps the vulnerability IDs listed per row in the table; --json
+// carries them all.
+const maxAuditIDs = 3
+
+// auditText renders the VULNS cell, e.g. "5  GHSA-a, GHSA-b, GHSA-c (+2 more)".
+func auditText(e AuditEntry) string {
+	switch {
+	case !e.Checked:
+		return "? (no OSV mapping)"
+	case len(e.Vulns) == 0:
+		return "none known"
+	case len(e.Vulns) <= maxAuditIDs:
+		return fmt.Sprintf("%d  %s", len(e.Vulns), strings.Join(e.Vulns, ", "))
+	default:
+		return fmt.Sprintf("%d  %s (+%d more)", len(e.Vulns), strings.Join(e.Vulns[:maxAuditIDs], ", "), len(e.Vulns)-maxAuditIDs)
+	}
+}
+
+// PrintAuditTable prints the installed tools with their known vulnerabilities.
+func PrintAuditTable(entries []AuditEntry) error {
+	if Global.JSON {
+		data, err := json.MarshalIndent(entries, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal entries: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	headers := []string{"APP", "VERSION"}
+	rows := make([][]string, len(entries))
+	for i, e := range entries {
+		rows[i] = []string{e.Name, e.Version}
+	}
+	w := colWidths(headers, rows)
+
+	if !IsColorEnabled() {
+		fmtStr := fmt.Sprintf("%%-%ds %%-%ds %%s\n", w[0], w[1])
+		fmt.Printf(fmtStr, headers[0], headers[1], "VULNS")
+		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), "-----")
+		for _, e := range entries {
+			fmt.Printf(fmtStr, e.Name, e.Version, auditText(e))
+		}
+		return nil
+	}
+
+	fmt.Printf("%s  %s  %s\n",
+		headerStyle.Width(w[0]).Render(headers[0]),
+		headerStyle.Width(w[1]).Render(headers[1]),
+		headerStyle.Render("VULNS"),
+	)
+	vulnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true) // red: a known vulnerability
+	for _, e := range entries {
+		vulns := dimStyle.Render(auditText(e))
+		if len(e.Vulns) > 0 {
+			vulns = vulnStyle.Render(auditText(e))
+		}
+		fmt.Printf("%s  %s  %s\n",
+			nameStyle.Width(w[0]).Render(e.Name),
+			dimStyle.Width(w[1]).Render(e.Version),
+			vulns,
+		)
+	}
+	return nil
+}
+
 // PrintConfigShow prints the evaluated user configuration path and its data:
 // the effective defaults (configured or built-in), the registry cache
 // location and installed snapshot (if any), and the declared apps.
