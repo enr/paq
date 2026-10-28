@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
@@ -37,11 +38,11 @@ func runLs(cmd *cobra.Command, args []string) error {
 	// Reconcile against the filesystem: a record whose files are gone would
 	// otherwise be listed as installed, and nothing in paq would say otherwise.
 	entries := make([]ui.LsEntry, len(st.Packages))
-	missing := 0
+	var missing []string
 	for i, rec := range st.Packages {
 		entries[i] = ui.LsEntry{InstalledApp: rec, Missing: len(rec.MissingPaths()) > 0}
 		if entries[i].Missing {
-			missing++
+			missing = append(missing, rec.Name)
 		}
 	}
 
@@ -51,8 +52,8 @@ func runLs(cmd *cobra.Command, args []string) error {
 
 	// The table keeps its shape; the drift is reported next to it. In --json
 	// mode each entry already carries "missing", so the warning would be noise.
-	if missing > 0 && !ui.Global.JSON {
-		ui.Warn("%d of %d tools are recorded but missing on disk", missing, len(entries))
+	if len(missing) > 0 && !ui.Global.JSON {
+		ui.Warn("%d of %d tools are recorded but missing on disk: %s", len(missing), len(entries), strings.Join(missing, ", "))
 		ui.Hint("run `paq doctor` for details, or reinstall them with `paq install <name>`")
 	}
 	return nil
