@@ -1,0 +1,26 @@
+# shellcheck uses dots as separators and ships a single x86_64 Windows .zip
+# with no os/arch in its name.
+
+[shellcheck]
+backend = "github"
+osv = { ecosystem = "Hackage", package = "ShellCheck" }
+repo = "koalaman/shellcheck"
+asset = "shellcheck-v{{version}}.{{os}}.{{arch}}.tar.gz"
+archive = "tar.gz"
+extract = "shellcheck{{ext}}"
+chmod = "0755"
+platforms = [
+  "linux/amd64",
+  "linux/arm64",
+  "darwin/amd64",
+  "darwin/arm64",
+  "windows/amd64",
+]
+
+[shellcheck.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+[shellcheck.windows]
+asset = "shellcheck-v{{version}}.zip"
+archive = "zip"
