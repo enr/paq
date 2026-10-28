@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
 )
@@ -224,5 +225,31 @@ func TestApplyConfigPathOverrideLocalRejectsConfig(t *testing.T) {
 
 	if err := applyConfigPathOverride(); err == nil {
 		t.Error("expected --config to be rejected together with --local")
+	}
+}
+
+// TestApplyGitHubTokenEnvPerSpec verifies a spec's github_token_env is sent
+// for that spec's repo only, and is skipped while its variable is unset.
+func TestApplyGitHubTokenEnvPerSpec(t *testing.T) {
+	savedOverride := config.PathOverride
+	t.Cleanup(func() { config.PathOverride = savedOverride })
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	manifest := "[specs.own]\nbackend = \"github\"\nrepo = \"Org/OwnToken\"\ngithub_token_env = \"GH_ORG_TOKEN\"\n" +
+		"[specs.unset]\nbackend = \"github\"\nrepo = \"org/unset-token\"\ngithub_token_env = \"GH_UNSET_TOKEN\"\n"
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	config.PathOverride = path
+
+	t.Setenv("GITHUB_TOKEN", "default")
+	t.Setenv("GH_ORG_TOKEN", "org")
+	t.Setenv("GH_UNSET_TOKEN", "")
+	applyGitHubTokenEnv()
+
+	for repo, want := range map[string]string{"org/owntoken": "org", "org/unset-token": "default", "other/repo": "default"} {
+		if got := ghtoken.For(repo); got != want {
+			t.Errorf("ghtoken.For(%q) = %q, want %q", repo, got, want)
+		}
 	}
 }

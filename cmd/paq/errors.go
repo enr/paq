@@ -2,9 +2,9 @@ package main
 
 import (
 	"errors"
-	"os"
 	"strings"
 
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/install"
 	"github.com/enr/paq/internal/ui"
 )
@@ -76,6 +76,14 @@ func hintFor(err error) string {
 		return "check the spec's `backend` field — supported values are \"github\" and \"url\"."
 
 	// Version resolution / GitHub API.
+	// With a token, GitHub answers 404 (not 403) for a repo the token cannot
+	// read, so the token is as likely a culprit as the repo name.
+	case strings.Contains(msg, "github api returned 404") && ghtoken.For(ghtoken.RepoFrom(msg)) != "":
+		return "the repository or release was not found with the GitHub token in use — " +
+			"check the spec `repo` and that the release exists, then that the token can read the repository " +
+			"(a fine-grained token only covers the repos of its resource owner). " +
+			"A spec can name its own token variable with `github_token_env`."
+
 	case strings.Contains(msg, "github api returned 404"),
 		strings.Contains(msg, "github api returned"):
 		return "check the repository name in the spec; if you are rate-limited, set the GITHUB_TOKEN environment variable."
@@ -96,7 +104,7 @@ func hintFor(err error) string {
 	// Without a token, a private repo's release download 404s just like a
 	// wrong repo or version: GitHub does not reveal which one it is.
 	case strings.Contains(msg, "http 404") && strings.Contains(msg, "github.com/") &&
-		strings.Contains(msg, "/releases/download/") && os.Getenv("GITHUB_TOKEN") == "":
+		strings.Contains(msg, "/releases/download/") && ghtoken.For(ghtoken.RepoFrom(msg)) == "":
 		return "the release file was not found — check the spec `repo` and the version; " +
 			"if the repository is private, set the GITHUB_TOKEN environment variable."
 

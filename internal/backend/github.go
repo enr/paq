@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	neturl "net/url"
-	"os"
 	"path"
 	"strings"
 	"time"
 
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/template"
 )
@@ -71,7 +71,7 @@ func (b GitHubBackend) ResolveAsset(ctx context.Context, tag string, v template.
 	// An exact asset name with no token: the public download URL is
 	// predictable, so skip the (rate-limited) API lookup. A token keeps the
 	// API path, which also works for private repos.
-	if !isGlob && os.Getenv("GITHUB_TOKEN") == "" {
+	if !isGlob && ghtoken.For(b.Repo) == "" {
 		escapedTag := strings.ReplaceAll(neturl.PathEscape(tag), "+", "%2B")
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", b.Repo, escapedTag, neturl.PathEscape(pattern)), pattern, nil
 	}
@@ -84,7 +84,7 @@ func (b GitHubBackend) ResolveAsset(ctx context.Context, tag string, v template.
 
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token := ghtoken.For(b.Repo); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -158,7 +158,7 @@ func (b GitHubBackend) matchAssetsInLaterPages(ctx context.Context, client *http
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		if token := ghtoken.For(b.Repo); token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 

@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -135,7 +135,7 @@ func (p GitHubReleaseProvider) getJSON(ctx context.Context, client *http.Client,
 
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token := ghtoken.For(p.Repo); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

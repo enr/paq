@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/enr/paq/internal/config"
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
@@ -169,16 +170,28 @@ func applyConfigPathOverride() error {
 }
 
 // applyGitHubTokenEnv copies the token from the variable named by
-// `[defaults] github_token_env` into GITHUB_TOKEN, the one variable every
-// GitHub request reads. Does nothing if that variable is unset or empty. A
-// manifest that fails to load is ignored here: the command reports it.
+// `[defaults] github_token_env` into GITHUB_TOKEN, the fallback every GitHub
+// request reads, and registers the token named by each spec's
+// `github_token_env` for that spec's repo. A variable that is unset or empty
+// is skipped. A manifest that fails to load is ignored here: the command
+// reports it.
 func applyGitHubTokenEnv() {
 	cfg, err := config.LoadUserConfig()
-	if err != nil || cfg.Defaults.GitHubTokenEnv == "" {
+	if err != nil {
 		return
 	}
-	if token := os.Getenv(cfg.Defaults.GitHubTokenEnv); token != "" {
-		os.Setenv("GITHUB_TOKEN", token)
+	if cfg.Defaults.GitHubTokenEnv != "" {
+		if token := os.Getenv(cfg.Defaults.GitHubTokenEnv); token != "" {
+			os.Setenv("GITHUB_TOKEN", token)
+		}
+	}
+	for _, spec := range cfg.Specs {
+		if spec.GitHubTokenEnv == "" || spec.Repo == "" {
+			continue
+		}
+		if token := os.Getenv(spec.GitHubTokenEnv); token != "" {
+			ghtoken.Set(spec.Repo, token)
+		}
 	}
 }
 

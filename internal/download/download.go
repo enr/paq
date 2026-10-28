@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -58,7 +59,7 @@ func toTemp(ctx context.Context, client *http.Client, url string, maxBytes int64
 	// the token is not exposed to the destination storage.
 	if req.URL.Host == "api.github.com" {
 		req.Header.Set("Accept", "application/octet-stream")
-		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		if token := ghtoken.For(ghtoken.RepoFrom(url)); token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}

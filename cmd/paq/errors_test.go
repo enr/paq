@@ -36,3 +36,13 @@ func TestHintFor(t *testing.T) {
 		})
 	}
 }
+
+// TestHintForGitHub404WithToken verifies a 404 from the GitHub API with a
+// token in use points at the token's access, not at setting one.
+func TestHintForGitHub404WithToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "set")
+	got := hintFor(errors.New("resolve download URL: GitHub API returned 404 for https://api.github.com/repos/o/r/releases/tags/v1"))
+	if !strings.Contains(got, "token can read the repository") || strings.Contains(got, "set the GITHUB_TOKEN") {
+		t.Errorf("hintFor = %q, want the token-access hint", got)
+	}
+}

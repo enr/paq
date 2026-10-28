@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/klauspost/compress/snappy"
 
+	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -41,7 +41,7 @@ func FetchAttestationBundles(ctx context.Context, client *http.Client, repo, sha
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token := ghtoken.For(repo); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

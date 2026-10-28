@@ -62,8 +62,12 @@ type Spec struct {
 	// unset too. Only enforced when "latest" resolves via the "github" or
 	// "npm" backend.
 	MinimumReleaseAge string `toml:"minimum_release_age"`
-	Archive           string `toml:"archive"`
-	Extract           string `toml:"extract"`
+	// GitHubTokenEnv names the environment variable holding the token for
+	// this spec's repo. When that variable is set, it takes precedence over
+	// [defaults] github_token_env and GITHUB_TOKEN for requests to the repo.
+	GitHubTokenEnv string `toml:"github_token_env"`
+	Archive        string `toml:"archive"`
+	Extract        string `toml:"extract"`
 	// Binaries lists multiple executables to extract from the archive and
 	// install into dest (interpreted as a bin directory). Mutually exclusive with Extract.
 	Binaries        []Binary          `toml:"binaries"`

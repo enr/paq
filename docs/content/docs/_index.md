@@ -657,6 +657,18 @@ variable is set, it takes precedence over `GITHUB_TOKEN`:
 github_token_env = "GH_MY_TOKEN"
 ```
 
+A recipe can name its own token variable, for a repo the default token cannot
+read (for instance a private repo of an organization, which a fine-grained
+token scoped to another owner does not cover). When that variable is set, it is
+used for that recipe's repo instead of the default token:
+
+```toml
+[specs.mytool]
+backend = "github"
+repo = "my-org/mytool"
+github_token_env = "GH_MY_ORG_TOKEN"
+```
+
 ## Exit codes
 
 | Code | Meaning |
