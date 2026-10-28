@@ -7,6 +7,7 @@ import (
 )
 
 func TestHintFor(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
 	cases := []struct {
 		name    string
 		err     error
@@ -21,6 +22,7 @@ func TestHintFor(t *testing.T) {
 		{"unsupported platform", errors.New(`"bat" is not available for linux/arm64 (supported: linux/amd64)`), "no build for your OS/architecture"},
 		{"github 404", errors.New("GitHub API returned 404 for https://..."), "GITHUB_TOKEN"},
 		{"download 404", errors.New("download https://...: HTTP 404"), "build exists for your platform"},
+		{"github release 404", errors.New("download https://github.com/o/r/releases/download/v1/x.zip: HTTP 404"), "if the repository is private, set the GITHUB_TOKEN"},
 		{"permission", errors.New("install dir: open /usr/bin/x: permission denied"), "writable"},
 		{"generic", errors.New("something unexpected happened"), "--debug"},
 	}

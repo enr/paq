@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/enr/paq/internal/install"
@@ -91,6 +92,13 @@ func hintFor(err error) string {
 	// Failed download (artifact or auxiliary assets).
 	case strings.Contains(msg, "asset") && strings.Contains(msg, "not found"):
 		return "the release exists but has no matching asset — check the `asset` template, the version, and your OS/arch."
+
+	// Without a token, a private repo's release download 404s just like a
+	// wrong repo or version: GitHub does not reveal which one it is.
+	case strings.Contains(msg, "http 404") && strings.Contains(msg, "github.com/") &&
+		strings.Contains(msg, "/releases/download/") && os.Getenv("GITHUB_TOKEN") == "":
+		return "the release file was not found — check the spec `repo` and the version; " +
+			"if the repository is private, set the GITHUB_TOKEN environment variable."
 
 	case strings.Contains(msg, "http 404"),
 		strings.Contains(msg, "download") && strings.Contains(msg, "http"):
