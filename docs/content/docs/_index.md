@@ -649,6 +649,14 @@ straight from `github.com/<repo>/releases/download/...`, with no API call;
 resolving `"latest"` and matching a glob asset still use the API. With a token,
 assets are always looked up through the API, which also covers private repos.
 
+To read the token from another variable, name it in `[defaults]`; when that
+variable is set, it takes precedence over `GITHUB_TOKEN`:
+
+```toml
+[defaults]
+github_token_env = "GH_MY_TOKEN"
+```
+
 ## Exit codes
 
 | Code | Meaning |

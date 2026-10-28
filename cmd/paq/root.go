@@ -68,6 +68,7 @@ var rootCmd = &cobra.Command{
 		if err := applyConfigPathOverride(); err != nil {
 			return err
 		}
+		applyGitHubTokenEnv()
 		return nil
 	},
 	// Runs only after a successful command: never delays the work and never
@@ -165,6 +166,20 @@ func applyConfigPathOverride() error {
 	}
 	config.PathOverride = resolved
 	return nil
+}
+
+// applyGitHubTokenEnv copies the token from the variable named by
+// `[defaults] github_token_env` into GITHUB_TOKEN, the one variable every
+// GitHub request reads. Does nothing if that variable is unset or empty. A
+// manifest that fails to load is ignored here: the command reports it.
+func applyGitHubTokenEnv() {
+	cfg, err := config.LoadUserConfig()
+	if err != nil || cfg.Defaults.GitHubTokenEnv == "" {
+		return
+	}
+	if token := os.Getenv(cfg.Defaults.GitHubTokenEnv); token != "" {
+		os.Setenv("GITHUB_TOKEN", token)
+	}
 }
 
 // localManifestName is the manifest file that marks a project root in local mode.

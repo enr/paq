@@ -323,6 +323,10 @@ type Defaults struct {
 	// Cosign is the path of the cosign binary used for keyless signature
 	// verification. Empty = look it up (PATH, state, paq's private copy).
 	Cosign string `toml:"cosign"`
+	// GitHubTokenEnv names the environment variable holding the GitHub
+	// token (e.g. "GH_MY_TOKEN"). When that variable is set, it takes
+	// precedence over GITHUB_TOKEN. Empty = only GITHUB_TOKEN is read.
+	GitHubTokenEnv string `toml:"github_token_env"`
 }
 
 // RegistrySettings configures a custom source for "paq registry update"

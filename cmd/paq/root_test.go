@@ -114,6 +114,32 @@ func TestApplyConfigPathOverride(t *testing.T) {
 	}
 }
 
+// TestApplyGitHubTokenEnv verifies `[defaults] github_token_env` overrides
+// GITHUB_TOKEN when the named variable is set, and leaves it alone otherwise.
+func TestApplyGitHubTokenEnv(t *testing.T) {
+	savedOverride := config.PathOverride
+	t.Cleanup(func() { config.PathOverride = savedOverride })
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("[defaults]\ngithub_token_env = \"GH_MY_TOKEN\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	config.PathOverride = path
+
+	t.Setenv("GITHUB_TOKEN", "default")
+	t.Setenv("GH_MY_TOKEN", "")
+	applyGitHubTokenEnv()
+	if got := os.Getenv("GITHUB_TOKEN"); got != "default" {
+		t.Errorf("GITHUB_TOKEN = %q, want %q (GH_MY_TOKEN unset)", got, "default")
+	}
+
+	t.Setenv("GH_MY_TOKEN", "custom")
+	applyGitHubTokenEnv()
+	if got := os.Getenv("GITHUB_TOKEN"); got != "custom" {
+		t.Errorf("GITHUB_TOKEN = %q, want %q (from GH_MY_TOKEN)", got, "custom")
+	}
+}
+
 // withLocalModeReset saves and restores every global local mode touches.
 func withLocalModeReset(t *testing.T) {
 	t.Helper()
