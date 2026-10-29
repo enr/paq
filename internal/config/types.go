@@ -95,8 +95,12 @@ type Spec struct {
 	// (e.g. "linux/amd64" or "linux"). Empty = no restriction (all allowed).
 	// The arch is optional: "linux" matches all arches.
 	Platforms []string `toml:"platforms"`
-	// OSV maps the tool to a package in the OSV vulnerability database, for
-	// "paq audit". Empty = derived from the backend when possible (see OSVTarget).
+	// Audit selects where "paq audit" looks up the tool's known
+	// vulnerabilities. Empty = derived from the backend when possible (see
+	// AuditTarget).
+	Audit AuditSource `toml:"audit"`
+	// OSV is the 0.5.0 spelling of audit = { source = "osv", ... }, still
+	// read when Audit is unset.
 	OSV OSVPackage `toml:"osv"`
 	// OSOverrides contains per-OS field overrides (e.g. [jdk.darwin]).
 	OSOverrides map[string]PlatformOverride `toml:"-"`
@@ -115,24 +119,43 @@ const (
 	OriginUser     = "user"     // [specs.*] in the user manifest
 )
 
-// OSVPackage identifies a package in an OSV ecosystem (e.g. "crates.io",
-// "Go", "npm"), using OSV's own ecosystem names.
+// Vulnerability sources for the audit table.
+const (
+	AuditSourceOSV    = "osv"    // the OSV database (osv.dev)
+	AuditSourceNodejs = "nodejs" // the Node.js Security WG feed, for the Node.js runtime
+)
+
+// AuditSource is the audit table: Source names the vulnerability source, the
+// other fields are that source's parameters.
+type AuditSource struct {
+	Source string `toml:"source"`
+	// Ecosystem and Package identify the package in OSV (source "osv"), using
+	// OSV's own ecosystem names (e.g. "crates.io", "Go", "npm").
+	Ecosystem string `toml:"ecosystem"`
+	Package   string `toml:"package"`
+}
+
+// OSVPackage is the legacy osv table (see Spec.OSV).
 type OSVPackage struct {
 	Ecosystem string `toml:"ecosystem"`
 	Package   string `toml:"package"`
 }
 
-// OSVTarget returns the OSV package the tool's versions are checked against:
-// the explicit osv table, else the npm package for the "npm" backend. ok is
-// false when the tool has no known OSV counterpart.
-func (r Spec) OSVTarget() (pkg OSVPackage, ok bool) {
+// AuditTarget returns the source the tool's versions are checked against:
+// the audit table, else the legacy osv table, else the npm package in OSV for
+// the "npm" backend. ok is false when the tool has no known source. The
+// source is not validated: an unknown name is the caller's to report.
+func (r Spec) AuditTarget() (src AuditSource, ok bool) {
+	if r.Audit.Source != "" {
+		return r.Audit, true
+	}
 	if r.OSV.Ecosystem != "" && r.OSV.Package != "" {
-		return r.OSV, true
+		return AuditSource{Source: AuditSourceOSV, Ecosystem: r.OSV.Ecosystem, Package: r.OSV.Package}, true
 	}
 	if r.Backend == "npm" && r.Package != "" {
-		return OSVPackage{Ecosystem: "npm", Package: r.Package}, true
+		return AuditSource{Source: AuditSourceOSV, Ecosystem: "npm", Package: r.Package}, true
 	}
-	return OSVPackage{}, false
+	return AuditSource{}, false
 }
 
 // SupportsPlatform reports whether the spec supports the os/arch pair (in

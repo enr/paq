@@ -286,7 +286,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq init` | | Create a commented manifest skeleton at the default config path |
 | `paq upgrade [app...]` | `up`, `u` | Upgrade tools pinned to `latest` to the newest release |
 | `paq outdated` | | List installed tools that have a newer upstream version (without installing) |
-| `paq audit` | | Check installed tools for known vulnerabilities (via [OSV](https://osv.dev)) |
+| `paq audit` | | Check installed tools for known vulnerabilities (via [OSV](https://osv.dev) and the Node.js Security WG) |
 | `paq uninstall <app[@version]>...` | `rm`, `remove` | Uninstall one or more tools |
 | `paq lock delete <app>...` | | Drop apps' entries from `paq.lock.toml` |
 | `paq ls` | `list` | List installed tools |
@@ -447,24 +447,29 @@ paq outdated --min-age 0h   # ignore minimum_release_age for this run
 
 ### audit
 
-Looks up every installed tool version in the [OSV](https://osv.dev)
-vulnerability database and lists the known vulnerabilities affecting it. All
-lookups go in a single request to `api.osv.dev`; nothing else about your
-machine is sent.
+Looks up every installed tool version in a vulnerability database and lists
+the known vulnerabilities affecting it. Most tools are checked against
+[OSV](https://osv.dev), with all lookups in a single request to `api.osv.dev`;
+the Node.js runtime, which OSV does not cover, against the
+[Node.js Security WG feed](https://github.com/nodejs/security-wg/tree/main/vuln/core),
+downloaded once per run. Only the tool versions are sent to OSV; nothing else
+about your machine is.
 
 ```
 APP      VERSION  VULNS
 go       1.22.0   82  GO-2024-2598, GO-2024-2599, GO-2024-2600 (+79 more)
 esbuild  0.24.0   1  GHSA-67mh-4wv8-2f99
 ripgrep  14.1.1   none known
-jq       1.7.1    ? (no OSV mapping)
+jq       1.7.1    ? (no vulnerability source)
 ```
 
-Only tools whose recipe maps to an OSV package can be checked: recipes using
-the `npm` backend are mapped automatically, the others through an
-[`osv` table](#vulnerability-lookup-osv). The rest are shown with `?`, which
-means "not checked", not "no vulnerabilities". `--json` lists every ID (the
-table shows the first three); look one up at `https://osv.dev/vulnerability/<id>`.
+Only tools whose recipe names a vulnerability source can be checked: recipes
+using the `npm` backend are mapped to OSV automatically, the others through an
+[`audit` table](#vulnerability-lookup-audit). The rest are shown with `?`,
+which means "not checked", not "no vulnerabilities". `--json` lists every ID
+(the table shows the first three); look one up at
+`https://osv.dev/vulnerability/<id>`. Node.js entries without a CVE are listed
+as `NSWG-CORE-<n>`, entry `<n>` of the Security WG feed.
 
 paq exits with code `3` when at least one installed version is vulnerable, so
 `paq audit` can gate a CI job.
@@ -1111,20 +1116,34 @@ while `latest_strategy` is only consulted for `version = "latest"`. This lets a
 URL-based tool ship a curated, offline-friendly default while still allowing an
 explicit opt-in to the newest release.
 
-### Vulnerability lookup (osv)
+### Vulnerability lookup (audit)
 
-`paq audit` checks a tool against the [OSV](https://osv.dev) database only
-when it knows which OSV package the tool is. Recipes using the `npm` backend
-are mapped to their npm package automatically; for the others, name the
-package with an `osv` table, using
+`paq audit` checks a tool only when its recipe says where to look, with an
+`audit` table: `source` names the vulnerability source, the other keys are
+that source's parameters. Recipes using the `npm` backend are checked in OSV
+against their npm package automatically.
+
+| `source` | Parameters | Checks against |
+|---|---|---|
+| `"osv"` | `ecosystem`, `package` | the [OSV](https://osv.dev) database |
+| `"nodejs"` | none | the [Node.js Security WG feed](https://github.com/nodejs/security-wg/tree/main/vuln/core) (the Node.js runtime only) |
+
+For OSV, name the package using
 [OSV's ecosystem names](https://ossf.github.io/osv-schema/#affectedpackage-field):
 
 ```toml
 [specs.mytool]
 backend = "github"
 repo = "owner/mytool"
-osv = { ecosystem = "crates.io", package = "mytool" } # or "Go", "PyPI", ...
+audit = { source = "osv", ecosystem = "crates.io", package = "mytool" } # or "Go", "PyPI", ...
 ```
+
+The `nodejs` source skips vulnerabilities the feed lists only for other
+operating systems. A source this paq does not know is reported with a warning
+and the tool is shown as not checked.
+
+The paq 0.5.0 form `osv = { ecosystem = "...", package = "..." }` is still
+read, as `audit = { source = "osv", ... }`, when no `audit` table is set.
 
 The installed version is queried as is, so map a tool only to a package whose
 versions match its releases (for a Go module, use the module path of the

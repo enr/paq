@@ -1,6 +1,6 @@
 [gh]
 backend = "github"
-osv = { ecosystem = "Go", package = "github.com/cli/cli/v2" }
+audit = { source = "osv", ecosystem = "Go", package = "github.com/cli/cli/v2" }
 repo = "cli/cli"
 asset = "gh_{{version}}_{{os}}_{{arch}}.tar.gz"
 archive = "tar.gz"

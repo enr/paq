@@ -3,7 +3,7 @@
 
 [yq]
 backend = "github"
-osv = { ecosystem = "Go", package = "github.com/mikefarah/yq/v4" }
+audit = { source = "osv", ecosystem = "Go", package = "github.com/mikefarah/yq/v4" }
 repo = "mikefarah/yq"
 asset = "yq_{{os}}_{{arch}}{{ext}}"
 chmod = "0755"

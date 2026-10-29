@@ -62,6 +62,18 @@ func TestEmbeddedRegistrySpecsAreStructurallyValid(t *testing.T) {
 		if s.Extract != "" && len(s.Binaries) > 0 {
 			t.Errorf("%s: sets both extract and binaries (mutually exclusive)", name)
 		}
+		if s.OSV != (OSVPackage{}) {
+			t.Errorf("%s: uses the legacy osv table, use audit = { source = \"osv\", ... }", name)
+		}
+		switch s.Audit.Source {
+		case "", AuditSourceNodejs:
+		case AuditSourceOSV:
+			if s.Audit.Ecosystem == "" || s.Audit.Package == "" {
+				t.Errorf("%s: audit source osv with no ecosystem or package", name)
+			}
+		default:
+			t.Errorf("%s: unknown audit source %q", name, s.Audit.Source)
+		}
 	}
 }
 

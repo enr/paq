@@ -3,7 +3,7 @@
 
 [shellcheck]
 backend = "github"
-osv = { ecosystem = "Hackage", package = "ShellCheck" }
+audit = { source = "osv", ecosystem = "Hackage", package = "ShellCheck" }
 repo = "koalaman/shellcheck"
 asset = "shellcheck-v{{version}}.{{os}}.{{arch}}.tar.gz"
 archive = "tar.gz"

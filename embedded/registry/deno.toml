@@ -1,6 +1,6 @@
 [deno]
 backend = "github"
-osv = { ecosystem = "crates.io", package = "deno" }
+audit = { source = "osv", ecosystem = "crates.io", package = "deno" }
 repo = "denoland/deno"
 asset = "deno-{{rust_target}}.zip"
 archive = "zip"
