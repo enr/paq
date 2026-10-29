@@ -1,6 +1,6 @@
 [goss]
 backend = "github"
-osv = { ecosystem = "Go", package = "github.com/goss-org/goss" }
+audit = { source = "osv", ecosystem = "Go", package = "github.com/goss-org/goss" }
 repo = "goss-org/goss"
 asset = "goss_{{version}}_{{os}}_{{arch}}.tar.gz"
 archive = "tar.gz"

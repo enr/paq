@@ -1,6 +1,6 @@
 [bat]
 backend = "github"
-osv = { ecosystem = "crates.io", package = "bat" }
+audit = { source = "osv", ecosystem = "crates.io", package = "bat" }
 repo = "sharkdp/bat"
 asset = "bat-v{{version}}-{{rust_target}}.tar.gz"
 archive = "tar.gz"

@@ -271,7 +271,7 @@ func PrintOutdatedTable(entries []OutdatedEntry) error {
 type AuditEntry struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
-	// Checked is false when the tool has no OSV mapping: Vulns is then
+	// Checked is false when the tool has no vulnerability source: Vulns is then
 	// empty because nothing was looked up, not because nothing is known.
 	Checked bool     `json:"checked"`
 	Vulns   []string `json:"vulns"`
@@ -285,7 +285,7 @@ const maxAuditIDs = 3
 func auditText(e AuditEntry) string {
 	switch {
 	case !e.Checked:
-		return "? (no OSV mapping)"
+		return "? (no vulnerability source)"
 	case len(e.Vulns) == 0:
 		return "none known"
 	case len(e.Vulns) <= maxAuditIDs:

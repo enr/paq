@@ -51,3 +51,33 @@ func TestAppEntryTracksLatest(t *testing.T) {
 		})
 	}
 }
+
+func TestSpecAuditTarget(t *testing.T) {
+	tests := []struct {
+		name   string
+		toml   string
+		want   AuditSource
+		wantOK bool
+	}{
+		{"audit table", `audit = { source = "nodejs" }`, AuditSource{Source: "nodejs"}, true},
+		{"legacy osv table", `osv = { ecosystem = "Go", package = "stdlib" }`,
+			AuditSource{Source: "osv", Ecosystem: "Go", Package: "stdlib"}, true},
+		{"audit wins over osv", "audit = { source = \"nodejs\" }\nosv = { ecosystem = \"Go\", package = \"stdlib\" }",
+			AuditSource{Source: "nodejs"}, true},
+		{"npm backend", "backend = \"npm\"\npackage = \"esbuild\"",
+			AuditSource{Source: "osv", Ecosystem: "npm", Package: "esbuild"}, true},
+		{"none", `backend = "github"`, AuditSource{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			specs, err := parseSpecFile([]byte("[x]\n" + tt.toml))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, ok := specs["x"].AuditTarget()
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("AuditTarget() = %+v, %v; want %+v, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}

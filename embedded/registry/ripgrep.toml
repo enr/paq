@@ -1,6 +1,6 @@
 [ripgrep]
 backend = "github"
-osv = { ecosystem = "crates.io", package = "ripgrep" }
+audit = { source = "osv", ecosystem = "crates.io", package = "ripgrep" }
 repo = "BurntSushi/ripgrep"
 tag = "{{version}}"  # ripgrep tags have no "v" prefix (e.g. 15.1.0, not v15.1.0)
 asset = "ripgrep-{{version}}-{{rust_target}}.tar.gz"

@@ -9,14 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/enr/paq/internal/nodevuln"
 	"github.com/enr/paq/internal/osv"
 	"github.com/enr/paq/internal/state"
 )
 
 // auditSetup seeds the state with a recipe mapped to OSV (bat), one mapped
-// through the npm backend (esbuild) and one with no recipe at all, and serves
-// OSV answers from vulns (keyed by package name). It returns the packages the
-// fake OSV server was asked about.
+// through the npm backend (esbuild), one checked against the Node.js feed
+// (node) and one with no recipe at all, and serves OSV answers from vulns
+// (keyed by package name) and a Node.js feed listing vulns["node"] as one
+// entry affecting node 24.1.0. It returns the packages the fake OSV server
+// was asked about.
 func auditSetup(t *testing.T, vulns map[string][]string) *[]string {
 	t.Helper()
 	dir := t.TempDir()
@@ -29,6 +32,7 @@ func auditSetup(t *testing.T, vulns map[string][]string) *[]string {
 	}
 	st.Set(state.InstalledApp{Name: "bat", Version: "0.18.0", Kind: "file", Dest: dir + "/bat"})
 	st.Set(state.InstalledApp{Name: "esbuild", Version: "0.25.0", Kind: "file", Dest: dir + "/esbuild"})
+	st.Set(state.InstalledApp{Name: "node", Version: "24.1.0", Kind: "dir", Dest: dir + "/node"})
 	st.Set(state.InstalledApp{Name: "unmapped", Version: "1.0.0", Kind: "file", Dest: dir + "/unmapped"})
 	if err := st.Save(); err != nil {
 		t.Fatal(err)
@@ -65,11 +69,21 @@ func auditSetup(t *testing.T, vulns map[string][]string) *[]string {
 	}))
 	t.Cleanup(srv.Close)
 	withFlag(t, &osv.BatchURL, srv.URL)
+
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entries := map[string]any{}
+		if cves := vulns["node"]; len(cves) > 0 {
+			entries["1"] = map[string]any{"cve": cves, "vulnerable": "24.x", "patched": "^24.2.0", "affectedEnvironments": []string{"all"}}
+		}
+		json.NewEncoder(w).Encode(entries)
+	}))
+	t.Cleanup(feed.Close)
+	withFlag(t, &nodevuln.IndexURL, feed.URL)
 	return &asked
 }
 
 func TestRunAuditReportsVulnerabilities(t *testing.T) {
-	asked := auditSetup(t, map[string][]string{"bat": {"GHSA-p24j-h477-76q3", "RUSTSEC-2021-0106"}})
+	asked := auditSetup(t, map[string][]string{"bat": {"GHSA-p24j-h477-76q3", "RUSTSEC-2021-0106"}, "node": {"CVE-2026-0001"}})
 
 	var runErr error
 	out := withJSON(t, func() { runErr = runAudit(cmdWithContext(), nil) })
@@ -97,7 +111,7 @@ func TestRunAuditReportsVulnerabilities(t *testing.T) {
 			t.Errorf("%s: checked = %v", e.Name, e.Checked)
 		}
 	}
-	want := map[string]string{"bat": "GHSA-p24j-h477-76q3,RUSTSEC-2021-0106", "esbuild": "", "unmapped": ""}
+	want := map[string]string{"bat": "GHSA-p24j-h477-76q3,RUSTSEC-2021-0106", "esbuild": "", "node": "CVE-2026-0001", "unmapped": ""}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("vulns = %v, want %v", got, want)
 	}
@@ -112,7 +126,7 @@ func TestRunAuditCleanTable(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("runAudit: %v", runErr)
 	}
-	for _, want := range []string{"VULNS", "none known", "? (no OSV mapping)"} {
+	for _, want := range []string{"VULNS", "none known", "? (no vulnerability source)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in the table, got:\n%s", want, out)
 		}
