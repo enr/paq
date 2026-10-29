@@ -4,7 +4,7 @@ audit = { source = "osv", ecosystem = "Go", package = "stdlib" }
 source = "https://dl.google.com/go/go{{version}}.{{os}}-{{arch}}.tar.gz"
 archive = "tar.gz"
 strip_components = 1
-default_version = "1.27.1"
+default_version = "1.27.3"
 # With version = "latest" the version is read from the go.dev download index,
 # whose first entry is the newest stable release (e.g. "go1.27.1").
 latest_strategy = "json"

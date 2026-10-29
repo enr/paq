@@ -4,7 +4,7 @@ source = "https://nodejs.org/dist/v{{version}}/node-v{{version}}-{{os}}-{{arch}}
 archive = "tar.xz"
 strip_components = 1
 # LTS.
-default_version = "24.18.0"
+default_version = "24.22.2"
 audit = { source = "nodejs" }
 
 [node.arch]

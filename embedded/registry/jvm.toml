@@ -6,7 +6,7 @@ source = "https://download.oracle.com/java/{{version}}/latest/jdk-{{version}}_{{
 archive = "tar.gz"
 strip_components = 1
 # Version installed by default (when "version" is absent from the manifest).
-default_version = "26"
+default_version = "27"
 
 [jdk.os]
 darwin = "macos"
