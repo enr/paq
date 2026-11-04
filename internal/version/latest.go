@@ -40,7 +40,7 @@ type LatestRequest struct {
 // upfront whether "latest" will produce a version or an error (e.g. import).
 func (req LatestRequest) Resolvable() bool {
 	if req.Strategy != "" {
-		return req.Strategy == "arch-linux" || req.Strategy == "json"
+		return req.Strategy == "arch-linux" || req.Strategy == "json" || req.Strategy == "nodejs"
 	}
 	return req.Backend == "github" || req.Backend == "npm"
 }
@@ -53,6 +53,7 @@ func (req LatestRequest) Resolvable() bool {
 // (e.g. backend "url" + strategy "arch-linux"). Supported strategies:
 //   - "arch-linux": latest version from the official Arch repos (ArchLinuxProvider).
 //   - "json": version selected out of a JSON document fetched over HTTP (JSONProvider).
+//   - "nodejs": newest LTS release from the official Node.js index (NodejsProvider).
 //
 // With no explicit strategy the backend is used. Supported backends:
 //   - "github": resolves from the GitHub releases API (GitHubReleaseProvider).
@@ -69,6 +70,8 @@ func LatestProvider(req LatestRequest) Provider {
 			return ArchLinuxProvider{Pkg: req.ArchPkg, HTTPClient: req.HTTPClient}
 		case "json":
 			return JSONProvider{URL: req.URL, Selector: req.Selector, HTTPClient: req.HTTPClient}
+		case "nodejs":
+			return NodejsProvider{HTTPClient: req.HTTPClient}
 		default:
 			return notImplementedProvider{backend: req.Strategy}
 		}

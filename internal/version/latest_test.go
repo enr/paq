@@ -65,6 +65,7 @@ func TestLatestRequestResolvable(t *testing.T) {
 	}{
 		{LatestRequest{Backend: "github", Repo: "x/y"}, true},
 		{LatestRequest{Strategy: "arch-linux", ArchPkg: "rg"}, true},
+		{LatestRequest{Strategy: "nodejs", Backend: "url"}, true},
 		{LatestRequest{Backend: "npm", Package: "esbuild"}, true},
 		{LatestRequest{Backend: "url"}, false},
 		{LatestRequest{Strategy: "nope", Backend: "github"}, false},

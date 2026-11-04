@@ -5,6 +5,8 @@ archive = "tar.xz"
 strip_components = 1
 # LTS.
 default_version = "24.22.2"
+# With version = "latest" the newest LTS release is read from the Node.js index.
+latest_strategy = "nodejs"
 audit = { source = "nodejs" }
 
 [node.arch]
