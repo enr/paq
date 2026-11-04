@@ -1110,6 +1110,11 @@ its newest build: version and checksum then come from one source instead of
 racing each other. Such a recipe tracks the newest release and cannot be pinned,
 since an older version's checksum is no longer published.
 
+The `nodejs` strategy takes no parameters: it reads the official Node.js
+release index (`https://nodejs.org/dist/index.json`) and picks the highest
+LTS release, skipping prereleases and Current releases. The embedded `node`
+recipe uses it.
+
 `default_version` and `latest_strategy` are independent and can coexist:
 `default_version` is the stable release installed when the app sets no version,
 while `latest_strategy` is only consulted for `version = "latest"`. This lets a
