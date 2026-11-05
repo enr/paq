@@ -11,6 +11,7 @@ import (
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/install"
+	"github.com/enr/paq/internal/ui"
 )
 
 // newTestConfig builds a minimal Config with a "ripgrep" spec in the
@@ -32,7 +33,7 @@ func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
 	var ran []string
 
 	err := runParallel(context.Background(), []string{"ok-a", "broken", "ok-b"}, "installed",
-		func(ctx context.Context, name string, hooks *install.Hooks) error {
+		func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
 			mu.Lock()
 			ran = append(ran, name)
 			mu.Unlock()
@@ -61,7 +62,7 @@ func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
 // whatever order the goroutines happened to finish in.
 func TestRunParallelSortsFailuresAlphabetically(t *testing.T) {
 	err := runParallel(context.Background(), []string{"zeta", "alpha"}, "installed",
-		func(ctx context.Context, name string, hooks *install.Hooks) error {
+		func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
 			return errors.New("HTTP 404")
 		})
 

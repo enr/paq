@@ -34,6 +34,9 @@ var jsonCapableCommands = map[string]bool{
 	"paq audit":           true,
 	"paq which":           true,
 	"paq doctor":          true,
+	"paq install":         true,
+	"paq upgrade":         true,
+	"paq uninstall":       true,
 }
 
 var (
@@ -64,7 +67,7 @@ var rootCmd = &cobra.Command{
 			Debug:   flagDebug,
 		}
 		if flagJSON && cmd.Runnable() && !jsonCapableCommands[cmd.CommandPath()] {
-			return fmt.Errorf("--json is not supported by %q", cmd.CommandPath())
+			return usageError{fmt.Sprintf("--json is not supported by %q", cmd.CommandPath())}
 		}
 		if err := applyConfigPathOverride(); err != nil {
 			return err
@@ -141,7 +144,7 @@ func applyConfigPathOverride() error {
 	config.ProjectRoot, state.PathOverride = "", ""
 	if localMode() {
 		if flagConfig != "" {
-			return fmt.Errorf("--config cannot be combined with --local")
+			return usageError{"--config cannot be combined with --local"}
 		}
 		root, err := findProjectRoot()
 		if err != nil {

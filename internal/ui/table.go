@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -49,12 +48,7 @@ type LsEntry struct {
 // PrintLsTable prints the table of installed packages.
 func PrintLsTable(entries []LsEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	packages := make([]state.InstalledApp, len(entries))
@@ -112,12 +106,7 @@ type RegistryEntry struct {
 // PrintAvailableTable prints the table of specs available in the embedded registry.
 func PrintAvailableTable(entries []RegistryEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	cell := func(s string) string {
@@ -201,12 +190,7 @@ func shortDuration(d time.Duration) string {
 // PrintOutdatedTable prints the apps that have a newer upstream version available.
 func PrintOutdatedTable(entries []OutdatedEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	if len(entries) == 0 {
@@ -298,12 +282,7 @@ func auditText(e AuditEntry) string {
 // PrintAuditTable prints the installed tools with their known vulnerabilities.
 func PrintAuditTable(entries []AuditEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	headers := []string{"APP", "VERSION"}
@@ -370,12 +349,7 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 			"registry_cache":     cache,
 			"apps":               apps,
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal config: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(out)
 	}
 
 	// Key in bold blue, value in green, annotations in gray, so labels and
@@ -527,12 +501,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 		if lockedVersion != "" {
 			out["locked_version"] = lockedVersion
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal info: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(out)
 	}
 
 	render := func(label, value string) {
@@ -622,12 +591,7 @@ func PrintSpecDetail(name string, spec config.Spec) error {
 			"name": name,
 			"spec": spec,
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal spec: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(out)
 	}
 
 	render := func(label, value string) {

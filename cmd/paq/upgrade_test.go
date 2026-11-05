@@ -117,7 +117,7 @@ func TestUpgradeAppEmptyVersionNoDefaultTracksLatest(t *testing.T) {
 	var steps []string
 	hooks := &install.Hooks{OnStep: func(msg string) { steps = append(steps, msg) }}
 
-	if err := upgradeApp(context.Background(), cfg, "tool", hooks, nil); err != nil {
+	if err := upgradeApp(context.Background(), cfg, "tool", hooks, nil, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, s := range steps {
@@ -149,7 +149,7 @@ func TestUpgradeAppEmptyVersionWithDefaultSkipsWithDefaultInMessage(t *testing.T
 	var steps []string
 	hooks := &install.Hooks{OnStep: func(msg string) { steps = append(steps, msg) }}
 
-	if err := upgradeApp(context.Background(), cfg, "tool", hooks, nil); err != nil {
+	if err := upgradeApp(context.Background(), cfg, "tool", hooks, nil, nil); err != nil {
 		t.Fatalf("expected pinned app to be skipped without error, got: %v", err)
 	}
 	if len(steps) != 1 {
@@ -399,7 +399,7 @@ func TestUpgradeAppIgnoresTheLockfile(t *testing.T) {
 		t.Fatalf("seed state: %v", err)
 	}
 
-	if err := upgradeApp(context.Background(), cfg, "tool", &install.Hooks{}, nil); err != nil {
+	if err := upgradeApp(context.Background(), cfg, "tool", &install.Hooks{}, nil, nil); err != nil {
 		t.Fatalf("upgradeApp: %v", err)
 	}
 

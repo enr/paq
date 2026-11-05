@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -95,12 +94,7 @@ func runRegistryStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if ui.Global.JSON {
-		data, err := json.MarshalIndent(st, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal status: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return ui.PrintJSON(st)
 	}
 
 	ui.OKField("Embedded registry", fmt.Sprintf("%s (%d recipes)", Version, len(embeddedSpecs)))

@@ -69,15 +69,16 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	if flagUninstallDryRun {
 		printUninstallTargets("dry-run: would remove:", targets)
-		return nil
+		return printResults(uninstallResults(targets, "would_uninstall"))
 	}
 
 	// Ask for confirmation unless --yes was passed. A non-interactive session
-	// (no TTY on stdout) can't be prompted, so it must pass --yes explicitly
-	// instead of proceeding unconfirmed.
+	// (no TTY on stdout, or --json, whose stdout belongs to the result) can't
+	// be prompted, so it must pass --yes explicitly instead of proceeding
+	// unconfirmed.
 	if !flagUninstallYes {
-		if !uninstallIsTTY() {
-			return fmt.Errorf("refusing to uninstall without confirmation in a non-interactive session: pass --yes")
+		if !uninstallIsTTY() || ui.Global.JSON {
+			return usageError{"refusing to uninstall without confirmation in a non-interactive session: pass --yes"}
 		}
 		printUninstallTargets("This will remove:", targets)
 		if !confirmYesNo(os.Stdin, "Continue?") {
@@ -112,7 +113,16 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	ui.OK("%s uninstalled", strings.Join(names, ", "))
-	return nil
+	return printResults(uninstallResults(targets, "uninstalled"))
+}
+
+// uninstallResults builds the --json outcome of each removed state entry.
+func uninstallResults(targets []state.InstalledApp, status string) []ui.ActionResult {
+	results := make([]ui.ActionResult, len(targets))
+	for i, rec := range targets {
+		results[i] = ui.ActionResult{Name: rec.Name, Status: status, Version: rec.Version, Dest: rec.Dest}
+	}
+	return results
 }
 
 // resolveUninstallTargets resolves a single "name" or "name@version" argument

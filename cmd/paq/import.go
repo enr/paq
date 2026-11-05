@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -91,11 +90,9 @@ func runImport(cmd *cobra.Command, args []string) error {
 
 	if !flagImportWrite {
 		if ui.Global.JSON {
-			data, err := json.MarshalIndent(map[string]any{"app": key, "entry": entry}, "", "  ")
-			if err != nil {
-				return fmt.Errorf("marshal entry: %w", err)
+			if err := ui.PrintJSON(map[string]any{"app": key, "entry": entry}); err != nil {
+				return err
 			}
-			fmt.Println(string(data))
 		} else {
 			fmt.Print(block)
 		}

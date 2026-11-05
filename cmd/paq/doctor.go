@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,6 +39,7 @@ type doctorCheck struct {
 type doctorReport struct {
 	Checks   []doctorCheck `json:"checks"`
 	Problems int           `json:"problems"`
+	Warnings int           `json:"warnings"`
 }
 
 var doctorCmd = &cobra.Command{
@@ -50,10 +50,14 @@ var doctorCmd = &cobra.Command{
 	RunE:  runDoctor,
 }
 
-var doctorFix bool
+var (
+	doctorFix    bool
+	doctorStrict bool
+)
 
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "add the bin dir to the user PATH if missing (Windows only)")
+	doctorCmd.Flags().BoolVar(&doctorStrict, "strict", false, "exit non-zero on warnings too (e.g. bin dir not in PATH), for CI gates")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -67,8 +71,10 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// registry cache (it falls back to the embedded recipes), a manifest or
 	// state file that does not exist yet, a bin dir outside PATH, an unset
 	// GITHUB_TOKEN.
+	//
+	// --strict makes the warnings fail the command too.
 	var checks []doctorCheck
-	problems := 0
+	problems, warnings := 0, 0
 
 	// reportOK/reportWarn record one row of the "label: value" shape: in
 	// --json mode into checks (jsonName), otherwise through the same
@@ -86,6 +92,8 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	reportWarn := func(jsonName, humanLabel, value, note, hint string, isProblem bool, details ...string) {
 		if isProblem {
 			problems++
+		} else {
+			warnings++
 		}
 		if ui.Global.JSON {
 			checks = append(checks, doctorCheck{
@@ -254,6 +262,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 			}
 			// Advisory only: an app installed via `paq install` still runs by
 			// full path, so a bin dir outside PATH is not counted as a problem.
+			warnings++
 			if ui.Global.JSON {
 				checks = append(checks, doctorCheck{
 					Name: "path", Status: "warn",
@@ -282,12 +291,16 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	}
 
 	if ui.Global.JSON {
-		data, _ := json.MarshalIndent(doctorReport{Checks: checks, Problems: problems}, "", "  ")
-		fmt.Println(string(data))
+		if err := ui.PrintJSON(doctorReport{Checks: checks, Problems: problems, Warnings: warnings}); err != nil {
+			return err
+		}
 	}
 
 	if problems > 0 {
 		return fmt.Errorf("%d problem(s) found", problems)
+	}
+	if doctorStrict && warnings > 0 {
+		return fmt.Errorf("%d warning(s) found (--strict)", warnings)
 	}
 	return nil
 }

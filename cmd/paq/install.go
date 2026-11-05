@@ -71,7 +71,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	if flagInstallDest != "" && len(args) != 1 {
-		return fmt.Errorf("--dest needs exactly one app")
+		return usageError{"--dest needs exactly one app"}
 	}
 
 	// A single explicit app gets the friendlier single-app UX: no [name]
@@ -89,8 +89,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if ui.IsTTY() && !ui.Global.JSON {
 			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
 		}
+		res := ui.ActionResult{Name: name}
+		hooks.OnResult = installResultHook(&res)
 		progress := ui.NewProgressFn(name)
-		return install.Run(ctx, cfg, name, progress, hooks)
+		return finishSingle(&res, install.Run(ctx, cfg, name, progress, hooks))
 	}
 
 	if len(args) > 1 {
@@ -119,6 +121,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	// No args: install all apps from the manifest.
 	if len(cfg.Apps) == 0 {
+		if ui.Global.JSON {
+			return printResults([]ui.ActionResult{})
+		}
 		fmt.Println("No apps configured in manifest (~/.config/paq/config.toml): nothing to install.")
 		ui.Hint("install a tool with `paq install <name>` (find one with `paq search <name>`)")
 		return nil
@@ -132,10 +137,45 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 // installParallel installs names concurrently (max maxParallel goroutines).
 func installParallel(ctx context.Context, cfg *config.Config, names []string) error {
-	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks) error {
+	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
 		hooks.Force = flagInstallForce
+		hooks.OnResult = installResultHook(res)
 		return install.Run(ctx, cfg, name, nil, hooks)
 	})
+}
+
+// installResultHook returns an OnResult hook that fills res from the
+// pipeline's outcome.
+func installResultHook(res *ui.ActionResult) func(install.Result) {
+	return func(r install.Result) {
+		res.Status, res.Version, res.Dest = "installed", r.Version, r.Dest
+		if r.AlreadyInstalled {
+			res.Status = "already_installed"
+		}
+	}
+}
+
+// finishSingle completes res with err (if any), prints it in --json mode and
+// returns err.
+func finishSingle(res *ui.ActionResult, err error) error {
+	if err != nil {
+		res.Status = "failed"
+		res.Error, res.Hint = messageAndHint(err)
+	}
+	if perr := printResults([]ui.ActionResult{*res}); perr != nil && err == nil {
+		return perr
+	}
+	return err
+}
+
+// printResults prints the per-app outcomes, sorted by name, in --json mode;
+// human output already reported them line by line.
+func printResults(results []ui.ActionResult) error {
+	if !ui.Global.JSON {
+		return nil
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
+	return ui.PrintJSON(results)
 }
 
 // batchError summarizes the outcome of a parallel run. The per-app errors
@@ -165,11 +205,12 @@ func (e batchError) Is(target error) bool {
 // action runs to completion (only Ctrl-C, via ctx, cancels the batch) and the
 // outcomes are collected into a final summary. verb names the successful
 // outcome in that summary ("installed", "upgraded").
-func runParallel(ctx context.Context, names []string, verb string, action func(context.Context, string, *install.Hooks) error) error {
+func runParallel(ctx context.Context, names []string, verb string, action func(context.Context, string, *install.Hooks, *ui.ActionResult) error) error {
 	var (
 		stdoutMu sync.Mutex
 		done     int
 		failed   []string
+		results  []ui.ActionResult
 		// Tracked here rather than re-derived from the summary text: the
 		// per-app errors are not reachable from the returned batchError.
 		failedVerification bool
@@ -183,10 +224,16 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)
 			hooks := lockedAppHooks(prefix, &stdoutMu)
-			err := action(ctx, name, hooks)
+			res := ui.ActionResult{Name: name}
+			err := action(ctx, name, hooks, &res)
 
 			stdoutMu.Lock()
 			defer stdoutMu.Unlock()
+			if err != nil {
+				res.Status = "failed"
+				res.Error, res.Hint = messageAndHint(err)
+			}
+			results = append(results, res)
 			if err != nil {
 				// The pipeline already shows the error via OnFail; we only
 				// reprint it if for some reason it wasn't shown.
@@ -205,6 +252,9 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 	}
 	_ = g.Wait() // the goroutines never return an error: outcomes are collected above
 
+	if err := printResults(results); err != nil {
+		return err
+	}
 	if len(failed) > 0 {
 		sort.Strings(failed)
 		return batchError{

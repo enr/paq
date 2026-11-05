@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -79,12 +78,7 @@ func runWhich(cmd *cobra.Command, args []string) error {
 	matches = present
 
 	if ui.Global.JSON {
-		data, err := json.MarshalIndent(matches, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal matches: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return ui.PrintJSON(matches)
 	}
 
 	for _, rec := range matches {

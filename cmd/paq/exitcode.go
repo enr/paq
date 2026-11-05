@@ -17,6 +17,27 @@ const (
 	exitVerify     = 4 // checksum or signature verification failed
 )
 
+// usageError is a CLI misuse detected by paq itself rather than by cobra's
+// parsing (e.g. incompatible flags): it exits with exitUsage too.
+type usageError struct{ msg string }
+
+func (e usageError) Error() string { return e.msg }
+
+// exitCodeName returns the stable name of an exit code, used as the "code" of
+// the --json error document.
+func exitCodeName(code int) string {
+	switch code {
+	case exitUsage:
+		return "usage"
+	case exitVulnerable:
+		return "vulnerable"
+	case exitVerify:
+		return "verification_failed"
+	default:
+		return "error"
+	}
+}
+
 // exitCodeFor maps err to a process exit code. Verification failures are
 // recognized by verify.ErrVerification, which survives wrapping and any
 // rewording of the message. Usage errors still rely on cobra's message
@@ -37,11 +58,14 @@ func exitCodeFor(err error) int {
 	}
 }
 
-// isUsageError reports whether err comes from cobra's own flag/argument
+// isUsageError reports whether err is a usageError or comes from cobra's own flag/argument
 // parsing rather than from a command's RunE. Cobra does not tag these
 // errors distinctly, so they are recognized by the fixed message prefixes
 // it generates (see cobra's args.go and command.go).
 func isUsageError(err error) bool {
+	if errors.As(err, new(usageError)) {
+		return true
+	}
 	msg := err.Error()
 	usagePrefixes := []string{
 		"unknown command",

@@ -25,25 +25,68 @@ func (e hintError) Error() string { return e.msg }
 
 // reportError is the single point of presentation for CLI errors.
 // Prints the error in red (if not already shown by the pipeline) and, when
-// possible, a concrete suggestion on how to resolve it.
+// possible, a concrete suggestion on how to resolve it. With --json it also
+// prints the error as a JSON document on stdout, unless the command already
+// printed its own result there.
 func reportError(err error) {
 	if err == nil {
 		return
 	}
-	var he hintError
-	if errors.As(err, &he) {
-		ui.Fail("%s", he.msg)
-		if he.hint != "" {
-			ui.Hint("%s", he.hint)
-		}
-		return
+	msg, hint := messageAndHint(err)
+	if jsonRequested() && !ui.JSONWritten {
+		code := exitCodeFor(err)
+		_ = ui.PrintJSON(jsonErrorDoc{Error: jsonErrorBody{
+			Code: exitCodeName(code), ExitCode: code, Message: msg, Hint: hint,
+		}})
 	}
-	if !install.ErrAlreadyShown(err) {
-		ui.Fail("%v", err)
+	if errors.As(err, new(hintError)) || !install.ErrAlreadyShown(err) {
+		ui.Fail("%s", msg)
 	}
-	if hint := hintFor(err); hint != "" {
+	if hint != "" {
 		ui.Hint("%s", hint)
 	}
+}
+
+// messageAndHint returns the message to show for err and a suggestion on how
+// to fix it: a hintError's own, or one derived from the error.
+func messageAndHint(err error) (msg, hint string) {
+	var he hintError
+	if errors.As(err, &he) {
+		return he.msg, he.hint
+	}
+	return err.Error(), hintFor(err)
+}
+
+// jsonErrorDoc is the document --json prints on stdout when a command fails
+// before producing its own output.
+type jsonErrorDoc struct {
+	Error jsonErrorBody `json:"error"`
+}
+
+type jsonErrorBody struct {
+	// Code names the failure class; it maps one-to-one to ExitCode.
+	Code     string `json:"code"`
+	ExitCode int    `json:"exit_code"`
+	Message  string `json:"message"`
+	Hint     string `json:"hint,omitempty"`
+}
+
+// jsonRequested reports whether the user asked for --json. It also scans the
+// raw arguments, because an unknown command or flag fails before cobra has
+// parsed --json.
+func jsonRequested() bool {
+	if ui.Global.JSON || flagJSON {
+		return true
+	}
+	for _, a := range os.Args[1:] {
+		if a == "--" {
+			break
+		}
+		if a == "--json" || a == "-j" || a == "--json=true" {
+			return true
+		}
+	}
+	return false
 }
 
 // hintFor returns an actionable suggestion based on the error's content.

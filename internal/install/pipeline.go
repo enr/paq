@@ -32,6 +32,9 @@ type Hooks struct {
 	OnInfo  func(msg string)
 	OnWarn  func(msg string)
 	OnDebug func(msg string)
+	// OnResult is called once when the install succeeds, with what ended up
+	// on disk (for machine-readable output).
+	OnResult func(Result)
 	// Force bypasses the already-installed check and reinstalls unconditionally.
 	Force bool
 	// RequireVerify fails the install of a recipe that configures no
@@ -51,6 +54,15 @@ type Hooks struct {
 	// regular tool, false to use paq's private copy, or an error to abort.
 	// Nil means the private copy, without asking.
 	CosignMissing func(ctx context.Context) (userInstalled bool, err error)
+}
+
+// Result describes a successful install.
+type Result struct {
+	Version string
+	Dest    string
+	// AlreadyInstalled is true when the version was already on disk and
+	// nothing was downloaded.
+	AlreadyInstalled bool
 }
 
 // shownError marks an error as already shown to the user via the OnFail hook,
@@ -286,6 +298,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 					warn(fmt.Sprintf("%s %s is recorded as installed but missing on disk (%s): reinstalling", appName, ver, strings.Join(gone, ", ")))
 				} else {
 					ok(fmt.Sprintf("%s %s is already installed (use --force to reinstall)", appName, ver))
+					if hooks.OnResult != nil {
+						hooks.OnResult(Result{Version: ver, Dest: rec.Dest, AlreadyInstalled: true})
+					}
 					return nil
 				}
 			}
@@ -811,6 +826,9 @@ func Run(ctx context.Context, cfg *config.Config, appName string, progress downl
 		}
 	}
 
+	if hooks.OnResult != nil {
+		hooks.OnResult(Result{Version: ver, Dest: dest})
+	}
 	return nil
 }
 

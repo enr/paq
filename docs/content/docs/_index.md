@@ -298,7 +298,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
 | `paq config show` | | Show the config path, effective default directories, registry cache, and apps |
-| `paq doctor` | | Check the paq environment, paths, `PATH`, and installed-tool drift |
+| `paq doctor` | | Check the paq environment, paths, `PATH`, and installed-tool drift; exits non-zero on problems, and with `--strict` on warnings too |
 | `paq self-update` | | Update paq itself to the latest release |
 | `paq version` | | Print the paq version |
 | `paq completion <shell>` | | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`) |
@@ -488,7 +488,7 @@ paq uninstall rg --dry-run    # show what would be removed
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Show what would be removed without removing anything |
-| `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions) |
+| `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions and with `--json`) |
 
 ### lock
 
@@ -638,7 +638,7 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 | `--config <path>` | Use this manifest file instead of the default location (also `PAQ_CONFIG`) |
 | `--local` | Project-local mode: use the nearest `paq.toml` and keep state and default install dirs under `.paq/` next to it (also `PAQ_LOCAL`); see [Project-local installs](#project-local-installs---local) |
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `audit`, `which`, `doctor`); fails on commands that don't support it |
+| `-j`, `--json` | Output as JSON (`install`, `upgrade`, `uninstall`, `ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `audit`, `which`, `doctor`); fails with a usage error on commands that don't support it. See [JSON output](#json-output) |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
@@ -674,13 +674,50 @@ repo = "my-org/mytool"
 github_token_env = "GH_MY_ORG_TOKEN"
 ```
 
+## JSON output
+
+With `--json`, stdout holds exactly one JSON document; progress, warnings and
+hints go to stderr.
+
+`install`, `upgrade` and `uninstall` print one entry per app, sorted by name,
+also when some of them fail (the exit code is then non-zero):
+
+```json
+[
+  { "name": "esbuild", "status": "installed", "version": "0.28.2", "dest": "/home/me/.local/bin/esbuild" },
+  { "name": "jq", "status": "failed", "error": "resolve version: ...", "hint": "..." }
+]
+```
+
+`status` is one of `installed`, `already_installed`, `upgraded`, `up_to_date`,
+`skipped` (with a `reason`), `uninstalled`, `would_uninstall` (`--dry-run`) or
+`failed` (with `error` and, when paq has one, `hint`). `uninstall --json` never
+prompts: pass `--yes`.
+
+A command that fails before producing its result (an unknown command or flag,
+an app that is not in the registry, ...) prints an error document instead:
+
+```json
+{
+  "error": {
+    "code": "error",
+    "exit_code": 1,
+    "message": "\"rg\" is not in your manifest and not a known registry spec",
+    "hint": "did you mean: ripgrep?"
+  }
+}
+```
+
+`code` names the exit code: `error` (1), `usage` (2), `vulnerable` (3),
+`verification_failed` (4).
+
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
 | `1` | Generic failure (network, missing config, app/spec not found, ...) |
-| `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
+| `2` | Wrong CLI usage (unknown flag/command, bad argument count, incompatible flags, `--json` on a command without JSON output) |
 | `3` | `paq audit` found known vulnerabilities in installed tools |
 | `4` | Checksum or signature verification failed, or the archive does not match `paq.lock.toml` |
 
