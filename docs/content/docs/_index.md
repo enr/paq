@@ -292,7 +292,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq ls` | `list` | List installed tools |
 | `paq which <app[@version]>` | | Print the installed path(s) of a tool |
 | `paq info <app>` | | Show definition and install state for a manifest app |
-| `paq search <query>` | `s` | Search the registry for tool definitions |
+| `paq search [query]` | `s` | Search the registry for tool definitions by name or by the executable they install (`paq search rg`); lists them all with no query |
 | `paq registry list [query]` | `reg` | List tool definitions in the registry, with their source (`paq reg ls` also works) |
 | `paq registry show <name>` | `reg` | Show details of a single registry definition |
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |

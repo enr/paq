@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/enr/paq/internal/ghtoken"
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/template"
 )
@@ -95,7 +96,7 @@ func (b GitHubBackend) ResolveAsset(ctx context.Context, tag string, v template.
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("GitHub API returned %d for %s", resp.StatusCode, releaseURL)
+		return "", "", &httperr.StatusError{Code: resp.StatusCode, URL: releaseURL, GitHubAPI: true}
 	}
 
 	var release githubRelease
@@ -171,7 +172,7 @@ func (b GitHubBackend) matchAssetsInLaterPages(ctx context.Context, client *http
 		statusOK := resp.StatusCode == http.StatusOK
 		resp.Body.Close()
 		if !statusOK {
-			return nil, fmt.Errorf("GitHub API returned %d for %s", resp.StatusCode, url)
+			return nil, &httperr.StatusError{Code: resp.StatusCode, URL: url, GitHubAPI: true}
 		}
 		if decodeErr != nil {
 			return nil, fmt.Errorf("decode GitHub response: %w", decodeErr)

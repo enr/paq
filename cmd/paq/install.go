@@ -119,7 +119,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	// No args: install all apps from the manifest.
 	if len(cfg.Apps) == 0 {
-		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
+		fmt.Println("No apps configured in manifest (~/.config/paq/config.toml): nothing to install.")
+		ui.Hint("install a tool with `paq install <name>` (find one with `paq search <name>`)")
 		return nil
 	}
 	names := make([]string, 0, len(cfg.Apps))
@@ -317,13 +318,9 @@ func validateAppName(cfg *config.Config, name string) error {
 		return nil
 	}
 	if _, ok := cfg.Specs[name]; !ok {
-		hint := "list available definitions with `paq registry`"
-		if s := similarSpecs(cfg.Specs, name); len(s) > 0 {
-			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
-		}
 		return hintError{
 			msg:  fmt.Sprintf("%q is not in your manifest and not a known registry spec", name),
-			hint: hint,
+			hint: specNotFoundHint(cfg.Specs, name),
 		}
 	}
 	if !validAppKey(name) {

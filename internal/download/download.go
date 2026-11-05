@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/enr/paq/internal/ghtoken"
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -71,7 +72,7 @@ func toTemp(ctx context.Context, client *http.Client, url string, maxBytes int64
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
+		return "", fmt.Errorf("download %s: %w", url, &httperr.StatusError{Code: resp.StatusCode, URL: url})
 	}
 
 	if maxBytes > 0 && resp.ContentLength > maxBytes {

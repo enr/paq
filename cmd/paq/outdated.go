@@ -56,6 +56,10 @@ func runOutdated(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load state: %w", err)
 	}
+	if len(st.Packages) == 0 && !ui.Global.JSON {
+		fmt.Println("No tools installed.")
+		return nil
+	}
 
 	// A failure on one app (e.g. a spec missing from the registry) must not
 	// hide the results for the others: errors are collected per app and

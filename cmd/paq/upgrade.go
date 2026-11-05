@@ -90,7 +90,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	} else {
 		// No args: upgrade all apps from the manifest.
 		if len(cfg.Apps) == 0 {
-			ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
+			fmt.Println("No apps configured in manifest (~/.config/paq/config.toml): nothing to upgrade.")
 			return nil
 		}
 		for name := range cfg.Apps {

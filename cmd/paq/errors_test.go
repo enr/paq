@@ -2,8 +2,11 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/enr/paq/internal/httperr"
 )
 
 func TestHintFor(t *testing.T) {
@@ -17,12 +20,15 @@ func TestHintFor(t *testing.T) {
 		{"sha512 mismatch", errors.New("integrity check failed: sha512 mismatch for x"), "corrupted or tampered"},
 		{"signature", errors.New("signature verification failed: minisign signature is invalid"), "signature could not be verified"},
 		{"manifest", errors.New(`app "rg" not found in manifest`), "~/.config/paq/config.toml"},
-		{"registry", errors.New(`spec "rg" not found in registry`), "paq registry"},
-		{"unknown backend", errors.New(`resolve download URL: unknown backend: "gihub"`), "backend"},
+		{"registry", errors.New(`spec "rg" not found in registry`), "paq search"},
+		{"unknown backend", errors.New(`resolve download URL: unknown backend: "gihub"`), `"npm"`},
 		{"unsupported platform", errors.New(`"bat" is not available for linux/arm64 (supported: linux/amd64)`), "no build for your OS/architecture"},
-		{"github 404", errors.New("GitHub API returned 404 for https://..."), "GITHUB_TOKEN"},
-		{"download 404", errors.New("download https://...: HTTP 404"), "build exists for your platform"},
-		{"github release 404", errors.New("download https://github.com/o/r/releases/download/v1/x.zip: HTTP 404"), "if the repository is private, set the GITHUB_TOKEN"},
+		{"github 404", ghAPIErr(404), "if the repository is private, set the GITHUB_TOKEN"},
+		{"github 403", ghAPIErr(403), "set the GITHUB_TOKEN environment variable to raise the limit"},
+		{"github 500", ghAPIErr(500), "temporary"},
+		{"download 404", downloadErr("https://example.com/x.tar.gz", 404), "build exists for your platform"},
+		{"github release 404", downloadErr("https://github.com/o/r/releases/download/v1/x.zip", 404), "if the repository is private, set the GITHUB_TOKEN"},
+		{"download network error", errors.New("GET https://example.com/x.tar.gz: connection refused"), "--debug"},
 		{"permission", errors.New("install dir: open /usr/bin/x: permission denied"), "writable"},
 		{"generic", errors.New("something unexpected happened"), "--debug"},
 	}
@@ -41,8 +47,37 @@ func TestHintFor(t *testing.T) {
 // token in use points at the token's access, not at setting one.
 func TestHintForGitHub404WithToken(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "set")
-	got := hintFor(errors.New("resolve download URL: GitHub API returned 404 for https://api.github.com/repos/o/r/releases/tags/v1"))
+	got := hintFor(ghAPIErr(404))
 	if !strings.Contains(got, "token can read the repository") || strings.Contains(got, "set the GITHUB_TOKEN") {
 		t.Errorf("hintFor = %q, want the token-access hint", got)
 	}
+}
+
+// TestHintForGitHub403WithToken verifies a 403 with a token in use does not
+// tell the user to set the token they already have.
+func TestHintForGitHub403WithToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "set")
+	got := hintFor(ghAPIErr(403))
+	if !strings.Contains(got, "even with the token in use") || strings.Contains(got, "set the GITHUB_TOKEN") {
+		t.Errorf("hintFor = %q, want the token-in-use hint", got)
+	}
+}
+
+func TestHintForUsageError(t *testing.T) {
+	got := hintFor(errors.New(`unknown command "bogus" for "paq"`))
+	if !strings.Contains(got, "--help") {
+		t.Errorf("hintFor = %q, want a pointer to --help", got)
+	}
+}
+
+// ghAPIErr builds the error a GitHub API call returns, wrapped the way the
+// install pipeline wraps it.
+func ghAPIErr(code int) error {
+	return fmt.Errorf("resolve version: %w", &httperr.StatusError{
+		Code: code, URL: "https://api.github.com/repos/o/r/releases/tags/v1", GitHubAPI: true,
+	})
+}
+
+func downloadErr(url string, code int) error {
+	return fmt.Errorf("download %s: %w", url, &httperr.StatusError{Code: code, URL: url})
 }

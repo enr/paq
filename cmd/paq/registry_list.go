@@ -41,7 +41,7 @@ func listDefinitions(query string) error {
 
 	rows := make([]ui.RegistryEntry, 0, len(cfg.Specs))
 	for name, spec := range cfg.Specs {
-		if q != "" && !strings.Contains(strings.ToLower(name), q) {
+		if q != "" && !strings.Contains(strings.ToLower(name), q) && !installsExecutable(spec, q) {
 			continue
 		}
 		rows = append(rows, ui.RegistryEntry{

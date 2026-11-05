@@ -50,11 +50,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	defName := args[0]
 	spec, ok := cfg.Specs[defName]
 	if !ok {
-		hint := "list available definitions with `paq registry`"
-		if s := similarSpecs(cfg.Specs, defName); len(s) > 0 {
-			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
-		}
-		return hintError{msg: fmt.Sprintf("spec %q not found in registry", defName), hint: hint}
+		return hintError{msg: fmt.Sprintf("spec %q not found in registry", defName), hint: specNotFoundHint(cfg.Specs, defName)}
 	}
 
 	key := defName

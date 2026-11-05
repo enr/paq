@@ -2,9 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
+	"os"
 	"strings"
 
 	"github.com/enr/paq/internal/ghtoken"
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/install"
 	"github.com/enr/paq/internal/ui"
 )
@@ -47,6 +51,7 @@ func reportError(err error) {
 // (pipeline, download, version provider, ...).
 func hintFor(err error) string {
 	msg := strings.ToLower(err.Error())
+	var statusErr *httperr.StatusError
 
 	switch {
 	// Security: invalid integrity or signature. The most important case.
@@ -70,27 +75,19 @@ func hintFor(err error) string {
 			"    [apps.<name>]\n    use = \"<spec>\"\n    version = \"latest\""
 
 	case strings.Contains(msg, "not found in registry"):
-		return "list available specs with `paq registry`, and check the `use` field of the app in your manifest."
+		return "list available specs with `paq search`, and check the `use` field of the app in your manifest."
 
 	case strings.Contains(msg, "unknown backend"):
-		return "check the spec's `backend` field — supported values are \"github\" and \"url\"."
+		return "check the spec's `backend` field — supported values are \"github\", \"url\" and \"npm\"."
 
-	// Version resolution / GitHub API.
-	// With a token, GitHub answers 404 (not 403) for a repo the token cannot
-	// read, so the token is as likely a culprit as the repo name.
-	case strings.Contains(msg, "github api returned 404") && ghtoken.For(ghtoken.RepoFrom(msg)) != "":
-		return "the repository or release was not found with the GitHub token in use — " +
-			"check the spec `repo` and that the release exists, then that the token can read the repository " +
-			"(a fine-grained token only covers the repos of its resource owner). " +
-			"A spec can name its own token variable with `github_token_env`."
-
-	case strings.Contains(msg, "github api returned 404"),
-		strings.Contains(msg, "github api returned"):
-		return "check the repository name in the spec; if you are rate-limited, set the GITHUB_TOKEN environment variable."
+	// A server answered with an unexpected HTTP status (GitHub API, release
+	// or archive download).
+	case errors.As(err, &statusErr):
+		return statusHint(statusErr)
 
 	case strings.Contains(msg, "resolve version"),
 		strings.Contains(msg, "resolve latest version"):
-		return "verify the spec `repo` and your network connection; `latest` requires a GitHub-backed spec."
+		return "verify the spec `repo` (or npm `package`) and your network connection."
 
 	// Platform not supported by the recipe.
 	case strings.Contains(msg, "is not available for"):
@@ -101,21 +98,13 @@ func hintFor(err error) string {
 	case strings.Contains(msg, "asset") && strings.Contains(msg, "not found"):
 		return "the release exists but has no matching asset — check the `asset` template, the version, and your OS/arch."
 
-	// Without a token, a private repo's release download 404s just like a
-	// wrong repo or version: GitHub does not reveal which one it is.
-	case strings.Contains(msg, "http 404") && strings.Contains(msg, "github.com/") &&
-		strings.Contains(msg, "/releases/download/") && ghtoken.For(ghtoken.RepoFrom(msg)) == "":
-		return "the release file was not found — check the spec `repo` and the version; " +
-			"if the repository is private, set the GITHUB_TOKEN environment variable."
-
-	case strings.Contains(msg, "http 404"),
-		strings.Contains(msg, "download") && strings.Contains(msg, "http"):
-		return "the file was not found at the resolved URL — verify the version and that a build exists for your platform. " +
-			"Re-run with --debug to see the exact URLs."
-
 	// Destination permissions.
 	case strings.Contains(msg, "permission denied"):
 		return "paq cannot write to the destination — choose a writable `dest` or adjust permissions."
+
+	// Wrong CLI usage: the command's help is what fixes it, not a trace.
+	case isUsageError(err):
+		return fmt.Sprintf("see `%s --help` for usage.", usageCommandPath())
 	}
 
 	// Generic suggestion: point to --debug for diagnosis.
@@ -123,4 +112,57 @@ func hintFor(err error) string {
 		return "re-run with --debug for a detailed trace of what paq attempted."
 	}
 	return ""
+}
+
+// statusHint suggests a fix for an unexpected HTTP status. Whether a GitHub
+// token is in use decides between "set a token" and "check the token": the
+// same 403 or 404 means different things with and without one.
+func statusHint(e *httperr.StatusError) string {
+	repo := ghtoken.RepoFrom(e.URL)
+	onGitHub := repo != ""
+	withToken := onGitHub && ghtoken.For(repo) != ""
+
+	switch {
+	case onGitHub && e.Code == http.StatusUnauthorized:
+		return "GitHub rejected the token in use — it may be expired or revoked. " +
+			"Check GITHUB_TOKEN (or the variable named by the spec's `github_token_env`)."
+
+	case onGitHub && (e.Code == http.StatusForbidden || e.Code == http.StatusTooManyRequests) && withToken:
+		return "GitHub refused the request even with the token in use — the token may have hit its own rate limit, " +
+			"lack access to the repository, or be blocked by a proxy. Re-run with --debug to see the requests."
+
+	case onGitHub && (e.Code == http.StatusForbidden || e.Code == http.StatusTooManyRequests):
+		return "GitHub is rate-limiting unauthenticated requests — set the GITHUB_TOKEN environment variable to raise the limit."
+
+	// With a token, GitHub answers 404 (not 403) for a repo the token cannot
+	// read, so the token is as likely a culprit as the repo name.
+	case e.Code == http.StatusNotFound && withToken:
+		return "the repository or release was not found with the GitHub token in use — " +
+			"check the spec `repo` and that the release exists, then that the token can read the repository " +
+			"(a fine-grained token only covers the repos of its resource owner). " +
+			"A spec can name its own token variable with `github_token_env`."
+
+	// Without a token, a private repo 404s just like a wrong repo or
+	// version: GitHub does not reveal which one it is.
+	case e.Code == http.StatusNotFound && onGitHub:
+		return "the repository, release or file was not found — check the spec `repo` and the version; " +
+			"if the repository is private, set the GITHUB_TOKEN environment variable."
+
+	case e.Code == http.StatusNotFound:
+		return "the file was not found at the resolved URL — verify the version and that a build exists for your platform. " +
+			"Re-run with --debug to see the exact URLs."
+
+	case e.Code >= 500:
+		return "the server had an internal error — it is likely temporary; retry in a few minutes."
+	}
+	return "the server refused the request — re-run with --debug to see the exact URL and response."
+}
+
+// usageCommandPath returns the path of the command the user was invoking
+// (e.g. "paq install"), falling back to "paq" when it cannot be resolved.
+func usageCommandPath() string {
+	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil {
+		return cmd.CommandPath()
+	}
+	return rootCmd.CommandPath()
 }
