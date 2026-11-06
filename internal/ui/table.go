@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -70,7 +71,7 @@ func PrintLsTable(entries []LsEntry) error {
 		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "DEST")
 		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), strings.Repeat("-", w[2]), "----")
 		for _, rec := range pkgs {
-			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, rec.Dest)
+			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, homeRelative(rec.Dest))
 		}
 		return nil
 	}
@@ -88,11 +89,26 @@ func PrintLsTable(entries []LsEntry) error {
 			nameStyle.Width(w[0]).Render(rec.Name),
 			lipgloss.NewStyle().Width(w[1]).Render(rec.Version),
 			dimStyle.Width(w[2]).Render(rec.Kind),
-			dimStyle.Render(rec.Dest),
+			dimStyle.Render(homeRelative(rec.Dest)),
 		)
 		fmt.Println(row)
 	}
 	return nil
+}
+
+// homeRelative shortens a path under the home directory to ~/..., the way
+// the manifest writes destinations. Only for human output: --json keeps
+// absolute paths.
+func homeRelative(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	rel, err := filepath.Rel(home, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return path
+	}
+	return "~" + string(filepath.Separator) + rel
 }
 
 // RegistryEntry is a row of the table of specs available in the registry.
