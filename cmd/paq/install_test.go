@@ -101,6 +101,36 @@ func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	}
 }
 
+// prepareManifestEntry makes the app installable in memory but writes nothing
+// until persist is called: install calls it only after the tool is on disk,
+// so a failed install leaves the manifest untouched.
+func TestPrepareManifestEntryDefersTheWrite(t *testing.T) {
+	dir := t.TempDir()
+	withConfigHome(t, dir)
+	manifest := filepath.Join(dir, "paq", "config.toml")
+
+	cfg := newTestConfig()
+	persist, err := prepareManifestEntry(cfg, "ripgrep", "14.1.1", "", true)
+	if err != nil {
+		t.Fatalf("prepareManifestEntry: %v", err)
+	}
+	if got := cfg.Apps["ripgrep"].Version; got != "14.1.1" {
+		t.Fatalf("in-memory version = %q, want 14.1.1", got)
+	}
+	if _, err := os.Stat(manifest); !os.IsNotExist(err) {
+		t.Fatalf("manifest written before persist (stat err = %v)", err)
+	}
+
+	path, err := persist()
+	if err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "[apps.ripgrep]") {
+		t.Fatalf("manifest after persist = %q (err %v), want an [apps.ripgrep] entry", data, err)
+	}
+}
+
 // --dest replaces the default destination of an auto-imported entry, both in
 // memory and in the saved manifest block.
 func TestEnsureManifestEntryDestForNewEntry(t *testing.T) {

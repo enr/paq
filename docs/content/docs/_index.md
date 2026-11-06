@@ -147,9 +147,20 @@ In local mode:
 - The user manifest and `PAQ_CONFIG` are ignored; `--config` cannot be combined
   with `--local`. The registry cache and the download cache stay shared.
 
-Add `.paq/` to the project's `.gitignore`. paq does not touch `PATH`: put the
-project's tools on it with your own tooling, e.g. with [direnv](https://direnv.net/)
-in an `.envrc` that also turns local mode on:
+Without `--local`, paq stays in global mode even inside a project, but when a
+tool is not found and a `paq.toml` exists above the current directory, the
+hint suggests re-running with `--local`.
+
+Add `.paq/` to the project's `.gitignore`. paq does not touch `PATH`. To run a
+project tool, use [`paq exec`](#exec), which puts it first on `PATH` for one
+command only:
+
+```bash
+paq --local exec node -- npm ci
+```
+
+Or put the project's tools on `PATH` with your own tooling, e.g. with
+[direnv](https://direnv.net/) in an `.envrc` that also turns local mode on:
 
 ```bash
 export PAQ_LOCAL=1
@@ -291,6 +302,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq lock delete <app>...` | | Drop apps' entries from `paq.lock.toml` |
 | `paq ls` | `list` | List installed tools |
 | `paq which <app[@version]>` | | Print the installed path(s) of a tool |
+| `paq exec <app[@version]>... -- <command>` | | Run a command with installed tools first on `PATH` |
 | `paq info <app>` | | Show definition and install state for a manifest app |
 | `paq search [query]` | `s` | Search the registry for tool definitions by name or by the executable they install (`paq search rg`); lists them all with no query |
 | `paq registry list [query]` | `reg` | List tool definitions in the registry, with their source (`paq reg ls` also works) |
@@ -305,8 +317,12 @@ paq never prunes the cache: delete the directory to clear it.
 
 ### install
 
+A tool named on the command line is recorded in the manifest (and its
+`@version` written there) only once it is installed: a failed install leaves
+the manifest as it was.
+
 ```bash
-# Install a registry tool: records a default entry in the manifest, then installs
+# Install a registry tool, then record a default entry for it in the manifest
 paq install ripgrep
 
 # Install without recording it in the manifest (ephemeral)
@@ -489,6 +505,23 @@ paq uninstall rg --dry-run    # show what would be removed
 |------|-------------|
 | `--dry-run` | Show what would be removed without removing anything |
 | `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions and with `--json`) |
+
+### exec
+
+Runs a command with the bin directories of installed tools first on `PATH`,
+leaving your shell's `PATH` alone. paq exits with the command's exit code. The
+tools must already be installed: `exec` never downloads anything. With several
+versions of a tool installed, pick one with `app@version`.
+
+```bash
+paq --local exec node -- npm ci          # a project-local tool
+paq exec terraform@1.9.8 -- terraform plan
+paq exec jdk maven -- mvn -v             # several tools at once
+```
+
+The bin directory is the folder of a single-file tool, the destination of a
+multi-binary one, and `bin/` inside a directory install when it has one
+(`node`, `jdk`, ...).
 
 ### lock
 

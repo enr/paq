@@ -19,6 +19,9 @@ import (
 type hintError struct {
 	msg  string
 	hint string
+	// suggestLocal marks a "not found" error that a forgotten --local can
+	// explain: next to a project manifest, the hint also suggests it.
+	suggestLocal bool
 }
 
 func (e hintError) Error() string { return e.msg }
@@ -30,6 +33,10 @@ func (e hintError) Error() string { return e.msg }
 // printed its own result there.
 func reportError(err error) {
 	if err == nil {
+		return
+	}
+	// The command run by `paq exec` reported its own failure.
+	if errors.As(err, new(childExitError)) {
 		return
 	}
 	msg, hint := messageAndHint(err)
@@ -52,9 +59,29 @@ func reportError(err error) {
 func messageAndHint(err error) (msg, hint string) {
 	var he hintError
 	if errors.As(err, &he) {
-		return he.msg, he.hint
+		hint = he.hint
+		if lh := localModeHintIf(he.suggestLocal); lh != "" {
+			hint = joinHints(hint, lh)
+		}
+		return he.msg, hint
 	}
 	return err.Error(), hintFor(err)
+}
+
+// localModeHintIf returns localModeHint() when want is true.
+func localModeHintIf(want bool) string {
+	if !want {
+		return ""
+	}
+	return localModeHint()
+}
+
+// joinHints combines two suggestions into one hint line.
+func joinHints(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + "; or " + b
 }
 
 // jsonErrorDoc is the document --json prints on stdout when a command fails

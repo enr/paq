@@ -222,12 +222,39 @@ func findProjectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for dir := cwd; ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, localManifestName)); err == nil {
-			return dir, nil
+	if path := nearestProjectManifest(cwd); path != "" {
+		return filepath.Dir(path), nil
+	}
+	return cwd, nil
+}
+
+// nearestProjectManifest returns the path of the nearest paq.toml from dir
+// upwards, or "" when there is none.
+func nearestProjectManifest(dir string) string {
+	for ; ; dir = filepath.Dir(dir) {
+		path := filepath.Join(dir, localManifestName)
+		if _, err := os.Stat(path); err == nil {
+			return path
 		}
 		if filepath.Dir(dir) == dir {
-			return cwd, nil
+			return ""
 		}
 	}
+}
+
+// localModeHint suggests --local when paq runs in global mode next to a
+// project manifest, the likely reason a tool was not found. "" otherwise.
+func localModeHint() string {
+	if localMode() {
+		return ""
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	path := nearestProjectManifest(cwd)
+	if path == "" {
+		return ""
+	}
+	return fmt.Sprintf("re-run with --local to use the project manifest %s", path)
 }

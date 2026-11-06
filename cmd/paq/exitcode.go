@@ -46,6 +46,10 @@ func exitCodeFor(err error) int {
 	if err == nil {
 		return 0
 	}
+	var child childExitError
+	if errors.As(err, &child) {
+		return child.code
+	}
 	switch {
 	case isUsageError(err):
 		return exitUsage

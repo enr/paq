@@ -39,8 +39,9 @@ func runWhich(cmd *cobra.Command, args []string) error {
 		rec, ok := st.Get(name, version)
 		if !ok {
 			return hintError{
-				msg:  fmt.Sprintf("%s@%s is not installed", name, version),
-				hint: "list installed versions with `paq ls`",
+				msg:          fmt.Sprintf("%s@%s is not installed", name, version),
+				hint:         "list installed versions with `paq ls`",
+				suggestLocal: true,
 			}
 		}
 		matches = []state.InstalledApp{rec}
@@ -48,8 +49,9 @@ func runWhich(cmd *cobra.Command, args []string) error {
 		matches = st.ByName(name)
 		if len(matches) == 0 {
 			return hintError{
-				msg:  fmt.Sprintf("%q is not installed", name),
-				hint: "list installed tools with `paq ls`",
+				msg:          fmt.Sprintf("%q is not installed", name),
+				hint:         "list installed tools with `paq ls`",
+				suggestLocal: true,
 			}
 		}
 	}

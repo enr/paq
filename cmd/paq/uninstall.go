@@ -136,8 +136,9 @@ func resolveUninstallTargets(st *state.State, arg string) ([]state.InstalledApp,
 	matches := st.ByName(name)
 	if len(matches) == 0 {
 		return nil, hintError{
-			msg:  fmt.Sprintf("%q is not installed", name),
-			hint: "list installed tools with `paq ls`",
+			msg:          fmt.Sprintf("%q is not installed", name),
+			hint:         "list installed tools with `paq ls`",
+			suggestLocal: true,
 		}
 	}
 
@@ -145,8 +146,9 @@ func resolveUninstallTargets(st *state.State, arg string) ([]state.InstalledApp,
 		rec, ok := st.Get(name, version)
 		if !ok {
 			return nil, hintError{
-				msg:  fmt.Sprintf("%s@%s is not installed", name, version),
-				hint: "list installed versions with `paq ls`",
+				msg:          fmt.Sprintf("%s@%s is not installed", name, version),
+				hint:         "list installed versions with `paq ls`",
+				suggestLocal: true,
 			}
 		}
 		return []state.InstalledApp{rec}, nil
