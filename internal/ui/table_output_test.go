@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,8 +52,12 @@ func TestPrintLsTableShortensHome(t *testing.T) {
 		t.Errorf("plain output = %q, want %q", out, want)
 	}
 	out, _ = withGlobal(t, Config{JSON: true}, func() { PrintLsTable(entries) })
-	if !strings.Contains(out, dest) {
-		t.Errorf("JSON output = %q, want the absolute %q", out, dest)
+	var got []LsEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("JSON output = %q: %v", out, err)
+	}
+	if len(got) != 1 || got[0].Dest != dest {
+		t.Errorf("JSON dest = %+v, want the absolute %q", got, dest)
 	}
 }
 
