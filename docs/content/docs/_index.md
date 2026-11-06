@@ -310,7 +310,7 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
 | `paq config show` | | Show the config path, effective default directories, registry cache, and apps |
-| `paq doctor` | | Check the paq environment, paths, `PATH`, and installed-tool drift; exits non-zero on problems, and with `--strict` on warnings too |
+| `paq doctor` | | Check the paq environment, paths, `PATH`, installed-tool drift and that GitHub accepts `GITHUB_TOKEN`; exits non-zero on problems (a rejected token is one), and with `--strict` on warnings too |
 | `paq self-update` | | Update paq itself to the latest release |
 | `paq version` | | Print the paq version |
 | `paq completion <shell>` | | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`) |
