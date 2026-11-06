@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/enr/paq/internal/state"
 	"github.com/spf13/cobra"
@@ -75,7 +76,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	if err := child.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return childExitError{code: exitErr.ExitCode()}
+			return childExitError{code: childExitCode(exitErr)}
 		}
 		return fmt.Errorf("run %s: %w", command[0], err)
 	}
@@ -133,4 +134,14 @@ func execBinDir(rec state.InstalledApp) string {
 		}
 	}
 	return rec.Dest
+}
+
+// childExitCode is the exit code to report for a failed command: its own, or
+// 128 + the signal number when a signal killed it, as shells do (ExitCode
+// is -1 then).
+func childExitCode(exitErr *exec.ExitError) int {
+	if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int(ws.Signal())
+	}
+	return exitErr.ExitCode()
 }

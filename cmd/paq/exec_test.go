@@ -66,6 +66,15 @@ func TestRunExecPropagatesExitCode(t *testing.T) {
 	}
 }
 
+// A command killed by a signal exits with 128 + the signal, as in a shell.
+func TestRunExecSignalExitCode(t *testing.T) {
+	execFixture(t)
+	err := runExecArgs(t, "tool", "--", "sh", "-c", "kill -TERM $$")
+	if got := exitCodeFor(err); got != 128+15 {
+		t.Errorf("exit code = %d (err %v), want 143", got, err)
+	}
+}
+
 func TestRunExecErrors(t *testing.T) {
 	execFixture(t)
 	if err := runExecArgs(t, "tool"); exitCodeFor(err) != exitUsage {
