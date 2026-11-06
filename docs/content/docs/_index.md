@@ -685,7 +685,9 @@ Set `GITHUB_TOKEN` to avoid rate-limiting when installing GitHub-backed tools.
 Without a token, a pinned version whose asset name has no glob is downloaded
 straight from `github.com/<repo>/releases/download/...`, with no API call;
 resolving `"latest"` and matching a glob asset still use the API. With a token,
-assets are always looked up through the API, which also covers private repos.
+assets are looked up through the API, which also covers private repos; if the
+API refuses the request (rate limit, revoked token, a proxy blocking
+`api.github.com`), an exact asset name falls back to the public download URL.
 
 To read the token from another variable, name it in `[defaults]`; when that
 variable is set, it takes precedence over `GITHUB_TOKEN`:

@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/template"
 )
 
@@ -347,4 +349,36 @@ func (rt *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	req2.URL.Scheme = "http"
 	req2.URL.Host = rt.base[len("http://"):]
 	return http.DefaultTransport.RoundTrip(req2)
+}
+
+// With a token the API refuses (rate limit, revoked token, a proxy blocking
+// api.github.com), an exact asset name falls back to the public download URL;
+// a glob still needs the asset list, so it fails.
+func TestGitHubBackendResolveFallsBackWhenAPIRefuses(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+	// A 429 is retried with a real backoff first: shrink it.
+	prevDelay := httpretry.BaseDelay
+	httpretry.BaseDelay = time.Millisecond
+	t.Cleanup(func() { httpretry.BaseDelay = prevDelay })
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: code, Header: http.Header{}, Body: http.NoBody, Request: r}, nil
+			})}
+
+			b := GitHubBackend{Repo: "o/r", Asset: "tool-{{version}}.tar.gz", HTTPClient: client}
+			url, _, err := b.ResolveAsset(context.Background(), "v1.0", template.Vars{Version: "1.0"})
+			if err != nil {
+				t.Fatalf("ResolveAsset: %v", err)
+			}
+			if want := "https://github.com/o/r/releases/download/v1.0/tool-1.0.tar.gz"; url != want {
+				t.Errorf("url = %q, want %q", url, want)
+			}
+
+			b.Asset = "tool-*.tar.gz"
+			if _, _, err := b.ResolveAsset(context.Background(), "v1.0", template.Vars{}); err == nil {
+				t.Error("glob asset: want an error when the API refuses")
+			}
+		})
+	}
 }
