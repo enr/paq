@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 	"github.com/enr/paq/internal/jsonpath"
 )
@@ -56,7 +57,7 @@ func (p JSONProvider) Resolve(ctx context.Context) (string, string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("%s returned %d", p.URL, resp.StatusCode)
+		return "", "", &httperr.StatusError{Code: resp.StatusCode, URL: p.URL, Service: req.URL.Host}
 	}
 
 	var doc any

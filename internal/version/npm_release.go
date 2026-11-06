@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/enr/paq/internal/backend"
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -125,7 +126,7 @@ func getNpmJSON(ctx context.Context, client *http.Client, url string, out any) e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("npm registry returned %d for %s", resp.StatusCode, url)
+		return &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.NpmRegistry}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decode %s: %w", url, err)

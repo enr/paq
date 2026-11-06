@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -63,7 +64,7 @@ func (p ArchLinuxProvider) Resolve(ctx context.Context) (string, string, error) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("Arch Linux API returned %d for %s", resp.StatusCode, reqURL)
+		return "", "", &httperr.StatusError{Code: resp.StatusCode, URL: reqURL, Service: "Arch Linux API"}
 	}
 
 	var payload archPackagesResponse

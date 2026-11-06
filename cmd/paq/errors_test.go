@@ -28,6 +28,8 @@ func TestHintFor(t *testing.T) {
 		{"github 500", ghAPIErr(500), "temporary"},
 		{"download 404", downloadErr("https://example.com/x.tar.gz", 404), "build exists for your platform"},
 		{"github release 404", downloadErr("https://github.com/o/r/releases/download/v1/x.zip", 404), "if the repository is private, set the GITHUB_TOKEN"},
+		{"npm 404", &httperr.StatusError{Code: 404, URL: "https://registry.npmjs.org/nope", Service: httperr.NpmRegistry}, "spec `package`"},
+		{"other API 503", &httperr.StatusError{Code: 503, URL: "https://nodejs.org/dist/index.json", Service: "nodejs.org"}, "temporary"},
 		{"download network error", errors.New("GET https://example.com/x.tar.gz: connection refused"), "--debug"},
 		{"permission", errors.New("install dir: open /usr/bin/x: permission denied"), "writable"},
 		{"generic", errors.New("something unexpected happened"), "--debug"},
@@ -74,7 +76,7 @@ func TestHintForUsageError(t *testing.T) {
 // install pipeline wraps it.
 func ghAPIErr(code int) error {
 	return fmt.Errorf("resolve version: %w", &httperr.StatusError{
-		Code: code, URL: "https://api.github.com/repos/o/r/releases/tags/v1", GitHubAPI: true,
+		Code: code, URL: "https://api.github.com/repos/o/r/releases/tags/v1", Service: httperr.GitHubAPI,
 	})
 }
 

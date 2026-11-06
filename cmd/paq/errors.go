@@ -218,6 +218,9 @@ func statusHint(e *httperr.StatusError) string {
 		return "the repository, release or file was not found — check the spec `repo` and the version; " +
 			"if the repository is private, set the GITHUB_TOKEN environment variable."
 
+	case e.Code == http.StatusNotFound && e.Service == httperr.NpmRegistry:
+		return "the npm package or version was not found — check the spec `package` and the version."
+
 	case e.Code == http.StatusNotFound:
 		return "the file was not found at the resolved URL — verify the version and that a build exists for your platform. " +
 			"Re-run with --debug to see the exact URLs."

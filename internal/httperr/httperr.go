@@ -5,17 +5,24 @@ package httperr
 
 import "fmt"
 
+// Service names used by the callers, for the hints that depend on them.
+const (
+	GitHubAPI   = "GitHub API"
+	NpmRegistry = "npm registry"
+)
+
 // StatusError is an unexpected HTTP status from a server paq talked to.
 type StatusError struct {
 	Code int
 	URL  string
-	// GitHubAPI marks a request to the GitHub REST API (api.github.com).
-	GitHubAPI bool
+	// Service names the API that answered (e.g. GitHubAPI), "" for a plain
+	// file download.
+	Service string
 }
 
 func (e *StatusError) Error() string {
-	if e.GitHubAPI {
-		return fmt.Sprintf("GitHub API returned %d for %s", e.Code, e.URL)
+	if e.Service != "" {
+		return fmt.Sprintf("%s returned %d for %s", e.Service, e.Code, e.URL)
 	}
 	return fmt.Sprintf("HTTP %d", e.Code)
 }
