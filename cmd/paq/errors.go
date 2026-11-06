@@ -197,12 +197,20 @@ func statusHint(e *httperr.StatusError) string {
 		return "GitHub rejected the token in use — it may be expired or revoked. " +
 			"Check GITHUB_TOKEN (or the variable named by the spec's `github_token_env`)."
 
-	case onGitHub && (e.Code == http.StatusForbidden || e.Code == http.StatusTooManyRequests) && withToken:
-		return "GitHub refused the request even with the token in use — the token may have hit its own rate limit, " +
-			"lack access to the repository, or be blocked by a proxy. Re-run with --debug to see the requests."
+	case onGitHub && e.RateLimited && withToken:
+		return "the GitHub token in use has hit its rate limit — wait for the limit to reset, or use another token."
 
-	case onGitHub && (e.Code == http.StatusForbidden || e.Code == http.StatusTooManyRequests):
+	case onGitHub && e.RateLimited:
 		return "GitHub is rate-limiting unauthenticated requests — set the GITHUB_TOKEN environment variable to raise the limit."
+
+	case onGitHub && e.Code == http.StatusForbidden && withToken:
+		return "GitHub refused the request with the token in use, and not for a rate limit — the token may lack access " +
+			"to the repository (or SSO authorization for its organization), or a proxy may block api.github.com. " +
+			"Re-run with --debug to see the requests."
+
+	case onGitHub && e.Code == http.StatusForbidden:
+		return "GitHub refused the request, and not for a rate limit — a proxy or firewall may block api.github.com. " +
+			"Re-run with --debug to see the requests."
 
 	// With a token, GitHub answers 404 (not 403) for a repo the token cannot
 	// read, so the token is as likely a culprit as the repo name.

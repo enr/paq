@@ -24,7 +24,8 @@ func TestHintFor(t *testing.T) {
 		{"unknown backend", errors.New(`resolve download URL: unknown backend: "gihub"`), `"npm"`},
 		{"unsupported platform", errors.New(`"bat" is not available for linux/arm64 (supported: linux/amd64)`), "no build for your OS/architecture"},
 		{"github 404", ghAPIErr(404), "if the repository is private, set the GITHUB_TOKEN"},
-		{"github 403", ghAPIErr(403), "set the GITHUB_TOKEN environment variable to raise the limit"},
+		{"github rate limit", ghRateLimitErr(), "set the GITHUB_TOKEN environment variable to raise the limit"},
+		{"github 403 not rate limit", ghAPIErr(403), "not for a rate limit"},
 		{"github 500", ghAPIErr(500), "temporary"},
 		{"download 404", downloadErr("https://example.com/x.tar.gz", 404), "build exists for your platform"},
 		{"github release 404", downloadErr("https://github.com/o/r/releases/download/v1/x.zip", 404), "if the repository is private, set the GITHUB_TOKEN"},
@@ -60,8 +61,12 @@ func TestHintForGitHub404WithToken(t *testing.T) {
 func TestHintForGitHub403WithToken(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "set")
 	got := hintFor(ghAPIErr(403))
-	if !strings.Contains(got, "even with the token in use") || strings.Contains(got, "set the GITHUB_TOKEN") {
-		t.Errorf("hintFor = %q, want the token-in-use hint", got)
+	if !strings.Contains(got, "with the token in use, and not for a rate limit") || strings.Contains(got, "set the GITHUB_TOKEN") {
+		t.Errorf("hintFor = %q, want the token-refused hint", got)
+	}
+	got = hintFor(ghRateLimitErr())
+	if !strings.Contains(got, "token in use has hit its rate limit") {
+		t.Errorf("hintFor(rate limit) = %q, want the token rate-limit hint", got)
 	}
 }
 
@@ -77,6 +82,12 @@ func TestHintForUsageError(t *testing.T) {
 func ghAPIErr(code int) error {
 	return fmt.Errorf("resolve version: %w", &httperr.StatusError{
 		Code: code, URL: "https://api.github.com/repos/o/r/releases/tags/v1", Service: httperr.GitHubAPI,
+	})
+}
+
+func ghRateLimitErr() error {
+	return fmt.Errorf("resolve version: %w", &httperr.StatusError{
+		Code: 403, URL: "https://api.github.com/repos/o/r/releases", Service: httperr.GitHubAPI, RateLimited: true,
 	})
 }
 

@@ -147,7 +147,7 @@ func (p GitHubReleaseProvider) getJSON(ctx context.Context, client *http.Client,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.GitHubAPI}
+		return &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.GitHubAPI, RateLimited: httperr.RateLimited(resp)}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

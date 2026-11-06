@@ -55,7 +55,7 @@ func FetchAttestationBundles(ctx context.Context, client *http.Client, repo, sha
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.GitHubAPI}
+		return nil, &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.GitHubAPI, RateLimited: httperr.RateLimited(resp)}
 	}
 
 	var body struct {
