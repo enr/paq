@@ -12,10 +12,10 @@ cd "${prj_home}"
 APP_NAME="paq"
 BIN_DIR="bin"
 MODULE="github.com/enr/paq"
-# Le variabili Version/Revision/BuildTime stanno nel package main di cmd/grab:
-# il linker indirizza il main package come "main", non con l'import path completo.
+# Version/Revision/BuildTime live in the main package of cmd/paq: the linker
+# addresses the main package as "main", not by its full import path.
 VERSION_PKG="main"
-# Package che ospita la trust anchor del registry (minisign public key).
+# Package holding the registry trust anchor (minisign public key).
 REGISTRY_PKG="${MODULE}/internal/registry"
 
 # Version: use APP_VERSION env var if set, otherwise read VERSION file, otherwise derive from git tags.

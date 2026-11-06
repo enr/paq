@@ -11,10 +11,10 @@ cd "${prj_home}"
 
 APP_NAME="paq"
 DIST_DIR="dist"
-# Le variabili Version/Revision/BuildTime stanno nel package main di cmd/paq.
+# Version/Revision/BuildTime live in the main package of cmd/paq.
 VERSION_PKG="main"
 MODULE="github.com/enr/paq"
-# Package che ospita la trust anchor del registry (minisign public key).
+# Package holding the registry trust anchor (minisign public key).
 REGISTRY_PKG="${MODULE}/internal/registry"
 
 # Version: use APP_VERSION env var if set, otherwise read VERSION file, otherwise derive from git tags.
