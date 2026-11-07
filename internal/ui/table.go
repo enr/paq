@@ -1,9 +1,9 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -49,12 +49,7 @@ type LsEntry struct {
 // PrintLsTable prints the table of installed packages.
 func PrintLsTable(entries []LsEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	packages := make([]state.InstalledApp, len(entries))
@@ -76,7 +71,7 @@ func PrintLsTable(entries []LsEntry) error {
 		fmt.Printf(fmtStr, headers[0], headers[1], headers[2], "DEST")
 		fmt.Printf(fmtStr, strings.Repeat("-", w[0]), strings.Repeat("-", w[1]), strings.Repeat("-", w[2]), "----")
 		for _, rec := range pkgs {
-			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, rec.Dest)
+			fmt.Printf(fmtStr, rec.Name, rec.Version, rec.Kind, homeRelative(rec.Dest))
 		}
 		return nil
 	}
@@ -94,11 +89,26 @@ func PrintLsTable(entries []LsEntry) error {
 			nameStyle.Width(w[0]).Render(rec.Name),
 			lipgloss.NewStyle().Width(w[1]).Render(rec.Version),
 			dimStyle.Width(w[2]).Render(rec.Kind),
-			dimStyle.Render(rec.Dest),
+			dimStyle.Render(homeRelative(rec.Dest)),
 		)
 		fmt.Println(row)
 	}
 	return nil
+}
+
+// homeRelative shortens a path under the home directory to ~/..., the way
+// the manifest writes destinations. Only for human output: --json keeps
+// absolute paths.
+func homeRelative(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	rel, err := filepath.Rel(home, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return path
+	}
+	return "~" + string(filepath.Separator) + rel
 }
 
 // RegistryEntry is a row of the table of specs available in the registry.
@@ -112,12 +122,7 @@ type RegistryEntry struct {
 // PrintAvailableTable prints the table of specs available in the embedded registry.
 func PrintAvailableTable(entries []RegistryEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	cell := func(s string) string {
@@ -201,12 +206,7 @@ func shortDuration(d time.Duration) string {
 // PrintOutdatedTable prints the apps that have a newer upstream version available.
 func PrintOutdatedTable(entries []OutdatedEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	if len(entries) == 0 {
@@ -298,12 +298,7 @@ func auditText(e AuditEntry) string {
 // PrintAuditTable prints the installed tools with their known vulnerabilities.
 func PrintAuditTable(entries []AuditEntry) error {
 	if Global.JSON {
-		data, err := json.MarshalIndent(entries, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal entries: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(entries)
 	}
 
 	headers := []string{"APP", "VERSION"}
@@ -370,12 +365,7 @@ func PrintConfigShow(path string, exists bool, defaults config.Defaults, effBin,
 			"registry_cache":     cache,
 			"apps":               apps,
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal config: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(out)
 	}
 
 	// Key in bold blue, value in green, annotations in gray, so labels and
@@ -527,12 +517,7 @@ func PrintInfoDetail(name string, spec config.Spec, app config.AppEntry, install
 		if lockedVersion != "" {
 			out["locked_version"] = lockedVersion
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal info: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(out)
 	}
 
 	render := func(label, value string) {
@@ -622,12 +607,7 @@ func PrintSpecDetail(name string, spec config.Spec) error {
 			"name": name,
 			"spec": spec,
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal spec: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return PrintJSON(out)
 	}
 
 	render := func(label, value string) {

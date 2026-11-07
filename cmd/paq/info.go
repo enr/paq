@@ -39,8 +39,9 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	app, ok := cfg.Apps[appName]
 	if !ok {
 		return hintError{
-			msg:  fmt.Sprintf("app %q not found in manifest (~/.config/paq/config.toml)", appName),
-			hint: fmt.Sprintf("list configured apps with `paq ls`, or add it under [apps.%s] in your manifest", appName),
+			msg:          fmt.Sprintf("app %q not found in manifest (~/.config/paq/config.toml)", appName),
+			hint:         fmt.Sprintf("list configured apps with `paq ls`, or add it under [apps.%s] in your manifest", appName),
+			suggestLocal: true,
 		}
 	}
 

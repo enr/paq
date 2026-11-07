@@ -9,6 +9,7 @@ import (
 	"github.com/enr/paq/internal/ghtoken"
 	"github.com/enr/paq/internal/state"
 	"github.com/enr/paq/internal/ui"
+	"github.com/spf13/cobra"
 )
 
 // withJSONFlag sets flagJSON for the duration of the test and restores both it
@@ -25,11 +26,15 @@ func withJSONFlag(t *testing.T, v bool) {
 func TestPersistentPreRunERejectsJSONOnUnsupportedCommands(t *testing.T) {
 	withJSONFlag(t, true)
 
-	if err := rootCmd.PersistentPreRunE(installCmd, nil); err == nil {
-		t.Error("expected --json to be rejected on `paq install`, got nil error")
-	}
-	if err := rootCmd.PersistentPreRunE(upgradeCmd, nil); err == nil {
-		t.Error("expected --json to be rejected on `paq upgrade`, got nil error")
+	for _, cmd := range []*cobra.Command{initCmd, selfUpdateCmd} {
+		err := rootCmd.PersistentPreRunE(cmd, nil)
+		if err == nil {
+			t.Errorf("expected --json to be rejected on `%s`, got nil error", cmd.CommandPath())
+			continue
+		}
+		if code := exitCodeFor(err); code != exitUsage {
+			t.Errorf("`%s --json` exit code = %d, want %d (usage)", cmd.CommandPath(), code, exitUsage)
+		}
 	}
 }
 
@@ -46,6 +51,11 @@ func TestPersistentPreRunEAllowsJSONOnSupportedCommands(t *testing.T) {
 	// the other read-only commands, not excluded from --json.
 	if err := rootCmd.PersistentPreRunE(doctorCmd, nil); err != nil {
 		t.Errorf("expected --json to be allowed on `paq doctor`, got: %v", err)
+	}
+	for _, cmd := range []*cobra.Command{installCmd, upgradeCmd, uninstallCmd} {
+		if err := rootCmd.PersistentPreRunE(cmd, nil); err != nil {
+			t.Errorf("expected --json to be allowed on `%s`, got: %v", cmd.CommandPath(), err)
+		}
 	}
 }
 

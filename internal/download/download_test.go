@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -101,6 +103,10 @@ func TestToTempRejectsNon200(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), strconv.Itoa(status)) {
 				t.Errorf("error = %v, want it to report status %d", err, status)
+			}
+			var se *httperr.StatusError
+			if !errors.As(err, &se) || se.Code != status {
+				t.Errorf("error = %v, want an *httperr.StatusError with code %d", err, status)
 			}
 
 			entries, rerr := os.ReadDir(tmp)

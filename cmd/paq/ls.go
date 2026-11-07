@@ -32,6 +32,9 @@ func runLs(cmd *cobra.Command, args []string) error {
 
 	if len(st.Packages) == 0 && !ui.Global.JSON {
 		fmt.Println("No tools installed.")
+		if hint := localModeHint(); hint != "" {
+			ui.Hint("%s", hint)
+		}
 		return nil
 	}
 

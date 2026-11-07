@@ -1,12 +1,14 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"fmt"
 
@@ -40,6 +42,7 @@ type doctorCheck struct {
 type doctorReport struct {
 	Checks   []doctorCheck `json:"checks"`
 	Problems int           `json:"problems"`
+	Warnings int           `json:"warnings"`
 }
 
 var doctorCmd = &cobra.Command{
@@ -50,10 +53,14 @@ var doctorCmd = &cobra.Command{
 	RunE:  runDoctor,
 }
 
-var doctorFix bool
+var (
+	doctorFix    bool
+	doctorStrict bool
+)
 
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "add the bin dir to the user PATH if missing (Windows only)")
+	doctorCmd.Flags().BoolVar(&doctorStrict, "strict", false, "exit non-zero on warnings too (e.g. bin dir not in PATH), for CI gates")
 	rootCmd.AddCommand(doctorCmd)
 }
 
@@ -67,8 +74,10 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// registry cache (it falls back to the embedded recipes), a manifest or
 	// state file that does not exist yet, a bin dir outside PATH, an unset
 	// GITHUB_TOKEN.
+	//
+	// --strict makes the warnings fail the command too.
 	var checks []doctorCheck
-	problems := 0
+	problems, warnings := 0, 0
 
 	// reportOK/reportWarn record one row of the "label: value" shape: in
 	// --json mode into checks (jsonName), otherwise through the same
@@ -86,6 +95,8 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	reportWarn := func(jsonName, humanLabel, value, note, hint string, isProblem bool, details ...string) {
 		if isProblem {
 			problems++
+		} else {
+			warnings++
 		}
 		if ui.Global.JSON {
 			checks = append(checks, doctorCheck{
@@ -254,6 +265,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 			}
 			// Advisory only: an app installed via `paq install` still runs by
 			// full path, so a bin dir outside PATH is not counted as a problem.
+			warnings++
 			if ui.Global.JSON {
 				checks = append(checks, doctorCheck{
 					Name: "path", Status: "warn",
@@ -274,22 +286,67 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 			fmt.Sprintf("last attempted %s", humanAge(ucSt.LastAttempt)), false)
 	}
 
-	if os.Getenv("GITHUB_TOKEN") != "" {
-		reportOK("github_token", "GITHUB_TOKEN", "set")
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		// Only a token GitHub rejects is a problem: an unverifiable one
+		// (offline, a proxy) may well work for the installs themselves.
+		code, remaining, err := checkGitHubToken(token)
+		switch {
+		case err != nil:
+			reportWarn("github_token", "GITHUB_TOKEN", "set (not verified)", err.Error(), "", false)
+		case code == http.StatusOK && remaining != "":
+			reportOK("github_token", "GITHUB_TOKEN", fmt.Sprintf("set (valid, %s requests left)", remaining))
+		case code == http.StatusOK:
+			reportOK("github_token", "GITHUB_TOKEN", "set (valid)")
+		case code == http.StatusUnauthorized:
+			reportWarn("github_token", "GITHUB_TOKEN", "set, but rejected by GitHub", "expired or revoked",
+				"replace the token in GITHUB_TOKEN (or in the variable named by `github_token_env`)", true)
+		default:
+			reportWarn("github_token", "GITHUB_TOKEN", "set (not verified)", fmt.Sprintf("GitHub answered HTTP %d", code),
+				"a proxy or firewall may block api.github.com", false)
+		}
 	} else {
 		reportWarn("github_token", "GITHUB_TOKEN", "not set", "GitHub API calls may be rate-limited",
 			"set GITHUB_TOKEN to avoid rate-limiting when installing GitHub-backed tools", false)
 	}
 
 	if ui.Global.JSON {
-		data, _ := json.MarshalIndent(doctorReport{Checks: checks, Problems: problems}, "", "  ")
-		fmt.Println(string(data))
+		if err := ui.PrintJSON(doctorReport{Checks: checks, Problems: problems, Warnings: warnings}); err != nil {
+			return err
+		}
 	}
 
 	if problems > 0 {
 		return fmt.Errorf("%d problem(s) found", problems)
 	}
+	if doctorStrict && warnings > 0 {
+		return fmt.Errorf("%d warning(s) found (--strict)", warnings)
+	}
 	return nil
+}
+
+// githubRateLimitURL is the endpoint doctor checks the token against: it
+// answers any valid token and does not count against the rate limit. A
+// variable so tests can point it at a local server.
+var githubRateLimitURL = "https://api.github.com/rate_limit"
+
+// checkGitHubToken asks GitHub whether token is valid, within a few seconds
+// so an offline doctor is not held up. It returns the HTTP status and the
+// requests left in the current window ("" when GitHub does not say).
+func checkGitHubToken(token string) (code int, remaining string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubRateLimitURL, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	resp.Body.Close()
+	return resp.StatusCode, resp.Header.Get("X-RateLimit-Remaining"), nil
 }
 
 // expandHome expands a leading ~/ to the user's home directory, failing rather

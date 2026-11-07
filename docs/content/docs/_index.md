@@ -147,9 +147,20 @@ In local mode:
 - The user manifest and `PAQ_CONFIG` are ignored; `--config` cannot be combined
   with `--local`. The registry cache and the download cache stay shared.
 
-Add `.paq/` to the project's `.gitignore`. paq does not touch `PATH`: put the
-project's tools on it with your own tooling, e.g. with [direnv](https://direnv.net/)
-in an `.envrc` that also turns local mode on:
+Without `--local`, paq stays in global mode even inside a project, but when a
+tool is not found and a `paq.toml` exists above the current directory, the
+hint suggests re-running with `--local`.
+
+Add `.paq/` to the project's `.gitignore`. paq does not touch `PATH`. To run a
+project tool, use [`paq exec`](#exec), which puts it first on `PATH` for one
+command only:
+
+```bash
+paq --local exec node -- npm ci
+```
+
+Or put the project's tools on `PATH` with your own tooling, e.g. with
+[direnv](https://direnv.net/) in an `.envrc` that also turns local mode on:
 
 ```bash
 export PAQ_LOCAL=1
@@ -291,22 +302,27 @@ paq never prunes the cache: delete the directory to clear it.
 | `paq lock delete <app>...` | | Drop apps' entries from `paq.lock.toml` |
 | `paq ls` | `list` | List installed tools |
 | `paq which <app[@version]>` | | Print the installed path(s) of a tool |
+| `paq exec <app[@version]>... -- <command>` | | Run a command with installed tools first on `PATH` |
 | `paq info <app>` | | Show definition and install state for a manifest app |
-| `paq search <query>` | `s` | Search the registry for tool definitions |
+| `paq search [query]` | `s` | Search the registry for tool definitions by name or by the executable they install (`paq search rg`); lists them all with no query |
 | `paq registry list [query]` | `reg` | List tool definitions in the registry, with their source (`paq reg ls` also works) |
 | `paq registry show <name>` | `reg` | Show details of a single registry definition |
 | `paq registry status` | `reg` | Show the embedded vs external registry state and overrides |
 | `paq registry update` | `reg` | Download, verify and install the latest registry snapshot |
 | `paq config show` | | Show the config path, effective default directories, registry cache, and apps |
-| `paq doctor` | | Check the paq environment, paths, `PATH`, and installed-tool drift |
+| `paq doctor` | | Check the paq environment, paths, `PATH`, installed-tool drift and that GitHub accepts `GITHUB_TOKEN`; exits non-zero on problems (a rejected token is one), and with `--strict` on warnings too |
 | `paq self-update` | | Update paq itself to the latest release |
 | `paq version` | | Print the paq version |
 | `paq completion <shell>` | | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`) |
 
 ### install
 
+A tool named on the command line is recorded in the manifest (and its
+`@version` written there) only once it is installed: a failed install leaves
+the manifest as it was.
+
 ```bash
-# Install a registry tool: records a default entry in the manifest, then installs
+# Install a registry tool, then record a default entry for it in the manifest
 paq install ripgrep
 
 # Install without recording it in the manifest (ephemeral)
@@ -488,7 +504,24 @@ paq uninstall rg --dry-run    # show what would be removed
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Show what would be removed without removing anything |
-| `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions) |
+| `-y`, `--yes` | Skip the confirmation prompt (required in non-interactive sessions and with `--json`) |
+
+### exec
+
+Runs a command with the bin directories of installed tools first on `PATH`,
+leaving your shell's `PATH` alone. paq exits with the command's exit code. The
+tools must already be installed: `exec` never downloads anything. With several
+versions of a tool installed, pick one with `app@version`.
+
+```bash
+paq --local exec node -- npm ci          # a project-local tool
+paq exec terraform@1.9.8 -- terraform plan
+paq exec jdk maven -- mvn -v             # several tools at once
+```
+
+The bin directory is the folder of a single-file tool, the destination of a
+multi-binary one, and `bin/` inside a directory install when it has one
+(`node`, `jdk`, ...).
 
 ### lock
 
@@ -638,7 +671,7 @@ Supported shells: `bash`, `zsh`, `fish`, `powershell`. Run
 | `--config <path>` | Use this manifest file instead of the default location (also `PAQ_CONFIG`) |
 | `--local` | Project-local mode: use the nearest `paq.toml` and keep state and default install dirs under `.paq/` next to it (also `PAQ_LOCAL`); see [Project-local installs](#project-local-installs---local) |
 | `--no-color` | Disable color output |
-| `-j`, `--json` | Output as JSON (`ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `audit`, `which`, `doctor`); fails on commands that don't support it |
+| `-j`, `--json` | Output as JSON (`install`, `upgrade`, `uninstall`, `ls`, `registry list`/`show`/`status`, `info`, `config show`, `import`, `search`, `outdated`, `audit`, `which`, `doctor`); fails with a usage error on commands that don't support it. See [JSON output](#json-output) |
 | `-q`, `--quiet` | Suppress non-essential output |
 | `-v`, `--verbose` | Verbose output |
 | `--debug` | Detailed debug trace on stderr (implies `--verbose`) |
@@ -652,7 +685,9 @@ Set `GITHUB_TOKEN` to avoid rate-limiting when installing GitHub-backed tools.
 Without a token, a pinned version whose asset name has no glob is downloaded
 straight from `github.com/<repo>/releases/download/...`, with no API call;
 resolving `"latest"` and matching a glob asset still use the API. With a token,
-assets are always looked up through the API, which also covers private repos.
+assets are looked up through the API, which also covers private repos; if the
+API refuses the request (rate limit, revoked token, a proxy blocking
+`api.github.com`), an exact asset name falls back to the public download URL.
 
 To read the token from another variable, name it in `[defaults]`; when that
 variable is set, it takes precedence over `GITHUB_TOKEN`:
@@ -674,13 +709,50 @@ repo = "my-org/mytool"
 github_token_env = "GH_MY_ORG_TOKEN"
 ```
 
+## JSON output
+
+With `--json`, stdout holds exactly one JSON document; progress, warnings and
+hints go to stderr.
+
+`install`, `upgrade` and `uninstall` print one entry per app, sorted by name,
+also when some of them fail (the exit code is then non-zero):
+
+```json
+[
+  { "name": "esbuild", "status": "installed", "version": "0.28.2", "dest": "/home/me/.local/bin/esbuild" },
+  { "name": "jq", "status": "failed", "error": "resolve version: ...", "hint": "..." }
+]
+```
+
+`status` is one of `installed`, `already_installed`, `upgraded`, `up_to_date`,
+`skipped` (with a `reason`), `uninstalled`, `would_uninstall` (`--dry-run`) or
+`failed` (with `error` and, when paq has one, `hint`). `uninstall --json` never
+prompts: pass `--yes`.
+
+A command that fails before producing its result (an unknown command or flag,
+an app that is not in the registry, ...) prints an error document instead:
+
+```json
+{
+  "error": {
+    "code": "error",
+    "exit_code": 1,
+    "message": "\"rg\" is not in your manifest and not a known registry spec",
+    "hint": "did you mean: ripgrep?"
+  }
+}
+```
+
+`code` names the exit code: `error` (1), `usage` (2), `vulnerable` (3),
+`verification_failed` (4).
+
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
 | `1` | Generic failure (network, missing config, app/spec not found, ...) |
-| `2` | Wrong CLI usage (unknown flag/command, bad argument count) |
+| `2` | Wrong CLI usage (unknown flag/command, bad argument count, incompatible flags, `--json` on a command without JSON output) |
 | `3` | `paq audit` found known vulnerabilities in installed tools |
 | `4` | Checksum or signature verification failed, or the archive does not match `paq.lock.toml` |
 

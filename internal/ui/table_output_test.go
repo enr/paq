@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,45 @@ func TestPrintLsTablePlain(t *testing.T) {
 	for _, want := range []string{"NAME", "VERSION", "KIND", "DEST", "rg", "14.0.0", "file", "/opt/bin"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("PrintLsTable plain output = %q, want it to contain %q", out, want)
+		}
+	}
+}
+
+// Human output shortens destinations under the home directory to ~/...;
+// --json keeps them absolute for scripts.
+func TestPrintLsTableShortensHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dest := filepath.Join(home, ".local", "bin", "rg")
+	entries := []LsEntry{{InstalledApp: state.InstalledApp{Name: "rg", Version: "14.0.0", Kind: "file", Dest: dest}}}
+
+	out, _ := withGlobal(t, Config{}, func() { PrintLsTable(entries) })
+	if want := filepath.Join("~", ".local", "bin", "rg"); !strings.Contains(out, want) {
+		t.Errorf("plain output = %q, want %q", out, want)
+	}
+	out, _ = withGlobal(t, Config{JSON: true}, func() { PrintLsTable(entries) })
+	var got []LsEntry
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("JSON output = %q: %v", out, err)
+	}
+	if len(got) != 1 || got[0].Dest != dest {
+		t.Errorf("JSON dest = %+v, want the absolute %q", got, dest)
+	}
+}
+
+func TestHomeRelative(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	for in, want := range map[string]string{
+		filepath.Join(home, "bin", "rg"):   filepath.Join("~", "bin", "rg"),
+		home:                               home,
+		filepath.Join(home+"x", "rg"):      filepath.Join(home+"x", "rg"),
+		filepath.Join(home, "..", "other"): filepath.Join(home, "..", "other"),
+	} {
+		if got := homeRelative(in); got != want {
+			t.Errorf("homeRelative(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

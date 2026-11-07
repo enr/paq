@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -50,11 +49,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	defName := args[0]
 	spec, ok := cfg.Specs[defName]
 	if !ok {
-		hint := "list available definitions with `paq registry`"
-		if s := similarSpecs(cfg.Specs, defName); len(s) > 0 {
-			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
-		}
-		return hintError{msg: fmt.Sprintf("spec %q not found in registry", defName), hint: hint}
+		return hintError{msg: fmt.Sprintf("spec %q not found in registry", defName), hint: specNotFoundHint(cfg.Specs, defName)}
 	}
 
 	key := defName
@@ -95,11 +90,9 @@ func runImport(cmd *cobra.Command, args []string) error {
 
 	if !flagImportWrite {
 		if ui.Global.JSON {
-			data, err := json.MarshalIndent(map[string]any{"app": key, "entry": entry}, "", "  ")
-			if err != nil {
-				return fmt.Errorf("marshal entry: %w", err)
+			if err := ui.PrintJSON(map[string]any{"app": key, "entry": entry}); err != nil {
+				return err
 			}
-			fmt.Println(string(data))
 		} else {
 			fmt.Print(block)
 		}

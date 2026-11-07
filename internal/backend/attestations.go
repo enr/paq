@@ -10,6 +10,7 @@ import (
 	"github.com/klauspost/compress/snappy"
 
 	"github.com/enr/paq/internal/ghtoken"
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -54,7 +55,7 @@ func FetchAttestationBundles(ctx context.Context, client *http.Client, repo, sha
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned %d for %s", resp.StatusCode, url)
+		return nil, &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.GitHubAPI, RateLimited: httperr.RateLimited(resp)}
 	}
 
 	var body struct {

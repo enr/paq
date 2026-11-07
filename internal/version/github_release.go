@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/enr/paq/internal/ghtoken"
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -146,7 +147,7 @@ func (p GitHubReleaseProvider) getJSON(ctx context.Context, client *http.Client,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GitHub API returned %d for %s", resp.StatusCode, url)
+		return &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.GitHubAPI, RateLimited: httperr.RateLimited(resp)}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

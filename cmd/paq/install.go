@@ -36,7 +36,7 @@ var installCmd = &cobra.Command{
 	Aliases: []string{"i"},
 	Short:   "Install a tool (or all tools from manifest if no app specified)",
 	Long: "Install one or more tools. A name that isn't yet in the manifest is auto-imported " +
-		"from the registry, with a default version and destination, before being installed. " +
+		"from the registry, with a default version and destination, and recorded there once installed: a failed install leaves the manifest untouched. " +
 		"Append @version to install that version: it is recorded as the app's version in the manifest " +
 		"(only for this run with --no-save). " +
 		"With no arguments, installs every app declared in the manifest instead. " +
@@ -71,7 +71,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	if flagInstallDest != "" && len(args) != 1 {
-		return fmt.Errorf("--dest needs exactly one app")
+		return usageError{"--dest needs exactly one app"}
 	}
 
 	// A single explicit app gets the friendlier single-app UX: no [name]
@@ -81,7 +81,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := saveManifestEntry(cfg, name, ver, flagInstallDest); err != nil {
+		commit, err := prepareInstallArg(cfg, name, ver, flagInstallDest)
+		if err != nil {
 			return err
 		}
 		hooks := appHooks(name, "")
@@ -89,8 +90,14 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if ui.IsTTY() && !ui.Global.JSON {
 			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
 		}
+		res := ui.ActionResult{Name: name}
+		hooks.OnResult = installResultHook(&res)
 		progress := ui.NewProgressFn(name)
-		return install.Run(ctx, cfg, name, progress, hooks)
+		err = install.Run(ctx, cfg, name, progress, hooks)
+		if err == nil {
+			err = commit(hooks.OnOK)
+		}
+		return finishSingle(&res, err)
 	}
 
 	if len(args) > 1 {
@@ -109,32 +116,86 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			}
 			names[i], versions[i] = name, ver
 		}
+		commits := make(map[string]func(func(string)) error, len(names))
 		for i, name := range names {
-			if err := saveManifestEntry(cfg, name, versions[i], ""); err != nil {
+			commit, err := prepareInstallArg(cfg, name, versions[i], "")
+			if err != nil {
 				return err
 			}
+			commits[name] = commit
 		}
-		return installParallel(ctx, cfg, names)
+		return installParallel(ctx, cfg, names, commits)
 	}
 
 	// No args: install all apps from the manifest.
 	if len(cfg.Apps) == 0 {
-		ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
+		if ui.Global.JSON {
+			return printResults([]ui.ActionResult{})
+		}
+		fmt.Println("No apps configured in manifest (~/.config/paq/config.toml): nothing to install.")
+		ui.Hint("install a tool with `paq install <name>` (find one with `paq search <name>`)")
 		return nil
 	}
 	names := make([]string, 0, len(cfg.Apps))
 	for name := range cfg.Apps {
 		names = append(names, name)
 	}
-	return installParallel(ctx, cfg, names)
+	return installParallel(ctx, cfg, names, nil)
 }
 
 // installParallel installs names concurrently (max maxParallel goroutines).
-func installParallel(ctx context.Context, cfg *config.Config, names []string) error {
-	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks) error {
+// commits (may be nil) holds, per app, the manifest write to make once its
+// install succeeded; the writes are serialized, as they share one file.
+func installParallel(ctx context.Context, cfg *config.Config, names []string, commits map[string]func(func(string)) error) error {
+	var manifestMu sync.Mutex
+	return runParallel(ctx, names, "installed", func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
 		hooks.Force = flagInstallForce
-		return install.Run(ctx, cfg, name, nil, hooks)
+		hooks.OnResult = installResultHook(res)
+		if err := install.Run(ctx, cfg, name, nil, hooks); err != nil {
+			return err
+		}
+		commit := commits[name]
+		if commit == nil {
+			return nil
+		}
+		manifestMu.Lock()
+		defer manifestMu.Unlock()
+		return commit(hooks.OnOK)
 	})
+}
+
+// installResultHook returns an OnResult hook that fills res from the
+// pipeline's outcome.
+func installResultHook(res *ui.ActionResult) func(install.Result) {
+	return func(r install.Result) {
+		res.Status, res.Version, res.Dest = "installed", r.Version, r.Dest
+		if r.AlreadyInstalled {
+			res.Status = "already_installed"
+		}
+	}
+}
+
+// finishSingle completes res with err (if any), prints it in --json mode and
+// returns err.
+func finishSingle(res *ui.ActionResult, err error) error {
+	if err != nil {
+		res.Status = "failed"
+		res.Error, res.Hint = messageAndHint(err)
+	}
+	if perr := printResults([]ui.ActionResult{*res}); perr != nil && err == nil {
+		return perr
+	}
+	return err
+}
+
+// printResults prints the per-app outcomes, sorted by name, in --json mode;
+// human output already reported them line by line.
+func printResults(results []ui.ActionResult) error {
+	if !ui.Global.JSON {
+		return nil
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
+	return ui.PrintJSON(results)
 }
 
 // batchError summarizes the outcome of a parallel run. The per-app errors
@@ -164,11 +225,12 @@ func (e batchError) Is(target error) bool {
 // action runs to completion (only Ctrl-C, via ctx, cancels the batch) and the
 // outcomes are collected into a final summary. verb names the successful
 // outcome in that summary ("installed", "upgraded").
-func runParallel(ctx context.Context, names []string, verb string, action func(context.Context, string, *install.Hooks) error) error {
+func runParallel(ctx context.Context, names []string, verb string, action func(context.Context, string, *install.Hooks, *ui.ActionResult) error) error {
 	var (
 		stdoutMu sync.Mutex
 		done     int
 		failed   []string
+		results  []ui.ActionResult
 		// Tracked here rather than re-derived from the summary text: the
 		// per-app errors are not reachable from the returned batchError.
 		failedVerification bool
@@ -182,10 +244,16 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 		g.Go(func() error {
 			prefix := fmt.Sprintf("[%-12s] ", name)
 			hooks := lockedAppHooks(prefix, &stdoutMu)
-			err := action(ctx, name, hooks)
+			res := ui.ActionResult{Name: name}
+			err := action(ctx, name, hooks, &res)
 
 			stdoutMu.Lock()
 			defer stdoutMu.Unlock()
+			if err != nil {
+				res.Status = "failed"
+				res.Error, res.Hint = messageAndHint(err)
+			}
+			results = append(results, res)
 			if err != nil {
 				// The pipeline already shows the error via OnFail; we only
 				// reprint it if for some reason it wasn't shown.
@@ -204,6 +272,9 @@ func runParallel(ctx context.Context, names []string, verb string, action func(c
 	}
 	_ = g.Wait() // the goroutines never return an error: outcomes are collected above
 
+	if err := printResults(results); err != nil {
+		return err
+	}
 	if len(failed) > 0 {
 		sort.Strings(failed)
 		return batchError{
@@ -224,22 +295,29 @@ func parseInstallArg(arg string) (name, version string, err error) {
 	return name, version, nil
 }
 
-// saveManifestEntry runs ensureManifestEntry for an install argument,
-// honoring --no-save, and reports a manifest write.
-func saveManifestEntry(cfg *config.Config, name, version, dest string) error {
+// prepareInstallArg runs prepareManifestEntry for an install argument,
+// honoring --no-save. The returned commit, to call once the install
+// succeeded, writes the manifest and reports the write through ok.
+func prepareInstallArg(cfg *config.Config, name, version, dest string) (commit func(ok func(string)) error, err error) {
 	_, existed := cfg.Apps[name]
-	path, err := ensureManifestEntry(cfg, name, version, dest, !flagInstallNoSave)
+	persist, err := prepareManifestEntry(cfg, name, version, dest, !flagInstallNoSave)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	switch {
-	case path == "":
-	case existed:
-		ui.OK("set %s version to %s in %s", name, version, path)
-	default:
-		ui.OK("added %s to %s", name, path)
-	}
-	return nil
+	return func(ok func(string)) error {
+		path, err := persist()
+		if err != nil {
+			return fmt.Errorf("%s is installed, but recording it in the manifest failed: %w", name, err)
+		}
+		switch {
+		case path == "":
+		case existed:
+			ok(fmt.Sprintf("set %s version to %s in %s", name, version, path))
+		default:
+			ok(fmt.Sprintf("added %s to %s", name, path))
+		}
+		return nil
+	}, nil
 }
 
 // ensureManifestEntry ensures that cfg.Apps[name] exists, so that install
@@ -255,31 +333,47 @@ func saveManifestEntry(cfg *config.Config, name, version, dest string) error {
 // Returns the written path ("" if nothing was persisted) or a hintError if
 // name is neither a known app nor a known spec.
 func ensureManifestEntry(cfg *config.Config, name, version, dest string, save bool) (string, error) {
+	persist, err := prepareManifestEntry(cfg, name, version, dest, save)
+	if err != nil {
+		return "", err
+	}
+	return persist()
+}
+
+// prepareManifestEntry is ensureManifestEntry without the write: it validates
+// and updates cfg.Apps in memory, and returns the function that persists the
+// change (a no-op returning "" when there is nothing to save). Install calls
+// it only once the tool is on disk, so a failed install leaves the manifest
+// untouched.
+func prepareManifestEntry(cfg *config.Config, name, version, dest string, save bool) (persist func() (string, error), err error) {
+	nothing := func() (string, error) { return "", nil }
 	if entry, exists := cfg.Apps[name]; exists {
 		if dest != "" && dest != entry.Dest {
 			if save {
-				return "", fmt.Errorf("%q is already in the manifest with dest %q: use --no-save to install it elsewhere for this run, or change its dest in the manifest", name, entry.Dest)
+				return nil, fmt.Errorf("%q is already in the manifest with dest %q: use --no-save to install it elsewhere for this run, or change its dest in the manifest", name, entry.Dest)
 			}
 			entry.Dest = dest
 			cfg.Apps[name] = entry
 		}
 		if version == "" || version == entry.Version {
-			return "", nil
+			return nothing, nil
 		}
 		entry.Version = version
 		cfg.Apps[name] = entry
 		if !save {
-			return "", nil
+			return nothing, nil
 		}
-		path, err := config.SetManifestAppVersion(name, version)
-		if err != nil {
-			return "", fmt.Errorf("update manifest entry: %w", err)
-		}
-		return path, nil
+		return func() (string, error) {
+			path, err := config.SetManifestAppVersion(name, version)
+			if err != nil {
+				return "", fmt.Errorf("update manifest entry: %w", err)
+			}
+			return path, nil
+		}, nil
 	}
 
 	if err := validateAppName(cfg, name); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	spec := cfg.Specs[name]
@@ -298,15 +392,16 @@ func ensureManifestEntry(cfg *config.Config, name, version, dest string, save bo
 	cfg.Apps[name] = entry
 
 	if !save {
-		return "", nil
+		return nothing, nil
 	}
 
-	block := renderAppEntryTOML(name, entry)
-	path, err := config.WriteManifestEntry(name, block, false)
-	if err != nil {
-		return "", fmt.Errorf("write manifest entry: %w", err)
-	}
-	return path, nil
+	return func() (string, error) {
+		path, err := config.WriteManifestEntry(name, renderAppEntryTOML(name, entry), false)
+		if err != nil {
+			return "", fmt.Errorf("write manifest entry: %w", err)
+		}
+		return path, nil
+	}, nil
 }
 
 // validateAppName reports whether name can be installed: either it's already
@@ -317,13 +412,10 @@ func validateAppName(cfg *config.Config, name string) error {
 		return nil
 	}
 	if _, ok := cfg.Specs[name]; !ok {
-		hint := "list available definitions with `paq registry`"
-		if s := similarSpecs(cfg.Specs, name); len(s) > 0 {
-			hint = fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
-		}
 		return hintError{
-			msg:  fmt.Sprintf("%q is not in your manifest and not a known registry spec", name),
-			hint: hint,
+			msg:          fmt.Sprintf("%q is not in your manifest and not a known registry spec", name),
+			hint:         specNotFoundHint(cfg.Specs, name),
+			suggestLocal: true,
 		}
 	}
 	if !validAppKey(name) {
@@ -370,10 +462,15 @@ func cosignPrompt(cfg *config.Config, app string, r io.Reader) func(context.Cont
 		line, _ := bufio.NewReader(r).ReadString('\n')
 		switch strings.TrimSpace(strings.ToLower(line)) {
 		case "u", "user":
-			if err := saveManifestEntry(cfg, "cosign", "", ""); err != nil {
+			commit, err := prepareInstallArg(cfg, "cosign", "", "")
+			if err != nil {
 				return false, err
 			}
-			if err := install.Run(ctx, cfg, "cosign", ui.NewProgressFn("cosign"), appHooks("cosign", "")); err != nil {
+			hooks := appHooks("cosign", "")
+			if err := install.Run(ctx, cfg, "cosign", ui.NewProgressFn("cosign"), hooks); err != nil {
+				return false, err
+			}
+			if err := commit(hooks.OnOK); err != nil {
 				return false, err
 			}
 			return true, nil

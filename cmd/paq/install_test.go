@@ -11,6 +11,7 @@ import (
 
 	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/install"
+	"github.com/enr/paq/internal/ui"
 )
 
 // newTestConfig builds a minimal Config with a "ripgrep" spec in the
@@ -32,7 +33,7 @@ func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
 	var ran []string
 
 	err := runParallel(context.Background(), []string{"ok-a", "broken", "ok-b"}, "installed",
-		func(ctx context.Context, name string, hooks *install.Hooks) error {
+		func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
 			mu.Lock()
 			ran = append(ran, name)
 			mu.Unlock()
@@ -61,7 +62,7 @@ func TestRunParallelRunsEveryAppDespiteFailures(t *testing.T) {
 // whatever order the goroutines happened to finish in.
 func TestRunParallelSortsFailuresAlphabetically(t *testing.T) {
 	err := runParallel(context.Background(), []string{"zeta", "alpha"}, "installed",
-		func(ctx context.Context, name string, hooks *install.Hooks) error {
+		func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
 			return errors.New("HTTP 404")
 		})
 
@@ -97,6 +98,36 @@ func TestEnsureManifestEntryAutoImportsAndWrites(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "[apps.ripgrep]") {
 		t.Fatalf("manifest missing [apps.ripgrep], got:\n%s", data)
+	}
+}
+
+// prepareManifestEntry makes the app installable in memory but writes nothing
+// until persist is called: install calls it only after the tool is on disk,
+// so a failed install leaves the manifest untouched.
+func TestPrepareManifestEntryDefersTheWrite(t *testing.T) {
+	dir := t.TempDir()
+	withConfigHome(t, dir)
+	manifest := filepath.Join(dir, "paq", "config.toml")
+
+	cfg := newTestConfig()
+	persist, err := prepareManifestEntry(cfg, "ripgrep", "14.1.1", "", true)
+	if err != nil {
+		t.Fatalf("prepareManifestEntry: %v", err)
+	}
+	if got := cfg.Apps["ripgrep"].Version; got != "14.1.1" {
+		t.Fatalf("in-memory version = %q, want 14.1.1", got)
+	}
+	if _, err := os.Stat(manifest); !os.IsNotExist(err) {
+		t.Fatalf("manifest written before persist (stat err = %v)", err)
+	}
+
+	path, err := persist()
+	if err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "[apps.ripgrep]") {
+		t.Fatalf("manifest after persist = %q (err %v), want an [apps.ripgrep] entry", data, err)
 	}
 }
 
@@ -300,8 +331,22 @@ func TestEnsureManifestEntryUnknownNoSuggestion(t *testing.T) {
 	if !errors.As(err, &he) {
 		t.Fatalf("expected hintError, got %T: %v", err, err)
 	}
-	if !strings.Contains(he.hint, "paq registry") {
+	if !strings.Contains(he.hint, "paq search") {
 		t.Fatalf("expected the registry fallback hint, got %q", he.hint)
+	}
+}
+
+// TestEnsureManifestEntrySuggestsByExecutable verifies that the name of the
+// executable a recipe installs ("rg") suggests the recipe ("ripgrep").
+func TestEnsureManifestEntrySuggestsByExecutable(t *testing.T) {
+	cfg := newTestConfig()
+	_, err := ensureManifestEntry(cfg, "rg", "", "", true)
+	var he hintError
+	if !errors.As(err, &he) {
+		t.Fatalf("expected hintError, got %T: %v", err, err)
+	}
+	if he.hint != "did you mean: ripgrep?" {
+		t.Fatalf("hint = %q, want a did-you-mean naming ripgrep", he.hint)
 	}
 }
 

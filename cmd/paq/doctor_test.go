@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +22,8 @@ func doctorEnv(t *testing.T, manifest string) {
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("XDG_CACHE_HOME", cacheHome)
+	// No token: doctor would otherwise verify it against the real GitHub.
+	t.Setenv("GITHUB_TOKEN", "")
 	if runtime.GOOS == "windows" {
 		t.Setenv("APPDATA", cfgHome)
 		t.Setenv("LOCALAPPDATA", stateHome)
@@ -257,6 +261,57 @@ func TestRunDoctorCosignRow(t *testing.T) {
 				}
 			}
 			t.Errorf("doctor report has no cosign check: %+v", report.Checks)
+		})
+	}
+}
+
+// doctor verifies GITHUB_TOKEN against GitHub: a valid token is reported with
+// the requests left, a rejected one is a problem (exit non-zero).
+func TestRunDoctorVerifiesGitHubToken(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		code        int
+		wantStatus  string
+		wantValue   string
+		wantProblem bool
+	}{
+		{"valid", http.StatusOK, "ok", "set (valid, 4999 requests left)", false},
+		{"rejected", http.StatusUnauthorized, "warn", "set, but rejected by GitHub", true},
+		{"blocked", http.StatusForbidden, "warn", "set (not verified)", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doctorEnv(t, "")
+			var gotAuth string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuth = r.Header.Get("Authorization")
+				w.Header().Set("X-RateLimit-Remaining", "4999")
+				w.WriteHeader(tc.code)
+			}))
+			defer srv.Close()
+			withFlag(t, &githubRateLimitURL, srv.URL)
+			t.Setenv("GITHUB_TOKEN", "tok")
+
+			var runErr error
+			out := withJSON(t, func() { runErr = runDoctor(doctorCmd, nil) })
+			if (runErr != nil) != tc.wantProblem {
+				t.Errorf("runDoctor err = %v, want a problem: %v", runErr, tc.wantProblem)
+			}
+			if gotAuth != "Bearer tok" {
+				t.Errorf("Authorization = %q, want the token", gotAuth)
+			}
+			var report doctorReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v\n%s", err, out)
+			}
+			for _, c := range report.Checks {
+				if c.Name == "github_token" {
+					if c.Status != tc.wantStatus || c.Value != tc.wantValue || c.Problem != tc.wantProblem {
+						t.Errorf("github_token check = %+v, want status %q value %q problem %v", c, tc.wantStatus, tc.wantValue, tc.wantProblem)
+					}
+					return
+				}
+			}
+			t.Error("no github_token check in the report")
 		})
 	}
 }

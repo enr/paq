@@ -75,7 +75,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		if ui.IsTTY() && !ui.Global.JSON {
 			hooks.CosignMissing = cosignPrompt(cfg, name, os.Stdin)
 		}
-		return upgradeApp(ctx, cfg, name, hooks, ui.NewProgressFn(name))
+		res := ui.ActionResult{Name: name}
+		return finishSingle(&res, upgradeApp(ctx, cfg, name, hooks, ui.NewProgressFn(name), &res))
 	}
 
 	var names []string
@@ -90,7 +91,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	} else {
 		// No args: upgrade all apps from the manifest.
 		if len(cfg.Apps) == 0 {
-			ui.Info("No apps configured in manifest (~/.config/paq/config.toml)")
+			if ui.Global.JSON {
+				return printResults([]ui.ActionResult{})
+			}
+			fmt.Println("No apps configured in manifest (~/.config/paq/config.toml): nothing to upgrade.")
 			return nil
 		}
 		for name := range cfg.Apps {
@@ -98,14 +102,21 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return runParallel(ctx, names, "upgraded", func(ctx context.Context, name string, hooks *install.Hooks) error {
-		return upgradeApp(ctx, cfg, name, hooks, nil)
+	return runParallel(ctx, names, "upgraded", func(ctx context.Context, name string, hooks *install.Hooks, res *ui.ActionResult) error {
+		return upgradeApp(ctx, cfg, name, hooks, nil, res)
 	})
 }
 
 // upgradeApp upgrades a single app: resolves the latest upstream version
 // and, if different from the installed one, reinstalls and removes old versions.
-func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *install.Hooks, progress download.ProgressFn) error {
+// The outcome is recorded in res (may be nil) for --json output.
+func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *install.Hooks, progress download.ProgressFn, res *ui.ActionResult) error {
+	if res == nil {
+		res = &ui.ActionResult{}
+	}
+	skipped := func(reason string) {
+		res.Status, res.Reason = "skipped", reason
+	}
 	// step shows a neutral message (in progress / skip); ok shows a positive
 	// outcome. Both are visible by default (suppressed only by --quiet), so
 	// the upgrade's outcome isn't silent without --verbose.
@@ -138,6 +149,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 			pinned = spec.DefaultVersion
 		}
 		step("pinned to %s, skipping", pinned)
+		skipped("pinned to " + pinned)
 		return nil
 	}
 
@@ -148,6 +160,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	installed := st.ByName(name)
 	if len(installed) == 0 {
 		step("not installed, skipping (use 'paq install %s')", name)
+		skipped("not installed")
 		return nil
 	}
 
@@ -161,6 +174,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	latest, _, err := resolveLatestVersion(ctx, cfg, spec, warn)
 	if errors.Is(err, version.ErrLatestNotImplemented) {
 		step("backend %q has no upstream version to resolve, skipping", spec.Backend)
+		skipped("no upstream version to resolve")
 		return nil
 	}
 	if err != nil {
@@ -171,6 +185,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	for _, rec := range installed {
 		if rec.Version == latest {
 			ok("already up to date (%s)", latest)
+			res.Status, res.Version, res.Dest = "up_to_date", rec.Version, rec.Dest
 			return nil
 		}
 	}
@@ -183,6 +198,9 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 		hooks = &install.Hooks{}
 	}
 	hooks.IgnoreLock = true
+	hooks.OnResult = func(r install.Result) {
+		res.Status, res.Version, res.Dest = "upgraded", r.Version, r.Dest
+	}
 	if err := install.Run(ctx, cfg, name, progress, hooks); err != nil {
 		return err
 	}

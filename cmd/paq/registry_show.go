@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
+	"github.com/enr/paq/internal/config"
 	"github.com/enr/paq/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -29,25 +31,47 @@ func runRegistryShow(cmd *cobra.Command, args []string) error {
 
 	spec, ok := cfg.Specs[name]
 	if !ok {
-		hint := "list available definitions with `paq registry`"
-		if suggestions := similarSpecs(cfg.Specs, name); len(suggestions) > 0 {
-			hint = fmt.Sprintf("did you mean: %s?", strings.Join(suggestions, ", "))
-		}
-		return hintError{msg: fmt.Sprintf("spec %q not found in registry", name), hint: hint}
+		return hintError{msg: fmt.Sprintf("spec %q not found in registry", name), hint: specNotFoundHint(cfg.Specs, name)}
 	}
 
 	return ui.PrintSpecDetail(name, spec)
 }
 
-// similarSpecs returns the definition names that contain the query as a substring.
-func similarSpecs[T any](specs map[string]T, query string) []string {
+// specNotFoundHint suggests the definitions the user may have meant by name,
+// or how to browse the registry when nothing is close.
+func specNotFoundHint(specs map[string]config.Spec, name string) string {
+	if s := similarSpecs(specs, name); len(s) > 0 {
+		return fmt.Sprintf("did you mean: %s?", strings.Join(s, ", "))
+	}
+	return "search the registry with `paq search <name>`, or list it all with `paq search`"
+}
+
+// similarSpecs returns the definition names that contain the query as a
+// substring, or whose recipe installs an executable named query (so "rg"
+// finds "ripgrep").
+func similarSpecs(specs map[string]config.Spec, query string) []string {
 	q := strings.ToLower(query)
 	var out []string
-	for name := range specs {
-		if strings.Contains(strings.ToLower(name), q) {
+	for name, spec := range specs {
+		if strings.Contains(strings.ToLower(name), q) || installsExecutable(spec, q) {
 			out = append(out, name)
 		}
 	}
 	sort.Strings(out)
 	return out
+}
+
+// installsExecutable reports whether spec extracts an executable whose name
+// (without the {{ext}} suffix) is name.
+func installsExecutable(spec config.Spec, name string) bool {
+	files := []string{spec.Extract}
+	for _, b := range spec.Binaries {
+		files = append(files, b.From, b.To)
+	}
+	for _, f := range files {
+		if f != "" && strings.ToLower(strings.TrimSuffix(path.Base(f), "{{ext}}")) == name {
+			return true
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -44,7 +45,7 @@ func (p NodejsProvider) Resolve(ctx context.Context) (string, string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("%s returned %d", nodejsIndexURL, resp.StatusCode)
+		return "", "", &httperr.StatusError{Code: resp.StatusCode, URL: nodejsIndexURL, Service: "nodejs.org"}
 	}
 
 	var releases []struct {

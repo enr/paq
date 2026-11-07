@@ -34,6 +34,9 @@ var jsonCapableCommands = map[string]bool{
 	"paq audit":           true,
 	"paq which":           true,
 	"paq doctor":          true,
+	"paq install":         true,
+	"paq upgrade":         true,
+	"paq uninstall":       true,
 }
 
 var (
@@ -64,7 +67,7 @@ var rootCmd = &cobra.Command{
 			Debug:   flagDebug,
 		}
 		if flagJSON && cmd.Runnable() && !jsonCapableCommands[cmd.CommandPath()] {
-			return fmt.Errorf("--json is not supported by %q", cmd.CommandPath())
+			return usageError{fmt.Sprintf("--json is not supported by %q", cmd.CommandPath())}
 		}
 		if err := applyConfigPathOverride(); err != nil {
 			return err
@@ -141,7 +144,7 @@ func applyConfigPathOverride() error {
 	config.ProjectRoot, state.PathOverride = "", ""
 	if localMode() {
 		if flagConfig != "" {
-			return fmt.Errorf("--config cannot be combined with --local")
+			return usageError{"--config cannot be combined with --local"}
 		}
 		root, err := findProjectRoot()
 		if err != nil {
@@ -219,12 +222,39 @@ func findProjectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for dir := cwd; ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, localManifestName)); err == nil {
-			return dir, nil
+	if path := nearestProjectManifest(cwd); path != "" {
+		return filepath.Dir(path), nil
+	}
+	return cwd, nil
+}
+
+// nearestProjectManifest returns the path of the nearest paq.toml from dir
+// upwards, or "" when there is none.
+func nearestProjectManifest(dir string) string {
+	for ; ; dir = filepath.Dir(dir) {
+		path := filepath.Join(dir, localManifestName)
+		if _, err := os.Stat(path); err == nil {
+			return path
 		}
 		if filepath.Dir(dir) == dir {
-			return cwd, nil
+			return ""
 		}
 	}
+}
+
+// localModeHint suggests --local when paq runs in global mode next to a
+// project manifest, the likely reason a tool was not found. "" otherwise.
+func localModeHint() string {
+	if localMode() {
+		return ""
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	path := nearestProjectManifest(cwd)
+	if path == "" {
+		return ""
+	}
+	return fmt.Sprintf("re-run with --local to use the project manifest %s", path)
 }

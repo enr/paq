@@ -42,9 +42,9 @@ func captureStdout(t *testing.T, fn func()) string {
 // global UI config afterwards so other tests are not affected.
 func withJSON(t *testing.T, fn func()) string {
 	t.Helper()
-	saved := ui.Global
-	ui.Global = ui.Config{JSON: true}
-	defer func() { ui.Global = saved }()
+	saved, savedWritten := ui.Global, ui.JSONWritten
+	ui.Global, ui.JSONWritten = ui.Config{JSON: true}, false
+	defer func() { ui.Global, ui.JSONWritten = saved, savedWritten }()
 
 	return captureStdout(t, fn)
 }

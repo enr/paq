@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -40,8 +39,9 @@ func runWhich(cmd *cobra.Command, args []string) error {
 		rec, ok := st.Get(name, version)
 		if !ok {
 			return hintError{
-				msg:  fmt.Sprintf("%s@%s is not installed", name, version),
-				hint: "list installed versions with `paq ls`",
+				msg:          fmt.Sprintf("%s@%s is not installed", name, version),
+				hint:         "list installed versions with `paq ls`",
+				suggestLocal: true,
 			}
 		}
 		matches = []state.InstalledApp{rec}
@@ -49,8 +49,9 @@ func runWhich(cmd *cobra.Command, args []string) error {
 		matches = st.ByName(name)
 		if len(matches) == 0 {
 			return hintError{
-				msg:  fmt.Sprintf("%q is not installed", name),
-				hint: "list installed tools with `paq ls`",
+				msg:          fmt.Sprintf("%q is not installed", name),
+				hint:         "list installed tools with `paq ls`",
+				suggestLocal: true,
 			}
 		}
 	}
@@ -79,12 +80,7 @@ func runWhich(cmd *cobra.Command, args []string) error {
 	matches = present
 
 	if ui.Global.JSON {
-		data, err := json.MarshalIndent(matches, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal matches: %w", err)
-		}
-		fmt.Println(string(data))
-		return nil
+		return ui.PrintJSON(matches)
 	}
 
 	for _, rec := range matches {

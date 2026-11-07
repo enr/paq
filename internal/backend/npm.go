@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enr/paq/internal/httperr"
 	"github.com/enr/paq/internal/httpretry"
 )
 
@@ -156,7 +157,7 @@ func fetchNpmManifest(ctx context.Context, client *http.Client, pkg, version str
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return m, fmt.Errorf("npm registry returned %d for %s", resp.StatusCode, url)
+		return m, &httperr.StatusError{Code: resp.StatusCode, URL: url, Service: httperr.NpmRegistry}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		return m, fmt.Errorf("decode npm manifest %s: %w", url, err)

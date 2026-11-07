@@ -16,5 +16,5 @@ echo "==> install to ${install_dir}"
 
 ./.sdlc/build
 cp "bin/paq" "${install_dir}/"
-paq version
+"${install_dir}/paq" version
 
