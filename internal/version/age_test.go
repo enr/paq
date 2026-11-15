@@ -40,21 +40,24 @@ func TestResolveMinimumAge(t *testing.T) {
 	cases := []struct {
 		name         string
 		override     string
+		app          string
 		spec         string
 		defaults     string
 		wantAge      time.Duration
 		wantExplicit bool
 	}{
-		{"neither set: built-in default", "", "", "", DefaultMinimumReleaseAge, false},
-		{"only global default", "", "", "6mo", 6 * 30 * 24 * time.Hour, true},
-		{"spec overrides global default", "", "7d", "6mo", 7 * 24 * time.Hour, true},
-		{"spec alone", "", "7d", "", 7 * 24 * time.Hour, true},
-		{"explicit zero disables", "", "0h", "", 0, true},
-		{"override wins over spec and defaults", "0h", "7d", "6mo", 0, false},
+		{"neither set: built-in default", "", "", "", "", DefaultMinimumReleaseAge, false},
+		{"only global default", "", "", "", "6mo", 6 * 30 * 24 * time.Hour, true},
+		{"spec overrides global default", "", "", "7d", "6mo", 7 * 24 * time.Hour, true},
+		{"spec alone", "", "", "7d", "", 7 * 24 * time.Hour, true},
+		{"explicit zero disables", "", "", "0h", "", 0, true},
+		{"app overrides spec and defaults", "", "0h", "7d", "6mo", 0, true},
+		{"app alone", "", "3d", "", "", 3 * 24 * time.Hour, true},
+		{"override wins over app, spec and defaults", "0h", "1d", "7d", "6mo", 0, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			age, explicit, err := ResolveMinimumAge(c.override, c.spec, c.defaults)
+			age, explicit, err := ResolveMinimumAge(c.override, c.app, c.spec, c.defaults)
 			if err != nil {
 				t.Fatalf("ResolveMinimumAge error: %v", err)
 			}
@@ -69,13 +72,16 @@ func TestResolveMinimumAge(t *testing.T) {
 }
 
 func TestResolveMinimumAgeInvalid(t *testing.T) {
-	if _, _, err := ResolveMinimumAge("not-a-duration", "", ""); err == nil {
+	if _, _, err := ResolveMinimumAge("not-a-duration", "", "", ""); err == nil {
 		t.Error("expected error for invalid override value, got nil")
 	}
-	if _, _, err := ResolveMinimumAge("", "not-a-duration", ""); err == nil {
+	if _, _, err := ResolveMinimumAge("", "", "not-a-duration", ""); err == nil {
 		t.Error("expected error for invalid spec value, got nil")
 	}
-	if _, _, err := ResolveMinimumAge("", "", "not-a-duration"); err == nil {
+	if _, _, err := ResolveMinimumAge("", "", "", "not-a-duration"); err == nil {
 		t.Error("expected error for invalid defaults value, got nil")
+	}
+	if _, _, err := ResolveMinimumAge("", "not-a-duration", "", ""); err == nil {
+		t.Error("expected error for invalid app value, got nil")
 	}
 }

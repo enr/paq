@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -332,6 +333,22 @@ func LoadUserConfig() (*Config, error) {
 	}
 
 	return &Config{Apps: raw.Apps, Defaults: raw.Defaults, Registry: raw.Registry, Specs: specs}, nil
+}
+
+// ShadowingWithoutBackend returns, sorted, the names of the user specs that
+// replace a registry spec of the same name but set no backend. A user spec
+// replaces the registry one as a whole (fields are not merged), so such a
+// spec is almost certainly a partial override that leaves the tool without a
+// way to resolve or download it.
+func ShadowingWithoutBackend(registrySpecs map[string]Spec, user *Config) []string {
+	var names []string
+	for name, spec := range user.Specs {
+		if _, ok := registrySpecs[name]; ok && spec.Backend == "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Merge combines the embedded registry with the user manifest.

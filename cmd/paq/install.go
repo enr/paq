@@ -535,6 +535,10 @@ func loadConfigWithMeta() (*config.Config, *registry.Meta, error) {
 	userCfg.GlobalTemplates = globalTmpl
 	userCfg.GlobalTemplatesOS = globalTmplOS
 
+	for _, name := range config.ShadowingWithoutBackend(specs, userCfg) {
+		ui.Warn("[specs.%s] replaces the built-in recipe %q as a whole but sets no backend: user specs are not merged with built-in ones. Remove it or copy the full built-in recipe; to change only minimum_release_age, set it in [apps.<name>]", name, name)
+	}
+
 	cfg, err := config.Merge(specs, userCfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("merge config: %w", err)

@@ -318,6 +318,10 @@ type AppEntry struct {
 	Arch    map[string]string `toml:"arch"`
 	Env     map[string]string `toml:"env"`
 	Chmod   string            `toml:"chmod"`
+	// MinimumReleaseAge overrides, for this app, the spec's and the global
+	// minimum_release_age (e.g. "0h" to always track the true latest).
+	// Empty = fall back to the spec, then [defaults], then the built-in default.
+	MinimumReleaseAge string `toml:"minimum_release_age"`
 }
 
 // TracksLatest reports whether the app entry follows the newest upstream

@@ -171,7 +171,7 @@ func upgradeApp(ctx context.Context, cfg *config.Config, name string, hooks *ins
 	}
 
 	step("Resolving latest version...")
-	latest, _, err := resolveLatestVersion(ctx, cfg, spec, warn)
+	latest, _, err := resolveLatestVersion(ctx, cfg, app, spec, warn)
 	if errors.Is(err, version.ErrLatestNotImplemented) {
 		step("backend %q has no upstream version to resolve, skipping", spec.Backend)
 		skipped("no upstream version to resolve")
@@ -227,17 +227,17 @@ func latestRequestFor(spec config.Spec) version.LatestRequest {
 
 // resolveLatestVersion resolves the latest upstream version for a spec,
 // selecting the provider from its backend/latest_strategy and enforcing
-// minimum_release_age (--min-age > spec override > global [defaults] >
+// minimum_release_age (--min-age > app > spec override > global [defaults] >
 // built-in default) when the backend/strategy supports it (currently
 // "github" and "npm", with no explicit latest_strategy). pending is the newest release
 // skipped for being younger than that minimum age (nil if none). warn (may be
-// nil) is called if the spec/defaults explicitly configure
+// nil) is called if the app/spec/defaults explicitly configure
 // minimum_release_age for a backend that can't honor it.
 // Returns version.ErrLatestNotImplemented if neither can resolve "latest".
 // Shared by upgradeApp and the "outdated" command.
-func resolveLatestVersion(ctx context.Context, cfg *config.Config, spec config.Spec, warn func(string, ...any)) (latest string, pending *version.PendingRelease, err error) {
+func resolveLatestVersion(ctx context.Context, cfg *config.Config, app config.AppEntry, spec config.Spec, warn func(string, ...any)) (latest string, pending *version.PendingRelease, err error) {
 	req := latestRequestFor(spec)
-	minAge, explicit, err := version.ResolveMinimumAge(cfg.MinimumReleaseAgeOverride, spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
+	minAge, explicit, err := version.ResolveMinimumAge(cfg.MinimumReleaseAgeOverride, app.MinimumReleaseAge, spec.MinimumReleaseAge, cfg.Defaults.MinimumReleaseAge)
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid minimum_release_age: %w", err)
 	}

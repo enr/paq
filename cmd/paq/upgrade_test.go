@@ -191,7 +191,7 @@ func TestResolveLatestVersionWarnsOnUnsupportedBackendWithExplicitAge(t *testing
 			var warnings []string
 			warn := func(format string, a ...any) { warnings = append(warnings, format) }
 
-			_, _, err := resolveLatestVersion(context.Background(), &c.cfg, c.spec, warn)
+			_, _, err := resolveLatestVersion(context.Background(), &c.cfg, config.AppEntry{}, c.spec, warn)
 			if !errors.Is(err, version.ErrLatestNotImplemented) {
 				t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
 			}
@@ -217,7 +217,7 @@ func TestResolveLatestVersionWarnsForArchLinuxStrategy(t *testing.T) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, format) }
 
-	_, _, err := resolveLatestVersion(context.Background(), &cfg, spec, warn)
+	_, _, err := resolveLatestVersion(context.Background(), &cfg, config.AppEntry{}, spec, warn)
 	if err == nil {
 		t.Fatal("expected an error (empty arch_pkg), got nil")
 	}
@@ -240,7 +240,7 @@ func TestResolveLatestVersionNoWarnWithoutExplicitAge(t *testing.T) {
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, format) }
 
-	_, _, err := resolveLatestVersion(context.Background(), &cfg, spec, warn)
+	_, _, err := resolveLatestVersion(context.Background(), &cfg, config.AppEntry{}, spec, warn)
 	if !errors.Is(err, version.ErrLatestNotImplemented) {
 		t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
 	}
@@ -256,7 +256,7 @@ func TestResolveLatestVersionInvalidMinimumAge(t *testing.T) {
 	spec := config.Spec{Backend: "github", Repo: "test/repo", MinimumReleaseAge: "not-a-duration"}
 	cfg := config.Config{}
 
-	_, _, err := resolveLatestVersion(context.Background(), &cfg, spec, nil)
+	_, _, err := resolveLatestVersion(context.Background(), &cfg, config.AppEntry{}, spec, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid minimum_release_age") {
 		t.Fatalf("expected an invalid minimum_release_age error, got %v", err)
 	}
@@ -430,7 +430,7 @@ func TestApplyMinAgeFlag(t *testing.T) {
 	spec := config.Spec{Backend: "url", Source: "https://example.invalid/{{version}}.tar.gz", MinimumReleaseAge: "7d"}
 	var warnings []string
 	warn := func(format string, a ...any) { warnings = append(warnings, format) }
-	if _, _, err := resolveLatestVersion(context.Background(), &cfg, spec, warn); !errors.Is(err, version.ErrLatestNotImplemented) {
+	if _, _, err := resolveLatestVersion(context.Background(), &cfg, config.AppEntry{}, spec, warn); !errors.Is(err, version.ErrLatestNotImplemented) {
 		t.Fatalf("expected ErrLatestNotImplemented, got %v", err)
 	}
 	if len(warnings) != 0 {

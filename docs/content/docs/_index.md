@@ -763,7 +763,10 @@ You are not limited to the embedded registry. Add your own recipes to
 fields as the embedded ones. A user recipe is installable like any registry
 tool — `paq install <name>` auto-imports it into the manifest. If a user recipe
 shares its name with an embedded one, the **user recipe wins**, so you can also
-patch a stale embedded recipe without waiting for a release.
+patch a stale embedded recipe without waiting for a release. The user recipe
+replaces the embedded one as a whole (fields are not merged): copy the full
+recipe and change what you need. paq warns about a user recipe that shadows an
+embedded one without setting a `backend`.
 
 The embedded registry currently ships `bat`, `biome`, `bun`, `cosign`, `dbeaver`,
 `delta`, `deno`, `esbuild`, `fd`, `fresh`, `gh`, `gip`, `go`, `goss`, `hugo`, `inner`, `jdk`, `jq`,
@@ -1274,13 +1277,26 @@ minimum_release_age = "0h"   # this tool always tracks the true latest release
 
 Accepted units: `h` (hours), `d` (days), `mo` (months, 30 days) and `y`
 (years, 365 days) - e.g. `"24h"`, `"7d"`, `"6mo"`, `"1y"`. `"0"` in any unit
-(e.g. `"0h"`) disables the restriction. A spec's `minimum_release_age` takes
+(e.g. `"0h"`) disables the restriction.
+
+For a tool from the embedded registry, set it on the app instead: a
+`[specs.<name>]` table replaces the built-in recipe as a whole, so one holding
+only `minimum_release_age` would leave the tool with no backend.
+
+```toml
+[apps.inner]
+use = "inner"
+version = "latest"
+minimum_release_age = "0h"   # wins over the spec and [defaults]
+```
+
+An app's `minimum_release_age` takes precedence over the spec's, which takes
 precedence over `[defaults]`, which takes precedence over the built-in
 default. It only applies to `version = "latest"`; pinned versions (including
 `default_version`) are never affected.
 
 To override it for a single run, pass `--min-age` to `upgrade` or `outdated`;
-it takes precedence over every spec and `[defaults]` value:
+it takes precedence over every app, spec and `[defaults]` value:
 
 ```bash
 paq upgrade gip --min-age 0h   # install a release published less than 24h ago

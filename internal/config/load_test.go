@@ -434,7 +434,7 @@ asset = "mytool-{{version}}-osx.tar.gz"
 }
 
 // TestUserConfigMinimumReleaseAge verifies that minimum_release_age round-trips
-// from TOML at both the global ([defaults]) and per-spec level.
+// from TOML at the global ([defaults]), per-spec and per-app level.
 func TestUserConfigMinimumReleaseAge(t *testing.T) {
 	data := []byte(`
 [defaults]
@@ -444,6 +444,10 @@ minimum_release_age = "7d"
 backend = "github"
 repo = "owner/mytool"
 minimum_release_age = "0h"
+
+[apps.mytool]
+use = "mytool"
+minimum_release_age = "3d"
 `)
 	var raw userConfigRaw
 	if err := toml.Unmarshal(data, &raw); err != nil {
@@ -463,6 +467,9 @@ minimum_release_age = "0h"
 	}
 	if s.MinimumReleaseAge != "0h" {
 		t.Errorf("Spec.MinimumReleaseAge = %q, want 0h", s.MinimumReleaseAge)
+	}
+	if got := raw.Apps["mytool"].MinimumReleaseAge; got != "3d" {
+		t.Errorf("AppEntry.MinimumReleaseAge = %q, want 3d", got)
 	}
 }
 
@@ -490,6 +497,29 @@ func TestMergeUserSpecsOverride(t *testing.T) {
 	rg := cfg.Specs["ripgrep"]
 	if rg.Backend != "url" || rg.Source != "https://example.com/rg" {
 		t.Errorf("ripgrep = %+v, want user override (backend url)", rg)
+	}
+}
+
+// TestShadowingWithoutBackend verifies that only user specs replacing a
+// registry spec of the same name with no backend are reported.
+func TestShadowingWithoutBackend(t *testing.T) {
+	registry := map[string]Spec{
+		"inner":   {Backend: "github", Repo: "enr/inner"},
+		"ripgrep": {Backend: "github", Repo: "BurntSushi/ripgrep"},
+		"zipp":    {Backend: "github", Repo: "enr/zipp"},
+	}
+	user := &Config{
+		Specs: map[string]Spec{
+			"zipp":    {MinimumReleaseAge: "0h"},                          // partial override: reported
+			"inner":   {MinimumReleaseAge: "0h"},                          // partial override: reported
+			"ripgrep": {Backend: "url", Source: "https://example.com/rg"}, // full replacement
+			"mytool":  {MinimumReleaseAge: "0h"},                          // no registry spec to shadow
+		},
+	}
+	got := ShadowingWithoutBackend(registry, user)
+	want := []string{"inner", "zipp"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("ShadowingWithoutBackend = %v, want %v", got, want)
 	}
 }
 
