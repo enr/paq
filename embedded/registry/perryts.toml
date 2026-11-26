@@ -1,0 +1,29 @@
+# Perry, the native TypeScript compiler. The archive is flat: the perry binary
+# sits next to the runtime libraries it links against and looks them up beside
+# itself, so the whole archive is installed as a directory.
+# No windows/arm64 build has shipped.
+
+[perryts]
+backend = "github"
+repo = "PerryTS/perry"
+asset = "perry-{{os}}-{{arch}}.tar.gz"
+archive = "tar.gz"
+platforms = ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"]
+
+[perryts.os]
+darwin = "macos"
+
+[perryts.arch]
+amd64 = "x86_64"
+arm64 = "aarch64"
+
+[perryts.musl]
+asset = "perry-{{os}}-{{arch}}-musl.tar.gz"
+
+# Windows ships a .zip instead of a .tar.gz.
+[perryts.windows]
+asset = "perry-{{os}}-{{arch}}.zip"
+archive = "zip"
+
+[perryts.verify]
+sha256_asset = "{{asset}}.sha256"
